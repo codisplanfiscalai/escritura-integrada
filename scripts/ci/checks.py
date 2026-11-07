@@ -35,11 +35,12 @@ def main():
         if not all(compileall.compile_dir(path, quiet=1) for path in ('app', 'scripts', 'tests')):
             raise ValueError('Falha de compilação sintática Python.')
         report['frontend_assets'] = frontend_assets(Path('frontend/dist'))
-        frontend = subprocess.run(['node', '--test', 'frontend/tests/date-input.test.js'], capture_output=True, text=True, timeout=60)
+        frontend_command = ['node', '--test', *[p.as_posix() for p in sorted(Path('frontend/tests').glob('*.test.js'))]]
+        frontend = subprocess.run(frontend_command, capture_output=True, text=True, timeout=60)
         log.write(frontend.stdout + frontend.stderr + '\n')
-        report['frontend_tests'] = {'command': 'node --test frontend/tests/date-input.test.js', 'ok': frontend.returncode == 0}
+        report['frontend_tests'] = {'command': ' '.join(frontend_command), 'ok': frontend.returncode == 0}
         if frontend.returncode:
-            raise ValueError('Os testes de data/dia civil da interface falharam.')
+            raise ValueError('Os testes da interface falharam.')
         with tempfile.TemporaryDirectory(prefix='escritura-ci-tests-') as data:
             os.environ['ESCRITURA_DATA_DIR'] = data
             os.environ['ESCRITURA_DEMO'] = '0'
