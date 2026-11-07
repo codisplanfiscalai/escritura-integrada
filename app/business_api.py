@@ -74,21 +74,28 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
 
     @app.post('/api/companies/{cid}/banks/{item_id}/allocate')
     def allocate(cid:int,item_id:int,request:Request,payload:dict[str,Any]=Body(...)):
-        if payload.get('settle'):
-            with db.read() as conn:check_date(request,select_one(conn,'bank_transactions',cid,item_id)['date'])
+        with db.read() as conn:check_date(request,select_one(conn,'bank_transactions',cid,item_id)['date'])
         return core.allocate_bank(cid,item_id,payload,actor(request))
 
     @app.post('/api/companies/{cid}/allocations/{item_id}/reverse')
     def reverse_allocation(cid:int,item_id:int,request:Request,payload:dict[str,Any]=Body(...)):
+        with db.read() as conn:
+            allocation=select_one(conn,'bank_allocations',cid,item_id)
+            check_date(request,select_one(conn,'bank_transactions',cid,allocation['transaction_id'])['date'])
         return core.reverse_allocation(cid,item_id,payload,actor(request))
 
     @app.get('/api/companies/{cid}/partner-reconciliation')
     def partner_reconciliation(cid:int):return core.partner_reconciliation(cid)
 
     @app.get('/api/companies/{cid}/business-reports/{kind}')
-    def report(cid:int,kind:str,start:str,end:str,account_id:int|None=None,cost_center_id:int|None=None,query:str='',status:str='',direction:str='',format:str='json'):
-        result=core.business_report(cid,kind,start,end,account_id,cost_center_id,query,status,direction)
+    def report(cid:int,kind:str,start:str,end:str,account_id:int|None=None,cost_center_id:int|None=None,query:str='',status:str='',direction:str='',cfop:str='',ncm:str='',format:str='json'):
+        from .fiscal_reports import FISCAL_REPORTS
+        result=core.fiscal_report(cid,kind,start,end,query,status,direction,cfop,ncm) if kind in FISCAL_REPORTS else core.business_report(cid,kind,start,end,account_id,cost_center_id,query,status,direction)
         if format=='json':return result
+        if format in {'pdf','xlsx'}:
+            from .report_exports import export_report
+            content,mime=export_report(result,format)
+            return Response(content,media_type=mime,headers={'Content-Disposition':f'attachment; filename="{kind}-{start}-{end}.{format}"'})
         if format!='csv':raise DomainError('Formato inválido.')
         output=io.StringIO();keys=list(dict.fromkeys(k for r in result['rows'] for k in r))
         writer=csv.writer(output,delimiter=';',lineterminator='\r\n');writer.writerow(keys)
@@ -96,7 +103,7 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
             row=[]
             for k in keys:
                 value=r.get(k,'')
-                if k.endswith('_cents'):value=decimal_text(value)
+                if k.endswith('_cents'):value=decimal_text(value) if value is not None else ''
                 if isinstance(value,list):value=','.join(str(x) for x in value)
                 if isinstance(value,str) and value.lstrip().startswith(('=','+','-','@','\t')) and not k.endswith('_cents'):value="'"+value
                 row.append(value)
@@ -137,8 +144,31 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
 
     @app.get('/api/companies/{cid}/imports/{item_id}/original')
     def original(cid:int,item_id:int):
+        core.import_detail(cid,item_id)  # valida também o tipo de conteúdo do lote
         with db.read() as conn:r=select_one(conn,'imports',cid,item_id)
         # Original filenames are displayed by the UI; download header uses a safe stable ID.
         extension=Path(r['filename']).suffix.lower()
         if extension not in {'.xml','.txt','.efd','.sped','.zip','.rar','.7z','.csv','.ofx','.qfx','.qif','.ofc'}:extension='.bin'
         return Response(r['original'],media_type='application/octet-stream',headers={'Content-Disposition':f'attachment; filename="import-{item_id}{extension}"'})
+
+    @app.get('/api/companies/{cid}/tax-ledgers')
+    def ledgers(cid:int,period:str):return core.tax_ledgers(cid,period)
+
+    @app.get('/api/companies/{cid}/tax-ledgers/previous')
+    def previous_ledger(cid:int,period:str,tax:str):return core.previous_credit(cid,period,tax)
+
+    @app.post('/api/companies/{cid}/assessments/{item_id}/finalize')
+    def finalize_assessment(cid:int,item_id:int,request:Request,payload:dict[str,Any]=Body(...)):
+        check_period(request,payload.get('period'));return core.finalize_assessment(cid,item_id,payload,actor(request))
+
+    @app.post('/api/companies/{cid}/tax-ledgers/{item_id}/reverse')
+    def reverse_ledger(cid:int,item_id:int,request:Request,payload:dict[str,Any]=Body(...)):
+        check_period(request,payload.get('period'));return core.reverse_ledger(cid,item_id,payload,actor(request))
+
+    @app.get('/api/companies/{cid}/tax-ledgers/{item_id}/report')
+    def ledger_report(cid:int,item_id:int,format:str='json'):
+        result=core.ledger_report(cid,item_id)
+        if format=='json':return result
+        from .report_exports import export_report
+        content,mime=export_report(result,format)
+        return Response(content,media_type=mime,headers={'Content-Disposition':f'attachment; filename="apuracao-{item_id}.{format}"'})

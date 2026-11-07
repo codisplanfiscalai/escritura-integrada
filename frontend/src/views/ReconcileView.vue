@@ -5,6 +5,7 @@ import Icon from '../components/Icon.vue';
 import BaseModal from '../components/BaseModal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import { state, company, api, scope, useResource, rows, notify, ask, changed } from '../lib/workspace';
+import {can,allowedApi,writable} from '../lib/workspace';
 import { money, date, dateTime, normalized } from '../lib/format';
 
 const allocationBank=ref(null);
@@ -125,7 +126,7 @@ async function save() {
 }
 
 function navigate(tab) {
-  if (!state.editor) state.tab = tab;
+  if (!state.editor) state.navigate(tab);
 }
 onUnmounted(() => { alive = false; suggestionSequence++; modalSequence++; if (show.value) state.editor = null; });
 </script>
@@ -134,7 +135,7 @@ onUnmounted(() => { alive = false; suggestionSequence++; modalSequence++; if (sh
   <div class="view">
     <header class="view-heading">
       <div><div class="eyebrow">CONFERÊNCIA INTEGRADA</div><h1>Conciliação bancária</h1><p>Confira os movimentos do extrato e vincule cada um ao título correspondente.</p></div>
-      <button class="button primary" @click="navigate('imports')"><Icon name="import"/>Importar extrato</button>
+      <button class="button primary" v-allow="['financial.reconciliation','import']" @click="navigate('bank-imports')"><Icon name="import"/>Importar extrato</button>
     </header>
     <div class="finance-top">
       <div class="mini-metric"><span>Movimentos na competência</span><strong>{{banks.length}}</strong></div>
@@ -161,7 +162,7 @@ onUnmounted(() => { alive = false; suggestionSequence++; modalSequence++; if (sh
             </button>
           </li>
         </ul>
-        <EmptyState v-else :title="banks.length?'Nenhum movimento neste filtro':'Nenhum extrato nesta competência'" :text="banks.length?'Altere a situação, conta ou pesquisa para localizar o movimento.':'Importe e confira um extrato para começar a conciliação.'" icon="bank"><button v-if="!banks.length" class="button outline" @click="navigate('imports')">Importar extrato<Icon name="arrow" :size="15"/></button></EmptyState>
+        <EmptyState v-else :title="banks.length?'Nenhum movimento neste filtro':'Nenhum extrato nesta competência'" :text="banks.length?'Altere a situação, conta ou pesquisa para localizar o movimento.':'Importe e confira um extrato para começar a conciliação.'" icon="bank"><button v-if="!banks.length" class="button outline" v-allow="['financial.reconciliation','import']" @click="navigate('bank-imports')">Importar extrato<Icon name="arrow" :size="15"/></button></EmptyState>
         <footer class="table-footer"><span>TXT, CSV, OFX, QIF e OFC passam pela conferência de importação.</span></footer>
       </section>
 
@@ -174,12 +175,12 @@ onUnmounted(() => { alive = false; suggestionSequence++; modalSequence++; if (sh
             <div v-if="selected.source?.file" class="reconcile-source"><Icon name="file" :size="14"/><span>{{selected.source.file}}<template v-if="selected.source.line"> · linha {{selected.source.line}}</template></span></div>
           </div>
 
-          <div class="reconcile-detail"><p v-if="selected.allocated_cents">Valor conciliado: {{money(selected.allocated_cents)}} · disponível: {{money(selected.remaining_cents)}}</p><p v-for="a in selected.allocations" :key="a.id">#{{a.title_id}} {{a.title_description}} · {{money(a.amount_cents)}} <button class="text-button" @click="undoAllocation(a)">Desfazer vínculo</button><small v-if="a.settlement_id"> · baixa #{{a.settlement_id}}</small></p><button v-if="!selected.reconciled" class="button primary" @click="allocationBank={...selected}">Conciliar por rateio / agrupamento</button></div><template v-if="selected.reconciled&&selected.reconciliation">
+          <div class="reconcile-detail"><p v-if="selected.allocated_cents">Valor conciliado: {{money(selected.allocated_cents)}} · disponível: {{money(selected.remaining_cents)}}</p><p v-for="a in selected.allocations" :key="a.id">#{{a.title_id}} {{a.title_description}} · {{money(a.amount_cents)}} <button class="text-button" v-allow="['financial.reconciliation','reverse']" @click="undoAllocation(a)">Desfazer vínculo</button><small v-if="a.settlement_id"> · baixa #{{a.settlement_id}}</small></p><button v-if="!selected.reconciled" class="button primary" v-allow="['financial.reconciliation','edit']" @click="allocationBank={...selected}">Conciliar por rateio / agrupamento</button></div><template v-if="selected.reconciled&&selected.reconciliation">
             <div class="reconcile-linked">
               <div class="reconcile-linked-heading"><Icon name="checks"/><div><h3>Vínculo registrado</h3><p>{{selected.reconciliation?.title_description||`Título ${selected.reconciliation?.title_id}`}}</p></div></div>
               <dl class="reconcile-facts"><div><dt>Responsável</dt><dd>{{selected.reconciliation?.created_by||'—'}}</dd></div><div><dt>Registrado em</dt><dd>{{dateTime(selected.reconciliation?.created_at)}}</dd></div></dl>
               <p class="reconcile-reason">{{selected.reconciliation?.reason}}</p>
-              <div class="actions"><button class="button outline" @click="navigate('finance')">Abrir financeiro<Icon name="arrow" :size="15"/></button><button class="button" @click="openUnlink" :disabled="loading"><Icon name="unlink" :size="16"/>Desfazer vínculo</button></div>
+              <div class="actions"><button class="button outline" @click="navigate('finance')">Abrir financeiro<Icon name="arrow" :size="15"/></button><button class="button" v-allow="['financial.reconciliation','reverse']" @click="openUnlink" :disabled="loading"><Icon name="unlink" :size="16"/>Desfazer vínculo</button></div>
             </div>
           </template>
           <template v-else-if="!selected.reconciled">
@@ -189,11 +190,11 @@ onUnmounted(() => { alive = false; suggestionSequence++; modalSequence++; if (sh
             <div v-else-if="suggestions.length" class="reconcile-candidates">
               <article v-for="candidate in suggestions" :key="candidate.title_id" class="reconcile-candidate">
                 <div class="reconcile-candidate-main"><strong>{{candidate.description}}</strong><span class="money">{{money(candidate.amount_cents)}}</span></div>
-                <div class="reconcile-candidate-meta"><span>Vencimento {{date(candidate.date)}} · {{candidate.difference_days===0?'mesma data':`${candidate.difference_days} dia(s) de diferença`}}</span><button class="button small outline" @click="openLink(candidate)" :disabled="loading"><Icon name="link" :size="14"/>Conferir vínculo</button></div>
+                <div class="reconcile-candidate-meta"><span>Vencimento {{date(candidate.date)}} · {{candidate.difference_days===0?'mesma data':`${candidate.difference_days} dia(s) de diferença`}}</span><button class="button small outline" v-allow="['financial.reconciliation','edit']" @click="openLink(candidate)" :disabled="loading"><Icon name="link" :size="14"/>Conferir vínculo</button></div>
               </article>
             </div>
             <EmptyState v-else title="Nenhum título sugerido" text="Você pode procurar outro título de mesmo valor e sentido, ou cadastrá-lo no Financeiro." icon="reconcile"/>
-            <div class="reconcile-manual"><button class="button outline" @click="openLink()" :disabled="loading"><Icon name="search" :size="16"/>Escolher outro título</button><small>Uma sugestão nunca confirma o vínculo automaticamente.</small></div>
+            <div class="reconcile-manual"><button class="button outline" v-allow="['financial.reconciliation','edit']" @click="openLink()" :disabled="loading"><Icon name="search" :size="16"/>Escolher outro título</button><small>Uma sugestão nunca confirma o vínculo automaticamente.</small></div>
           </template>
         </template>
         <EmptyState v-else title="Selecione um movimento" text="Escolha uma linha do extrato para conferir sua origem e os títulos relacionados." icon="reconcile"/>

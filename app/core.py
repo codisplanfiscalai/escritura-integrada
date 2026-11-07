@@ -175,10 +175,13 @@ def audit(conn, company_id, actor, action, entity, entity_id, details=None):
 
 
 def ensure_open(conn, company_id, competence, module):
+    from .periods import enabled
+    if not enabled(conn, company_id, module, competence):
+        raise DomainError("Cadastre o exercício deste módulo antes de gravar movimentos.", 409, "exercise_missing")
     lock = conn.execute("SELECT closed FROM period_locks WHERE company_id=? AND period=? AND module=?",
                         (company_id, competence, module)).fetchone()
     if lock and lock["closed"]:
-        title = "fiscal" if module == "fiscal" else "contábil"
+        title = {"fiscal":"fiscal", "accounting":"contábil", "financial":"financeiro", "social":"social"}.get(module,module)
         raise DomainError(f"A competência {competence} está fechada no módulo {title}.", 409, "period_closed")
 
 
@@ -313,6 +316,8 @@ class Core:
         initial = boolean(payload.get("create_default_accounts"), False)
         with self.db.transaction() as conn:
             cid = conn.execute(f"INSERT INTO companies({','.join(COMPANY_FIELDS)},created_at,updated_at) VALUES({','.join('?' for _ in range(len(COMPANY_FIELDS)+2))})", (*values.values(), now(), now())).lastrowid
+            from .periods import initialize_exercises
+            initialize_exercises(conn, cid)
             if initial:
                 self._default_accounts(conn, cid)
             audit(conn, cid, actor, "create", "company", cid, {"code": values["code"], "default_accounts": initial})
@@ -441,6 +446,8 @@ class Core:
         return result, debit
 
     def _create_journal(self, conn, cid, payload, actor, reversal_of=None):
+        from .permissions import effect
+        effect(conn, cid, "accounting.journals", "reverse" if reversal_of else "create")
         company_row(conn, cid)
         day = iso_date(payload.get("date"))
         document = text(payload.get("document"), "Documento", False, 100)
@@ -471,6 +478,7 @@ class Core:
         reason = text(payload.get("reason"), "Motivo do estorno", True, 1000)
         with self.db.transaction() as conn:
             original = self._journal(conn, cid, item_id)
+            ensure_open(conn, cid, original["period"], "accounting")
             if conn.execute('SELECT 1 FROM documents WHERE company_id=? AND journal_id=?',(cid,item_id)).fetchone() or conn.execute('SELECT 1 FROM settlements WHERE company_id=? AND journal_id=?',(cid,item_id)).fetchone():
                 raise DomainError('Estorne pelo documento ou pela baixa de origem para preservar a integração.',409,'linked_journal')
             if iso_date(payload.get('date')) < original['date']:
@@ -501,6 +509,8 @@ class Core:
             return [self._document(conn, cid, key) for key in ids]
 
     def _create_document(self, conn, cid, payload, actor):
+        from .permissions import effect
+        effect(conn, cid, "fiscal.documents", "create")
         company_row(conn, cid)
         direction = {"entrada": "incoming", "saida": "outgoing"}.get(payload.get("direction"), payload.get("direction"))
         if direction not in {"incoming", "outgoing"}:
@@ -522,6 +532,8 @@ class Core:
             conn.execute("INSERT OR IGNORE INTO document_sources(company_id,document_id,source_hash,source_json,created_at) VALUES(?,?,?,?,?)", (cid, existing["id"], source_hash, source, now()))
             return self._document(conn, cid, existing["id"]) | {"duplicate": True}
         ensure_open(conn, cid, values["posting_date"][:7], "fiscal")
+        from .tax_ledger import ensure_unfinalized
+        ensure_unfinalized(conn, cid, values["posting_date"][:7])
         extras = {k: payload[k] for k in ("source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "analytics", "raw_fields", "posting_date_proposed", "declared_new_total", "participant_id", "establishment_id", "document_category") if k in payload}
         values.update(company_id=cid, period=values["posting_date"][:7], taxes_json=taxes, items_json=items, source_json=source, extra_json=pack(extras), source_hash=source_hash, business_key=business_key, payload_hash=hashed, status="pending", created_at=now())
         did = conn.execute(f"INSERT INTO documents({','.join(values)}) VALUES({','.join('?' for _ in values)})", tuple(values.values())).lastrowid
@@ -549,7 +561,11 @@ class Core:
                 raise DomainError("CFOP deve ter quatro dígitos; confira sua aplicabilidade.")
             values.update(issue_date=iso_date(payload.get("issue_date", old["issue_date"]), "Emissão"), posting_date=iso_date(payload.get("posting_date", old["posting_date"]), "Escrituração"), total_cents=money(payload.get("total", decimal_text(old["total_cents"])), "Total"))
             ensure_open(conn, cid, old["period"], "fiscal")
+            from .tax_ledger import ensure_unfinalized
+            ensure_unfinalized(conn, cid, old["period"])
             ensure_open(conn, cid, values["posting_date"][:7], "fiscal")
+            from .tax_ledger import ensure_unfinalized
+            ensure_unfinalized(conn, cid, values["posting_date"][:7])
             taxes = json_value(payload.get("taxes", json.loads(old["taxes_json"])), dict, "Tributos declarados")
             items = json_value(payload.get("items", json.loads(old["items_json"])), list, "Itens")
             identity = "key:" + values["key"] if values["key"] else digest({k: values[k] for k in ("direction", "model", "series", "number", "partner_tax_id", "partner_name", "issue_date")})
@@ -572,6 +588,8 @@ class Core:
             doc = select_one(conn, "documents", cid, item_id)
             check_version(doc, payload)
             ensure_open(conn, cid, doc["period"], "fiscal")
+            from .tax_ledger import ensure_unfinalized
+            ensure_unfinalized(conn, cid, doc["period"])
             if doc["status"] != "pending":
                 raise DomainError("Somente documento pendente pode ser conferido.", 409, "invalid_status")
             conn.execute("UPDATE documents SET status='reviewed',reviewed_by=?,review_reason=?,version=version+1 WHERE id=? AND company_id=?", (actor, reason, item_id, cid))
@@ -587,6 +605,8 @@ class Core:
         doc = select_one(conn, "documents", cid, item_id)
         check_version(doc, payload)
         ensure_open(conn, cid, doc["period"], "fiscal")
+        from .tax_ledger import ensure_unfinalized
+        ensure_unfinalized(conn, cid, doc["period"])
         if doc["status"] != "reviewed":
             raise DomainError("Confira o documento antes de escriturá-lo.", 409, "invalid_status")
         if doc["model"] in {"55", "65", "57"}:
@@ -621,6 +641,9 @@ class Core:
             return [self._title(conn, cid, r["id"]) for r in conn.execute("SELECT id FROM titles WHERE company_id=?" + clause + " ORDER BY due_date,id", params)]
 
     def _create_title(self, conn, cid, payload, actor):
+        from .permissions import effect
+        effect(conn, cid, "financial.titles", "create")
+        ensure_open(conn, cid, iso_date(payload.get("issue_date"))[:7], "financial")
         company_row(conn, cid)
         kind = payload.get("kind")
         if kind not in {"payable", "receivable"}:
@@ -686,6 +709,9 @@ class Core:
             return [self._bank(conn, cid, r["id"]) for r in conn.execute("SELECT id FROM bank_transactions WHERE company_id=?" + clause + " ORDER BY date DESC,id DESC", params)]
 
     def _create_bank(self, conn, cid, payload, bank_account, actor):
+        from .permissions import effect
+        effect(conn, cid, "financial.reconciliation", "import")
+        ensure_open(conn, cid, iso_date(payload.get("date"))[:7], "financial")
         day = iso_date(payload.get("date"), "Data bancária")
         amount = money(payload.get("amount"), "Movimentação bancária", signed=True)
         if amount == 0:
@@ -727,6 +753,7 @@ class Core:
         reason = text(payload.get("reason"), "Conferência da conciliação", True, 1000)
         with self.db.transaction() as conn:
             bank = self._bank(conn, cid, item_id)
+            ensure_open(conn, cid, bank["date"][:7], "financial")
             title = self._title(conn, cid, title_id)
             if title.get('cancelled') or bank.get('allocations') or title.get('allocations'):
                 raise DomainError('Título cancelado ou com rateio existente. Confira os vínculos.',409)
@@ -743,6 +770,7 @@ class Core:
         reason = text(payload.get("reason"), "Motivo para desfazer", True, 1000)
         with self.db.transaction() as conn:
             bank = self._bank(conn, cid, item_id)
+            ensure_open(conn, cid, bank["date"][:7], "financial")
             if not bank["reconciliation"]:
                 raise DomainError("Vínculo individual ausente. Desfaça os vínculos do rateio quando existentes.", 409, "not_reconciled")
             audit(conn, cid, actor, "unreconcile", "bank_transaction", item_id, {"reason": reason, "previous": bank["reconciliation"]})
@@ -846,11 +874,15 @@ class Core:
             check_version(old, payload)
             if old["superseded_by"]:
                 raise DomainError("Esta versão já foi substituída. Edite a versão atual.", 409, "stale_version")
-        values = {k: text(payload.get(k, old.get(k, "")), k, k in {"name", "tax"}, 1000) for k in ("name", "tax", "direction", "cfop", "ncm", "valid_from", "valid_to", "source", "responsible", "status")}
+        values = {k: text(payload.get(k, old.get(k, "")), k, k in {"name", "tax"}, 1000) for k in ("name", "tax", "direction", "cfop", "ncm", "valid_from", "valid_to", "source", "responsible", "status", "regime", "state", "municipality")}
         values["status"] = values["status"] or "draft"
         values["direction"] = values["direction"] or "both"
         if values["status"] not in {"draft", "validated"} or values["direction"] not in {"incoming", "outgoing", "both"}:
             raise DomainError("Status ou direção de regra inválido.")
+        if values['regime'] and values['regime'] not in REGIMES:raise DomainError('Regime da regra inválido.')
+        values['state']=values['state'].upper()
+        if values['state'] and not re.fullmatch(r'[A-Z]{2}',values['state']):raise DomainError('Informe UF de duas letras.')
+        if values['municipality'] and not re.fullmatch(r'\d{7}',values['municipality']):raise DomainError('Informe código IBGE municipal com sete dígitos.')
         self._validity(values)
         for code, size in (("cfop", 4), ("ncm", 8)):
             if values[code] and not re.fullmatch(rf"\d{{{size}}}", values[code]):
@@ -896,8 +928,9 @@ class Core:
             return response
 
     def templates(self):
+        from .permissions import readable
         with self.db.read() as conn:
-            return [dict(r) | {"rules": json.loads(r["rules_json"])} for r in conn.execute("SELECT * FROM templates ORDER BY name")]
+            return [dict(r) | {"rules": json.loads(r["rules_json"])} for r in conn.execute("SELECT * FROM templates ORDER BY name") if readable(conn,r["source_company_id"],"fiscal.parameters")]
 
     def create_template(self, payload, actor):
         cid = integer(payload.get("source_company_id"), "Empresa de origem")
@@ -908,6 +941,8 @@ class Core:
             raise DomainError("Selecione de 1 a 200 regras distintas para o modelo.")
         with self.db.transaction() as conn:
             company_row(conn, cid)
+            from .permissions import effect
+            effect(conn,cid,"fiscal.parameters","create")
             rules = [select_one(conn, "rules", cid, integer(key, "Regra")) for key in ids]
             if any(x["superseded_by"] or not x["active"] for x in rules):
                 raise DomainError("Modelos devem usar versões atuais e ativas.")
@@ -922,6 +957,8 @@ class Core:
             template = conn.execute("SELECT * FROM templates WHERE id=?", (item_id,)).fetchone()
             if not template:
                 raise DomainError("Modelo não encontrado.", 404, "not_found")
+            from .permissions import effect
+            effect(conn,template["source_company_id"],"fiscal.parameters","read")
             created = []
             for original in json.loads(template["rules_json"]):
                 copied = dict(original)
@@ -942,13 +979,16 @@ class Core:
         return result
 
     def imports(self, cid):
+        from .permissions import readable
         with self.db.read() as conn:
             company_row(conn, cid)
-            return [{"id": r["id"], "filename": r["filename"], "sha256": r["sha256"], "status": r["status"], "period": r["period"], "created_at": r["created_at"], "documents_count": len(json.loads(r["parsed_json"]).get("documents", [])), "transactions_count": len(json.loads(r["parsed_json"]).get("transactions", []))} for r in conn.execute("SELECT id,filename,sha256,status,period,created_at,parsed_json FROM imports WHERE company_id=? ORDER BY id DESC", (cid,))]
+            return [{"id": r["id"], "filename": r["filename"], "sha256": r["sha256"], "status": r["status"], "period": r["period"], "created_at": r["created_at"], "documents_count": len(json.loads(r["parsed_json"]).get("documents", [])), "transactions_count": len(json.loads(r["parsed_json"]).get("transactions", []))} for r in conn.execute("SELECT id,filename,sha256,status,period,created_at,parsed_json FROM imports WHERE company_id=? ORDER BY id DESC", (cid,)) if (not json.loads(r["parsed_json"]).get("documents") or readable(conn,cid,"fiscal.imports")) and (not json.loads(r["parsed_json"]).get("transactions") or readable(conn,cid,"financial.reconciliation"))]
 
     def import_detail(self, cid, item_id):
         with self.db.read() as conn:
             row = select_one(conn, "imports", cid, item_id)
+            from .permissions import import_access
+            import_access(conn,cid,json.loads(row["parsed_json"]))
             return self._import_result(row)
 
     def preview_import(self, cid, payload, actor):
@@ -975,6 +1015,8 @@ class Core:
         with self.db.read() as conn:
             existing = conn.execute("SELECT * FROM imports WHERE company_id=? AND identity_hash=?", (cid, identity)).fetchone()
             if existing:
+                from .permissions import import_access
+                import_access(conn,cid,json.loads(existing["parsed_json"]),"import")
                 return self._import_result(existing)
         parsed = parse_file(filename, raw, company | {"import_options": options})
         if not isinstance(parsed, dict):
@@ -986,6 +1028,9 @@ class Core:
         for doc in parsed["documents"]:
             if doc.get("posting_date", "")[:7] != competence:
                 parsed["issues"].append({"severity": "error", "code": "POSTING_PERIOD_MISMATCH", "message": f"Documento {doc.get('number', '')}: data de escrituração {doc.get('posting_date', '')} não pertence à competência {competence}. Informe a data de escrituração nas opções ou selecione a competência correta; a emissão será preservada.", "source": doc.get("source", {})})
+        for tx in parsed["transactions"]:
+            if tx.get("date", "")[:7] != competence:
+                parsed["issues"].append({"severity":"error", "code":"BANK_PERIOD_MISMATCH", "message":"Movimento bancário fora da competência selecionada.", "source":tx.get("source",{})})
         status = "blocked" if any(x.get("severity") == "error" for x in parsed["issues"]) else "preview"
         if not parsed["documents"] and not parsed["transactions"] and status != "blocked":
             parsed["issues"].append({"severity": "error", "code": "NO_SUPPORTED_RECORDS", "message": "Nenhum documento ou movimento suportado foi identificado.", "source": {"file": filename}})
@@ -993,11 +1038,17 @@ class Core:
         parsed["can_confirm"] = status != "blocked"
         preview_hash = digest({"identity": identity, "parsed": parsed})
         with self.db.transaction() as conn:
+            from .permissions import import_access
+            import_access(conn,cid,parsed,"import")
+            if parsed["documents"]: ensure_open(conn,cid,competence,"fiscal")
+            if parsed["transactions"]: ensure_open(conn,cid,competence,"financial")
             current = company_row(conn, cid)
             if current["tax_id"] != company["tax_id"]:
                 raise DomainError("CNPJ alterado durante a leitura. Gere novamente a prévia.", 409, "stale_company")
             existing = conn.execute("SELECT * FROM imports WHERE company_id=? AND identity_hash=?", (cid, identity)).fetchone()
             if existing:
+                from .permissions import import_access
+                import_access(conn,cid,json.loads(existing["parsed_json"]),"import")
                 return self._import_result(existing)
             iid = conn.execute("INSERT INTO imports(company_id,filename,sha256,identity_hash,preview_hash,period,company_tax_id,options_json,original,parsed_json,status,bank_account,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (cid, filename, digest(raw), identity, preview_hash, competence, company["tax_id"], pack(options), raw, pack(parsed), status, bank_account, now(), actor)).lastrowid
             audit(conn, cid, actor, "preview", "import", iid, {"sha256": digest(raw), "filename": filename, "status": status, "period": competence})
@@ -1013,6 +1064,8 @@ class Core:
             if batch["company_tax_id"] != company["tax_id"]:
                 raise DomainError("O CNPJ da empresa foi alterado. Gere uma nova prévia.", 409, "stale_company")
             parsed = json.loads(batch["parsed_json"])
+            from .permissions import import_access
+            import_access(conn,cid,parsed,"import")
             bank_account = text(payload.get("bank_account", batch["bank_account"]), "Conta bancária", bool(parsed.get("transactions")), 200)
             if batch["status"] == "confirmed":
                 previous = json.loads(batch["confirmation_json"])
@@ -1121,6 +1174,8 @@ class Core:
                 base = f"DEMO000{index}0001"
                 values = self._company_values({"code": f"DEMO{index:03}", "name": name, "trade_name": name, "tax_id": base + cnpj_digits(base), "regime": "outros", "state": "SP", "city": "Cidade fictícia", "address": "Rua de demonstração", "number": str(index * 100), "prosoft_code": f"FICTICIO{index}"})
                 cid = conn.execute(f"INSERT INTO companies({','.join(COMPANY_FIELDS)},created_at,updated_at) VALUES({','.join('?' for _ in range(len(COMPANY_FIELDS)+2))})", (*values.values(), now(), now())).lastrowid
+                from .periods import initialize_exercises
+                initialize_exercises(conn, cid, 2026)
                 self._default_accounts(conn, cid)
                 cc = conn.execute("INSERT INTO cost_centers(company_id,code,name) VALUES(?,?,?)", (cid, "ADM", "Administrativo — demonstração")).lastrowid
                 accounts = {r["access_code"]: r["id"] for r in conn.execute("SELECT id,access_code FROM accounts WHERE company_id=?", (cid,))}

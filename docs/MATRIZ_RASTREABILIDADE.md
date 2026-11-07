@@ -44,3 +44,5 @@ As origens abaixo são relativas a `Projetos_Engenharia_Reversa/projetos/`. Os �
 | Bloqueios e acesso | Decisões do MHTML e código anterior | C: fiscal/contábil independentes; I: permissões novas | Preservado e ampliado | Perfis por empresa, revogação, reabertura justificada, versões | Leitura/escrita de outra empresa bloqueadas; auditoria |
 | Windows/Docker/GHCR | Código remoto e última entrega no MHTML | C: workflows e artefatos anteriores | Preservado | Dependências comuns e gate visual acrescidos | Executável/containers reais nos jobs; não inferir pela presença do código |
 | PostgreSQL/MySQL/Redis/MinIO | Catálogo de imagens e Compose | C: infraestrutura publicada; adaptadores ausentes | Opcionais sem uso pelo núcleo | Integrações funcionais futuras | Não anunciar uso efetivo nem migração automática |
+
+A evolução por requisito da etapa 0.6 (exercícios, grupos, instaladores, macOS, finalização e relatórios fiscais) está em [EXPANSAO_0_6.md](EXPANSAO_0_6.md). As linhas acima preservam o diagnóstico da etapa 0.5; a matriz complementar registra o estado posterior.

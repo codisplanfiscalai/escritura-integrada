@@ -1,7 +1,8 @@
 """Títulos, baixas, encargos, estornos e renegociação com efeitos explícitos."""
 import json
 from .core import (DomainError, audit, check_version, decimal_text, digest, integer,
-                   iso_date, money, now, pack, select_one, text)
+                   iso_date, money, now, pack, select_one, text, ensure_open)
+from .permissions import effect
 
 class FinanceMixin:
     def _operation(self,conn,cid,scope,payload):
@@ -64,6 +65,8 @@ class FinanceMixin:
     def _settle(self,conn,cid,item_id,payload,actor):
         amount=money(payload.get('amount'),'Principal da baixa',positive=True)
         day=iso_date(payload.get('date'),'Data da baixa')
+        effect(conn,cid,'financial.settlements','settle')
+        ensure_open(conn,cid,day[:7],'financial')
         reason=text(payload.get('reason'),'Histórico da baixa',True,1000)
         key=text(payload.get('idempotency_key'),'Chave de idempotência',True,200)
         charges={k:money(payload.get(k,'0.00'),k) for k in ('interest','fine','discount')}
@@ -104,6 +107,7 @@ class FinanceMixin:
 
     def _reverse_linked_journal(self,conn,cid,jid,day,reason,actor,key):
         original=self._journal(conn,cid,jid)
+        ensure_open(conn,cid,original['period'],'accounting')
         if original['reversed_by']:
             raise DomainError('Lançamento de origem já estornado. Confira o vínculo.',409)
         lines=[{'account_id':x['account_id'],'debit':decimal_text(x['credit_cents']),
@@ -117,6 +121,9 @@ class FinanceMixin:
             key,hashed,previous=self._operation(conn,cid,'reverse-settlement:'+str(item_id),payload)
             if previous:return previous
             s=select_one(conn,'settlements',cid,item_id)
+            effect(conn,cid,'financial.settlements','reverse')
+            ensure_open(conn,cid,day[:7],'financial')
+            ensure_open(conn,cid,s['date'][:7],'financial')
             title=self._title(conn,cid,s['title_id'])
             if s['reversed_at'] or title['cancelled']:
                 raise DomainError('Baixa já estornada ou título renegociado.',409)
@@ -141,6 +148,8 @@ class FinanceMixin:
         interest=money(payload.get('interest','0.00'),'Encargos negociados')
         discount=money(payload.get('discount','0.00'),'Desconto negociado')
         with self.db.transaction() as conn:
+            effect(conn,cid,'financial.titles','edit')
+            ensure_open(conn,cid,day[:7],'financial')
             key,hashed,previous=self._operation(conn,cid,'renegotiate',payload)
             if previous:return previous
             titles=[self._title(conn,cid,integer(i,'Título')) for i in ids]
@@ -149,6 +158,7 @@ class FinanceMixin:
             versions=payload.get('versions',{})
             if not isinstance(versions,dict):raise DomainError('Versões dos títulos inválidas.')
             for t in titles:
+                ensure_open(conn,cid,t['issue_date'][:7],'financial')
                 if str(t['id']) not in versions or versions[str(t['id'])]!=t['version']:
                     raise DomainError('Título alterado. Atualize a seleção para renegociar.',409,'stale_version')
                 if day<t['issue_date']:
@@ -203,6 +213,8 @@ class FinanceMixin:
             key,hashed,previous=self._operation(conn,cid,'reverse-renegotiation:'+str(item_id),payload)
             if previous:return previous
             agreement=select_one(conn,'renegotiations',cid,item_id)
+            ensure_open(conn,cid,day[:7],'financial')
+            ensure_open(conn,cid,agreement['date'][:7],'financial')
             if agreement['reversed_at']:raise DomainError('Renegociação já revertida.',409)
             if day<agreement['date']:raise DomainError('Reversão anterior ao acordo.')
             new=[self._title(conn,cid,t['id']) for t in conn.execute('SELECT id FROM titles WHERE company_id=? AND source_key LIKE ?',(cid,f'renegotiation:{item_id}:%'))]

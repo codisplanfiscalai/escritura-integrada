@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -191,11 +192,15 @@ class Database:
         if not data_dir:
             if os.name == "nt":
                 data_dir = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "EscrituraIntegrada"
+            elif sys.platform == "darwin":
+                data_dir = Path.home() / "Library/Application Support/Codisplan/Escritura Integrada/data"
             else:
                 data_dir = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share"))) / "escritura-integrada"
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.path = self.data_dir / "escritura.sqlite3"
+        from .maintenance import backup_before_schema
+        self.upgrade_backup = backup_before_schema(self.path)
         with self.read() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
@@ -231,17 +236,14 @@ class Database:
             conn.execute("BEGIN IMMEDIATE")
             expected = request_context.get()
             if expected:
-                session = conn.execute("SELECT active_company_id,period,expires_at FROM sessions WHERE token_hash=?", (expected["token_hash"],)).fetchone()
+                session = conn.execute("SELECT active_company_id,period,module,expires_at FROM sessions WHERE token_hash=?", (expected["token_hash"],)).fetchone()
                 if not session or session["expires_at"] <= time.time():
                     raise ContextConflict("A sessão foi encerrada. Entre novamente antes de salvar.")
                 if expected.get("user_id"):
-                    user = conn.execute("SELECT role,active FROM users WHERE id=?", (expected["user_id"],)).fetchone()
-                    if not user or not user["active"] or (expected.get("write") and user["role"] == "viewer") or (expected.get("admin") and user["role"] != "admin"):
-                        raise ContextConflict("A permissão foi alterada. Entre novamente.")
-                    permission_cid = expected.get("permission_company_id")
-                    if permission_cid and user["role"] != "admin" and not conn.execute("SELECT 1 FROM user_companies WHERE user_id=? AND company_id=?", (expected["user_id"], permission_cid)).fetchone():
-                        raise ContextConflict("A permissão para esta empresa foi revogada.")
-                if expected.get("company_id") is not None and (session["active_company_id"] != expected["company_id"] or session["period"] != expected["period"]):
+                    from .permissions import require
+                    require(conn, expected["user_id"], expected.get("permission_company_id"),
+                            expected.get("routine"), expected.get("action", "read"), expected.get("admin", False))
+                if expected.get("company_id") is not None and (session["active_company_id"] != expected["company_id"] or session["period"] != expected["period"] or (expected.get("module") and session["module"] != expected["module"])):
                     raise ContextConflict("A empresa ou competência ativa mudou. Reabra o lançamento no contexto correto.")
             yield conn
             conn.commit()

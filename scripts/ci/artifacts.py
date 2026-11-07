@@ -69,7 +69,7 @@ def validate_images(path, plan, *, published):
     return data
 
 
-def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_dir, output_dir):
+def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_dir, output_dir, macos_dir=None):
     validate_plan(plan)
     root, windows_dir, reports_dir, deploy_dir, output_dir = map(Path, (root, windows_dir, reports_dir, deploy_dir, output_dir))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -82,7 +82,7 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
     browser_dir = reports_dir / 'browser'
     browser = require_report(browser_dir / 'report.json', plan)
     screenshots = browser.get('screenshots', [])
-    if len(browser.get('checks', [])) < 8 or len(screenshots) < 3 or browser.get('console_errors'):
+    if len(browser.get('checks', [])) < 12 or len(screenshots) < 3 or browser.get('console_errors'):
         raise ReleaseError('Gate do navegador não completou os fluxos e capturas.')
     for name in screenshots:
         if not isinstance(name, str) or Path(name).name != name or not name.endswith('.png') or not (browser_dir / name).is_file():
@@ -97,6 +97,28 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
     archive_name = prefix + 'windows-x64.zip'
     if windows.get('archive') != archive_name or windows.get('sha256') != file_hash(windows_dir / archive_name):
         raise ReleaseError('O ZIP Windows não corresponde ao pacote testado.')
+    installer = require_report(windows_dir / 'windows-installer-build.json', plan)
+    installed = require_report(windows_dir / 'windows-installer-smoke.json', plan, source=False)
+    installer_name = prefix + 'windows-x64-setup.exe'
+    if installer.get('installer') != installer_name or installer.get('sha256') != file_hash(windows_dir / installer_name) or len(installed.get('checks',[])) < 7:
+        raise ReleaseError('Instalador Windows não corresponde aos testes de instalação/atualização.')
+    installed_gui=require_report(windows_dir / 'windows-installed-gui.json',plan,source=False)
+    installed_processes=installed_gui.get('supervisor',{})
+    if not installed_gui.get('packaged') or not installed_gui.get('shutdown_complete') or installed_processes.get('forced_cleanup') is not False or installed_processes.get('remaining_processes')!=0 or installed_processes.get('root_exit_code')!=0:
+        raise ReleaseError('Aplicativo instalado não concluiu abertura/encerramento sem processos remanescentes.')
+    macos_dir=Path(macos_dir) if macos_dir else reports_dir.parent/'macos'
+    for arch in ('arm64','x64'):
+        folder=macos_dir/arch
+        build=require_report(folder/f'macos-{arch}-build.json',plan)
+        native=require_report(folder/f'macos-{arch}-smoke.json',plan)
+        package=prefix+f'macos-{arch}.pkg'
+        if build.get('package')!=package or build.get('sha256')!=file_hash(folder/package) or not native.get('installed') or not native.get('updated') or native.get('forced_cleanup') is not False or native.get('remaining_processes')!=0:
+            raise ReleaseError('Pacote macOS sem instalação, atualização ou encerramento nativos comprovados: '+arch)
+        for name in (package,f'macos-{arch}-build.json',f'macos-{arch}-smoke.json',f'macos-{arch}-smoke.png'):
+            copy_file(folder/name,output_dir/(name if name==package else prefix+name))
+    copy_file(windows_dir/installer_name,output_dir/installer_name)
+    for name in ('windows-installer-build.json','windows-installer-smoke.json','windows-installed-gui.json','windows-installed-gui.png'):
+        copy_file(windows_dir/name,output_dir/(prefix+name))
     images = validate_images(images_manifest, plan, published=True)
     validate_images(reports_dir / 'images-validated.json', plan, published=False)
     deployment = read_json(deploy_dir / (prefix + 'deploy-manifest.json'))
@@ -139,8 +161,8 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
     for path in files:
         if path.stat().st_size >= MAX_ASSET_BYTES:
             raise ReleaseError('Asset excede o limite de upload: ' + path.name)
-    manifest = {'schema_version': 1, 'application': 'Escritura Integrada', 'version': plan['version'], 'channel': plan['channel'], 'repository': plan['repository'], 'source_sha': plan['source_sha'], 'tag': plan['tag'], 'run_id': plan['run_id'], 'run_number': plan['run_number'], 'created_at': datetime.now(timezone.utc).isoformat(), 'gates': {'linux': True, 'windows_packaged': True, 'docker_validation': True, 'docker_published_smoke': True, 'offline_load': True}, 'images': images['images'], 'public_pullable': images.get('public_pullable'), 'platforms': ['windows/x64', 'linux/amd64'], 'assets': [{'name': path.name, 'size': path.stat().st_size, 'sha256': file_hash(path)} for path in files]}
-    manifest['gates']['browser_flows'] = True
+    manifest = {'schema_version': 1, 'application': 'Escritura Integrada', 'version': plan['version'], 'channel': plan['channel'], 'repository': plan['repository'], 'source_sha': plan['source_sha'], 'tag': plan['tag'], 'run_id': plan['run_id'], 'run_number': plan['run_number'], 'created_at': datetime.now(timezone.utc).isoformat(), 'gates': {'linux': True, 'windows_packaged': True, 'docker_validation': True, 'docker_published_smoke': True, 'offline_load': True}, 'images': images['images'], 'public_pullable': images.get('public_pullable'), 'platforms': ['windows/x64', 'macos/arm64', 'macos/x64', 'linux/amd64'], 'assets': [{'name': path.name, 'size': path.stat().st_size, 'sha256': file_hash(path)} for path in files]}
+    manifest['gates'].update(browser_flows=True,windows_installer=True,macos_arm64=True,macos_x64=True)
     write_json(output_dir / (prefix + 'manifest.json'), manifest)
     checksums = ''.join(file_hash(path) + '  ' + path.name + '\n' for path in sorted(output_dir.iterdir()) if path.is_file())
     (output_dir / (prefix + 'SHA256SUMS.txt')).write_text(checksums, encoding='ascii')
@@ -152,13 +174,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--plan', type=Path, default=Path('build/ci-plan.json'))
     parser.add_argument('--windows-dir', type=Path, default=Path('artifacts/windows'))
+    parser.add_argument('--macos-dir',type=Path,default=Path('artifacts/macos'))
     parser.add_argument('--reports-dir', type=Path, default=Path('artifacts/reports'))
     parser.add_argument('--images-manifest', type=Path, default=Path('artifacts/images-published.json'))
     parser.add_argument('--deploy-dir', type=Path, default=Path('artifacts/deploy'))
     parser.add_argument('--output-dir', type=Path, default=Path('artifacts/release'))
     args = parser.parse_args()
     try:
-        manifest = assemble(read_json(args.plan), root=Path.cwd(), windows_dir=args.windows_dir, reports_dir=args.reports_dir, images_manifest=args.images_manifest, deploy_dir=args.deploy_dir, output_dir=args.output_dir)
+        manifest = assemble(read_json(args.plan), root=Path.cwd(), windows_dir=args.windows_dir, macos_dir=args.macos_dir, reports_dir=args.reports_dir, images_manifest=args.images_manifest, deploy_dir=args.deploy_dir, output_dir=args.output_dir)
         print(json.dumps({'version': manifest['version'], 'assets': len(manifest['assets']), 'output_dir': str(args.output_dir)}, ensure_ascii=False))
     except (OSError, ValueError, KeyError, ReleaseError, subprocess.SubprocessError) as exc:
         parser.exit(1, str(exc) + '\n')

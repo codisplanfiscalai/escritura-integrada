@@ -1,6 +1,6 @@
 """Conciliação bancária por alocações, com baixa apenas quando solicitada."""
 from datetime import date
-from .core import DomainError, audit, decimal_text, integer, money, now, select_one, text
+from .core import DomainError, audit, decimal_text, integer, money, now, select_one, text, ensure_open
 
 class ReconciliationMixin:
     def _bank(self,conn,cid,item_id):
@@ -44,6 +44,7 @@ class ReconciliationMixin:
             key,hashed,previous=self._operation(conn,cid,scope,payload)
             if previous:return previous
             bank=self._bank(conn,cid,item_id)
+            ensure_open(conn,cid,bank['date'][:7],'financial')
             if bank['reconciled']:raise DomainError('Movimento já conciliado.',409)
             if any(not isinstance(e,dict) for e in entries):raise DomainError('Alocação inválida.')
             if len({e.get('title_id') for e in entries})!=len(entries):raise DomainError('Título repetido no rateio.')
@@ -76,6 +77,8 @@ class ReconciliationMixin:
         reason=text(payload.get('reason'),'Motivo para desfazer o vínculo',True,1000)
         with self.db.transaction() as conn:
             a=select_one(conn,'bank_allocations',cid,item_id)
+            bank=self._bank(conn,cid,a['transaction_id'])
+            ensure_open(conn,cid,bank['date'][:7],'financial')
             if a['reversed_at']:raise DomainError('Vínculo já desfeito.',409)
             conn.execute('UPDATE bank_allocations SET reversed_at=? WHERE id=?',(now(),item_id))
             audit(conn,cid,actor,'unallocate','bank_transaction',a['transaction_id'],{'allocation_id':item_id,'reason':reason,'settlement_preserved':a['settlement_id']})

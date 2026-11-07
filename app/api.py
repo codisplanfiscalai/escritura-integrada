@@ -80,24 +80,43 @@ def create_app(data_dir=None, demo=False):
                     return JSONResponse({"detail": "Entre no aplicativo para acessar os dados.", "code": "unauthenticated"}, 401)
                 match_permission = re.match(r"^/api/companies/(\d+)(?:/|$)", path)
                 permission_cid = int(match_permission.group(1)) if match_permission else None
-                privileged = path.startswith('/api/users') or (path == '/api/companies' and mutating)
+                from .permissions import route_policy
+                payload = {}
+                if mutating and 'application/json' in request.headers.get('content-type', ''):
+                    try:
+                        parsed = await request.json()
+                        payload = parsed if isinstance(parsed, dict) else {}
+                    except ValueError:
+                        pass
+                if path=='/api/templates' and mutating and payload.get('source_company_id')!=session['active_company_id']:
+                    return JSONResponse({'detail':'Ative a empresa de origem antes de criar o modelo.','code':'stale_context'},409)
+                routine, action, privileged = route_policy(path, method, request.query_params, payload, session)
+                if permission_cid is None and routine:
+                    permission_cid = session['active_company_id']
+                if routine and permission_cid is None and not (routine=='lookup' and session['user']['role']=='admin'):
+                    return JSONResponse({'detail':'Ative uma empresa antes de acessar esta rotina.','code':'no_company'},409)
                 writing = mutating and path not in {'/api/context', '/api/logout'}
                 try:
-                    core.authorize(session['user'], permission_cid, writing, privileged)
+                    core.authorize(session['user'], permission_cid, writing, privileged, routine, action or 'read')
                 except DomainError as exc:
                     return JSONResponse({'detail': exc.detail, 'code': exc.code}, exc.status)
                 if mutating:
                     csrf = request.headers.get("x-csrf-token", "")
                     if not csrf or not hmac.compare_digest(csrf, session["csrf_token"]):
                         return JSONResponse({"detail": "Confirmação de sessão inválida. Atualize a página.", "code": "invalid_csrf"}, 403)
-                    expected = {"token_hash": digest(token.encode()), "user_id": session["user"]["id"], "write": writing, "admin": privileged, "permission_company_id": permission_cid}
+                    expected = {"token_hash": digest(token.encode()), "user_id": session["user"]["id"], "write": writing, "admin": privileged, "permission_company_id": permission_cid, "routine": routine, "action": action or 'read'}
                     match = re.match(r"^/api/companies/(\d+)/", path)
                     if match:
                         cid = int(match.group(1))
                         if session["active_company_id"] != cid:
                             return JSONResponse({"detail": "A empresa ativa mudou. Reabra o lançamento no contexto correto.", "code": "stale_context"}, 409)
-                        expected.update(company_id=cid, period=session["period"])
+                        for header, value in [('x-company-id',str(cid)),('x-period',session['period']),('x-module',session.get('module','fiscal'))]:
+                            if request.headers.get(header) and request.headers[header] != value:
+                                return JSONResponse({'detail':'O contexto mudou. Reabra a operação na empresa, módulo e competência apresentados.','code':'stale_context'},409)
+                        expected.update(company_id=cid, period=session["period"], module=session.get('module','fiscal'))
                     ctx_token = request_context.set(expected)
+                else:
+                    ctx_token = request_context.set({"token_hash":digest(token.encode()),"user_id":session["user"]["id"],"write":False,"permission_company_id":permission_cid,"routine":routine,"action":action or "read"})
         try:
             response = await call_next(request)
         finally:
@@ -177,9 +196,10 @@ def create_app(data_dir=None, demo=False):
         all_companies = core.companies()
         if request.state.session['user']['role'] == 'admin':
             return all_companies
+        allowed = set(core.allowed_companies(request.state.session['user']['id']))
+        from .permissions import decision
         with database.read() as conn:
-            allowed = {r[0] for r in conn.execute('SELECT company_id FROM user_companies WHERE user_id=?', (request.state.session['user']['id'],))}
-        return [c for c in all_companies if c['id'] in allowed]
+            return [c|{'can_edit':decision(conn,request.state.session['user']['id'],c['id'],'system.companies','edit')['allowed']} for c in all_companies if c['id'] in allowed]
 
     @application.post("/api/companies", status_code=201)
     def create_company(request: Request, payload: dict[str, Any] = Body(...)):
@@ -260,12 +280,12 @@ def create_app(data_dir=None, demo=False):
 
     @application.post("/api/companies/{cid}/titles", status_code=201)
     def create_title(cid: int, request: Request, payload: dict[str, Any] = Body(...)):
+        check_date(request,payload.get("issue_date"),"Emissão do título")
         return core.create_title(cid, payload, actor(request))
 
     @application.post("/api/companies/{cid}/titles/{item_id}/settle")
     def settle_title(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
-        if payload.get("lines"):
-            check_date(request, payload.get("date"), "Baixa contábil")
+        check_date(request, payload.get("date"), "Baixa financeira")
         return core.settle_title(cid, item_id, payload, actor(request))
 
     @application.get("/api/companies/{cid}/banks")
@@ -278,10 +298,12 @@ def create_app(data_dir=None, demo=False):
 
     @application.post("/api/companies/{cid}/banks/{item_id}/reconcile")
     def reconcile(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
+        with database.read() as conn:check_date(request,select_one(conn,"bank_transactions",cid,item_id)["date"])
         return core.reconcile(cid, item_id, payload, actor(request))
 
     @application.post("/api/companies/{cid}/banks/{item_id}/unreconcile")
     def unreconcile(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
+        with database.read() as conn:check_date(request,select_one(conn,"bank_transactions",cid,item_id)["date"])
         return core.unreconcile(cid, item_id, payload, actor(request))
 
     @application.get("/api/companies/{cid}/catalogs")
@@ -368,12 +390,10 @@ def create_app(data_dir=None, demo=False):
 
     @application.post("/api/companies/{cid}/periods/close")
     def close_period(cid: int, request: Request, payload: dict[str, Any] = Body(...)):
-        check_period(request, payload.get("period"))
         return core.set_period(cid, payload, actor(request), True)
 
     @application.post("/api/companies/{cid}/periods/reopen")
     def reopen_period(cid: int, request: Request, payload: dict[str, Any] = Body(...)):
-        check_period(request, payload.get("period"))
         return core.set_period(cid, payload, actor(request), False)
 
     @application.get("/api/companies/{cid}/reports/{kind}")
@@ -382,7 +402,13 @@ def create_app(data_dir=None, demo=False):
 
     @application.get("/api/companies/{cid}/dashboard")
     def dashboard(cid: int, request: Request, period: str | None = None):
-        return core.dashboard(cid, active_period(request, period))
+        result = core.dashboard(cid, active_period(request, period))
+        from .permissions import decision
+        with database.read() as conn:
+            for key,routine in [('documents','fiscal.documents'),('accounting','accounting.journals'),('financial','financial.titles'),('reconciliation','financial.reconciliation')]:
+                if not decision(conn,request.state.session['user']['id'],cid,routine,'read')['allowed']:
+                    result[key] = {k:0 for k in result[key]} | {'restricted':True}
+        return result
 
     @application.get("/api/companies/{cid}/audit")
     def audit_entries(cid: int, limit: int = 100):
@@ -390,6 +416,8 @@ def create_app(data_dir=None, demo=False):
 
     from .business_api import register_business_routes
     register_business_routes(application, core, database, actor, check_date, check_period)
+    from .management_api import register_management_routes
+    register_management_routes(application, core, database, actor)
 
     @application.get("/{resource_path:path}")
     def frontend_asset(resource_path: str):

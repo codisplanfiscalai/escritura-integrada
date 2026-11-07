@@ -1,0 +1,23 @@
+#!/bin/bash
+set -eu
+app_path='/Applications/Escritura Integrada.app'
+if /usr/bin/pgrep -f '/Contents/MacOS/EscrituraIntegrada' >/dev/null; then
+  echo 'Salve o trabalho e encerre Escritura Integrada pelo menu Sair antes de atualizar.' >&2
+  exit 1
+fi
+if [ "$(/usr/bin/uname -m)" != '@@ARCH@@' ]; then
+  echo 'Este pacote exige macOS @@ARCH@@. Use o instalador da arquitetura deste Mac.' >&2
+  exit 1
+fi
+if [ "$(/usr/bin/sw_vers -productVersion | /usr/bin/cut -d. -f1)" -lt 15 ]; then
+  echo 'Este pacote exige macOS 15 ou superior.' >&2
+  exit 1
+fi
+previous=''
+if [ -f "$app_path/Contents/Info.plist" ]; then
+  previous=$(/usr/libexec/PlistBuddy -c 'Print :EscrituraSemVer' "$app_path/Contents/Info.plist" 2>/dev/null || true)
+fi
+"$(/usr/bin/dirname "$0")/EscrituraMaintenance" version-check --version '@@VERSION@@' --previous-version "$previous"
+# Dados de usuários ficam fora do bundle. A primeira abertura faz backup SQLite
+# antes de migrar, em transação; a falha preserva a base e a cópia anterior.
+exit 0

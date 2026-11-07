@@ -39,7 +39,7 @@ IMPORTER_SCOPE = {
     "ofc": "OFC 1.0.6: ACCTSTMT/ACCTFROM, TRNTYPE numérico, CHKNUM, data YYYYMMDD, valor com sinal. Leitor separado do OFX; sujeito a homologação por banco.",
     "qif": "Seções Bank/Cash/CCard/Oth A/Oth L, campos D/T/P/M/N e terminador ^. Datas locais exigem formato explícito; contas múltiplas e investimentos são recusados.",
     "zip": "Leitura em memória, limites de tamanho/quantidade/expansão/profundidade, sem extração de caminhos e sem seguir links.",
-    "rar_7z": "Não suportados nesta versão. Devolvem diagnóstico explícito; nenhum descompactador externo é executado.",
+    "rar_7z": "7z via py7zr; RAR via rarfile com libarchive (bsdtar no contêiner/macOS ou tar.exe no Windows) para entradas comprimidas. Sem leitor compatível, retorna diagnóstico e orienta ZIP/7z. Pacotes com senha, multipartes e codecs não suportados são recusados; limites e proteção de caminhos aplicados.",
 }
 
 SOURCE_DOCUMENTATION = [

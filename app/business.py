@@ -9,9 +9,12 @@ from .reconciliation import ReconciliationMixin
 from .reports import ReportsMixin
 from .prosoft import ProsoftMixin
 from .access import AccessMixin
+from .periods import PeriodMixin
 from .tax_assessment import TaxAssessmentMixin
+from .tax_ledger import TaxLedgerMixin,ensure_unfinalized
+from .fiscal_reports import FiscalReportsMixin
 
-class BusinessCore(AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
+class BusinessCore(TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
     def _validate_document_links(self,conn,cid,payload):
         for k,kind in [('participant_id','participant'),('establishment_id','establishment')]:
             if payload.get(k):
@@ -79,11 +82,14 @@ class BusinessCore(AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, 
             key,hashed,previous=self._operation(conn,cid,scope,payload)
             if previous:return previous
             doc=self._document(conn,cid,item_id);check_version(doc,payload)
-            ensure_open(conn,cid,doc['period'],'fiscal')
+            ensure_open(conn,cid,doc['period'],'fiscal');ensure_unfinalized(conn,cid,doc['period'])
             if doc['status']!='booked':raise DomainError('Somente documento escriturado pode ter sua escrituração revertida.',409)
             if day<doc['posting_date']:raise DomainError('Reversão não pode anteceder a escrituração.')
             titles=[self._title(conn,cid,r['id']) for r in conn.execute('SELECT id FROM titles WHERE company_id=? AND document_id=? AND cancelled=0',(cid,item_id))]
             for t in titles:
+                from .permissions import effect
+                effect(conn,cid,'financial.titles','reverse')
+                ensure_open(conn,cid,t['issue_date'][:7],'financial')
                 if t['paid_cents'] or t['allocations'] or conn.execute('SELECT 1 FROM reconciliations WHERE title_id=?',(t['id'],)).fetchone():
                     raise DomainError('Há baixa ou conciliação vinculada. Reverta esses efeitos antes da escrituração.',409)
             if conn.execute('SELECT 1 FROM titles WHERE company_id=? AND document_id=? AND renegotiation_id IS NOT NULL',(cid,item_id)).fetchone():
@@ -117,7 +123,11 @@ class BusinessCore(AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, 
                 e.pop('details_json',None)
                 if e['action']=='reverse-booking':
                     journal_ids.update(x for x in [e['details'].get('reversal_journal_id'),e['details'].get('before',{}).get('journal_id')] if x)
-            return {'document':doc,'titles':titles,'journals':[self._journal(conn,cid,i) for i in sorted(journal_ids)],'events':events,'renegotiations':agreements}
+            from .permissions import readable
+            return {'document':doc,'titles':titles if readable(conn,cid,'financial.titles') else [],
+                'journals':[self._journal(conn,cid,i) for i in sorted(journal_ids)] if readable(conn,cid,'accounting.journals') else [],
+                'events':events if readable(conn,cid,'system.audit') else [],
+                'renegotiations':agreements if readable(conn,cid,'financial.titles') else []}
 
     def create_opening(self,cid,payload,actor):
         day=iso_date(payload.get('date'))

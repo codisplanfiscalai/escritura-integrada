@@ -4,18 +4,16 @@ Aplicação única de escrituração fiscal, contábil e financeira para o escri
 
 [Releases estáveis](https://github.com/codisplanfiscalai/escritura-integrada/releases/latest) · [Pré-release contínua](https://github.com/codisplanfiscalai/escritura-integrada/releases/tag/develop) · [Builds](https://github.com/codisplanfiscalai/escritura-integrada/actions) · [Documentação de deploy](docs/DEPLOY.md)
 
-## Executar no Windows
+## Instalar no Windows ou macOS
 
-1. Abra a release estável ou a pré-release de desenvolvimento.
-2. Baixe o arquivo `EscrituraIntegrada-<versão>-windows-x64.zip`.
-3. Extraia o diretório completo e abra **EscrituraIntegrada.exe**.
-4. Na primeira execução, crie o acesso administrativo pela interface.
+Na [pré-release de desenvolvimento](https://github.com/codisplanfiscalai/escritura-integrada/releases/tag/develop), a linha 0.6 adiciona:
 
-O pacote contém Python, Qt/WebEngine, interface compilada, ícone e dependências. Não exige Python ou Node instalados, conexão com a internet para o núcleo local, nem instalação de serviço Windows. Os arquivos auxiliares devem permanecer junto ao executável.
+- Windows x64: `EscrituraIntegrada-<versão>-windows-x64-setup.exe`, com atualização da mesma instalação, backup e migração da distribuição portátil. O ZIP continua disponível.
+- macOS 15 ou posterior: `EscrituraIntegrada-<versão>-macos-arm64.pkg` para Apple Silicon e `...-macos-x64.pkg` para Intel, construídos e testados separadamente.
 
-O ícone da área de notificação oferece abertura da aplicação e administração de iniciar, parar, reiniciar, consultar status e configurar a execução. A preferência **Iniciar minimizado** vale para a abertura seguinte. Dados e configurações ficam fora do diretório do programa. Use **Sair** no tray para encerrar a execução local.
+O aplicativo inclui Python, Qt/WebEngine, frontend e dependências; o uso normal dispensa terminal ou serviço Windows. Programa e dados ficam separados. A desinstalação preserva os dados. Encerre pelo menu **Sair** no tray/barra de menus antes de atualizar. **Abrir, Iniciar, Parar, Reiniciar, Configurações** e iniciar minimizado permanecem disponíveis.
 
-Os binários são construídos no runner Windows e passam por um smoke do executável empacotado. Isso comprova inicialização, saúde, renderização básica e encerramento; não substitui a avaliação dos fluxos do escritório ou de todas as versões do Windows. Consulte [distribuição Windows](docs/DISTRIBUICAO_WINDOWS.md).
+Consulte [instalação, atualização e recuperação](docs/DISTRIBUICAO_DESKTOP.md). Os pacotes ainda não possuem Authenticode/Developer ID/notarização; os testes nativos não certificam Gatekeeper/SmartScreen. A release estável 0.4.1 conserva sua distribuição anterior.
 
 ## Executar com Docker
 
@@ -57,7 +55,7 @@ A visibilidade de um pacote GHCR é independente da visibilidade do repositório
 
 Exemplo: com `main` em `0.4.0`, desenvolvimento publica `0.4.1-dev.N`. Ao promover `0.4.1` para a linha estável, desenvolvimento avança para pelo menos `0.4.2-dev.N`.
 
-O pipeline calcula a versão, sincroniza os manifests, testa o núcleo e a interface, constrói o pacote Windows e as imagens, executa os respectivos smokes e publica assets com manifestos e SHA-256. A pré-release atualiza o mesmo marcador; releases estáveis não são reescritas. Uma publicação estável sincroniza a versão de desenvolvimento e solicita explicitamente seu novo workflow.
+O pipeline calcula a versão, sincroniza os manifests, testa o núcleo e a interface, constrói os pacotes Windows/macOS e as imagens, executa os respectivos smokes e publica assets com manifestos e SHA-256. A pré-release atualiza o mesmo marcador; releases estáveis não são reescritas. Uma publicação estável sincroniza a versão de desenvolvimento e solicita explicitamente seu novo workflow.
 
 Workflows:
 
@@ -77,6 +75,7 @@ Versionamento, concorrência, recuperação de falhas, caches e comandos de manu
 | Contabilidade | Plano por empresa, centros de custo, saldos iniciais, múltiplas partidas balanceadas, modelos com vigência e estornos rastreáveis |
 | Financeiro | Pagar/receber, parcelas, baixas parciais/totais com juros, multa e desconto; estorno de baixa e renegociação reversível |
 | Conciliação | Vínculos individuais ou rateados; baixa somente mediante escolha explícita; consulta de títulos e pagamentos por participante |
+| Exercícios e acessos | Doze meses por exercício/empresa/módulo; bloqueios independentes; grupos, concessões/bloqueios individuais, auditoria e permissões efetivas |
 | Relatórios | Diário, Diário Consolidado por dia, Razão, Balancete, centros de custo, Balanço/DRE por classificação, fiscal, títulos, caixa e participantes; CSV e impressão/PDF |
 | Parâmetros | CFOP, NCM, receitas, serviços, regras com vigência/versões e modelos reutilizáveis |
 | Pré-apuração | Bases revisadas, regras versionadas por tributo, ajustes, memória de cálculo e identificação de alterações posteriores |
@@ -131,3 +130,7 @@ python -m uvicorn app.api:app --host 127.0.0.1 --port 8765
 | `docs/` | Contratos, arquitetura, distribuição e validação |
 
 [Operação 0.5](docs/OPERACAO_0_5.md) · [Diagnóstico e histórico](docs/DIAGNOSTICO_EXPANSAO_0_5.md) · [Matriz de rastreabilidade](docs/MATRIZ_RASTREABILIDADE.md) · [Validação 0.5](docs/VALIDACAO_0_5.md) · [Contrato da API](docs/API.md)
+
+A [expansão 0.6](docs/EXPANSAO_0_6.md) documenta a precedência de permissões, a apuração revisada, a matriz de implementação/validação e as limitações concretas.
+
+Os cenários e os limites dos testes estão em [VALIDACAO_0_6.md](docs/VALIDACAO_0_6.md).

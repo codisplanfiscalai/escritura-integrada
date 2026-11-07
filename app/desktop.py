@@ -231,8 +231,17 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
     smoke_result = str(smoke.path) if smoke else None
     smoke_dir = (Path(os.environ.get("ESCRITURA_DESKTOP_SMOKE_PROFILE",
                                    str(smoke.path.parent / "desktop-smoke-profile"))).resolve() if smoke else None)
-    profile_dir = smoke_dir or Path(QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation))
+    from app.maintenance import default_profile
+    profile_dir = smoke_dir or Path(os.environ.get('ESCRITURA_DESKTOP_PROFILE') or
+        (str(default_profile()) if sys.platform == 'darwin' else QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)))
     profile_dir.mkdir(parents=True, exist_ok=True)
+    if (profile_dir / 'maintenance.json').exists():
+        from app.maintenance import recover
+        answer = QMessageBox.question(None, APP_NAME, 'Há uma manutenção interrompida. Deseja restaurar os dados anteriores a partir da cópia de segurança? A recuperação só será permitida se o instalador e a aplicação estiverem encerrados.', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes: return 1
+        try: recover(profile_dir)
+        except Exception as exc:
+            QMessageBox.warning(None, APP_NAME, str(exc)); return 1
     settings = QSettings(str(profile_dir / "config.ini"), QSettings.IniFormat)
     configure_logging(profile_dir)
 
@@ -474,6 +483,8 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             return Path(settings.value("data_dir", str(profile_dir / "data"), type=str)).expanduser()
 
         def start_application(self):
+            if getattr(self, '_maintenance', False):
+                return
             if controller.snapshot()["alive"]:
                 return
             self._healthy = False
@@ -676,7 +687,23 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                 const brand = document.querySelector('.app-shell .brand img');
                 const main = document.querySelector('.main-content');
                 const side = document.querySelector('.sidebar');
+                if (active?.value && !window.__escrituraSmokeExports) {
+                    window.__escrituraSmokeExports = {pending:true};
+                    const [month,year] = document.querySelector('#active-period').value.split('/');
+                    const start = `${year}-${month}-01`;
+                    const end = new Date(Date.UTC(Number(year),Number(month),0)).toISOString().slice(0,10);
+                    Promise.all(['pdf','xlsx'].map(async format => {
+                        const response = await fetch(`/api/companies/${active.value}/business-reports/fiscal-documents?start=${start}&end=${end}&format=${format}`);
+                        if (!response.ok) throw new Error(`Exportação ${format}: HTTP ${response.status}`);
+                        const bytes = new Uint8Array(await response.arrayBuffer());
+                        const prefix = String.fromCharCode(...bytes.slice(0,4));
+                        if (bytes.length < 1000 || !(format==='pdf'?prefix==='%PDF':prefix.startsWith('PK'))) throw new Error(`Arquivo ${format} inválido`);
+                        return [format,bytes.length];
+                    })).then(values => {window.__escrituraSmokeExports={...Object.fromEntries(values),pending:false};})
+                    .catch(error => {window.__escrituraSmokeExports={error:String(error),pending:false};});
+                }
                 return JSON.stringify({title:document.title, ready:document.readyState,
+                    exports:window.__escrituraSmokeExports || {},
                     app:Boolean(document.querySelector('.app-shell')),
                     loginRequested:Boolean(window.__escrituraSmokeLoginRequested),
                     mainTextLength:main?.innerText.length || 0,
@@ -698,7 +725,12 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                     dom = json.loads(value) if isinstance(value, str) else {}
                 except ValueError:
                     dom = {}
+                if dom.get("exports",{}).get("error"):
+                    self.finish_smoke(False,dom["exports"]["error"],dom)
+                    return
                 verified = (dom.get("app") and dom.get("ready") == "complete"
+                            and dom.get("exports",{}).get("pdf",0)>1000
+                            and dom.get("exports",{}).get("xlsx",0)>1000
                             and dom.get("loginRequested") and dom.get("companyId")
                             and dom.get("navigationItems", 0) >= 10
                             and dom.get("mainTextLength", 0) > 80
@@ -885,6 +917,9 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             note.setWordWrap(True)
             note.setStyleSheet("color: #4d5b63; margin: 12px 0;")
             layout.addWidget(note)
+            migration_button = QPushButton('Migrar dados de uma pasta portátil…')
+            migration_button.clicked.connect(self.migrate_portable)
+            layout.addWidget(migration_button)
             button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
             button_box.accepted.connect(dialog.accept)
             button_box.rejected.connect(dialog.reject)
@@ -906,6 +941,42 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             settings.sync()
             self.statusBar().showMessage("Configurações salvas. Pasta e porta serão aplicadas ao reiniciar a aplicação.", 10000)
 
+        def migrate_portable(self):
+            if controller.snapshot()['alive']:
+                QMessageBox.information(self, 'Migração de dados', 'Salve o trabalho e use Parar antes de migrar. Depois abra novamente Configurações. Nenhum processo será encerrado à força.')
+                return
+            source = QFileDialog.getExistingDirectory(self, 'Pasta de dados portátil — contém escritura.sqlite3')
+            if not source:
+                return
+            from app.maintenance import inspect, prepare, finish, rollback
+            try:
+                information = inspect(profile_dir, source)
+                answer = QMessageBox.question(self, 'Conferir migração',
+                    f"Origem: {information['data_dir']}\nDestino: {self.current_data_dir()}\n"
+                    f"Empresas: {information['companies']} · Usuários: {information['users']}\n\n"
+                    'A origem será preservada. O destino deve estar vazio ou ser a própria base atual; não há mesclagem. Confirmar a cópia e validação?',
+                    QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
+                if answer != QMessageBox.Yes:
+                    return
+                self._maintenance = True
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+                try:
+                    settings.sync()
+                    result = prepare(profile_dir, application_version(), source, allow_pid=os.getpid())
+                    finish(profile_dir)
+                    settings.sync()
+                except Exception:
+                    if (profile_dir / 'maintenance.json').exists():
+                        rollback(profile_dir)
+                    raise
+                finally:
+                    QApplication.restoreOverrideCursor()
+                    self._maintenance = False
+                QMessageBox.information(self, 'Migração concluída',
+                    f"{result['companies']} empresa(s) preservada(s). A origem permanece intacta. Use Iniciar para abrir os dados migrados.")
+            except Exception as exc:
+                QMessageBox.warning(self, 'Migração não concluída', str(exc))
+
     window = DesktopWindow()
     minimized = settings.value("start_minimized", False, type=bool)
     if smoke_result or not minimized or not QSystemTrayIcon.isSystemTrayAvailable():
@@ -926,6 +997,14 @@ def main() -> int:
     project = str(Path(__file__).resolve().parents[1])
     if project not in sys.path:
         sys.path.insert(0, project)
+    if sys.platform == 'win32':
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel.CreateMutexW.restype = wintypes.HANDLE
+        global _APPLICATION_MUTEX
+        _APPLICATION_MUTEX = kernel.CreateMutexW(None, False, 'EscrituraIntegrada.Application')
     smoke = None
     try:
         result = os.environ.get("ESCRITURA_DESKTOP_SMOKE_RESULT")

@@ -1,6 +1,7 @@
 <script setup>
 import {computed} from 'vue';import Icon from '../components/Icon.vue';import EmptyState from '../components/EmptyState.vue';
-import {state,company,api,scope,useResource,rows} from '../lib/workspace';import {money,date,statusLabel} from '../lib/format';
+import {state,company,api,scope,useResource,rows} from '../lib/workspace';
+import {can,allowedApi,writable} from '../lib/workspace';import {money,date,statusLabel} from '../lib/format';
 const {data,loading,error}=useResource(async()=>{if(!state.companyId)return null;const[d,j,t]=await Promise.all([api(scope(`/dashboard?period=${state.period}`)),api(scope(`/journals?period=${state.period}`)),api(scope('/titles'))]);return {...d,recent:rows(j).slice(0,5),titles:rows(t).filter(t=>t.balance_cents>0).sort((a,b)=>a.due_date.localeCompare(b.due_date)).slice(0,3)};},null);
 const cards=computed(()=>[{label:'Documentos na competência',value:data.value?.documents?.count||0,sub:`${data.value?.documents?.pending||0} aguardando conferência`,icon:'documents',color:'blue'},{label:'Movimento contábil',value:money(data.value?.accounting?.debit_cents),sub:`${data.value?.accounting?.journals||0} lançamentos escriturados`,icon:'journal',color:'teal'},{label:'Contas a pagar',value:money(data.value?.financial?.payable_cents),sub:'Saldo de obrigações em aberto',icon:'out',color:'amber'},{label:'Contas a receber',value:money(data.value?.financial?.receivable_cents),sub:'Saldo de direitos em aberto',icon:'in',color:'green'}]);
 const go=tab=>state.tab=tab;

@@ -72,7 +72,8 @@ def migrate(conn):
         if 'reversed_at' not in {r['name'] for r in conn.execute('PRAGMA table_info(renegotiations)')}:
             conn.execute('ALTER TABLE renegotiations ADD COLUMN reversed_at TEXT')
         conn.execute("UPDATE settlements SET cash_cents=amount_cents WHERE cash_cents IS NULL")
-        conn.execute("INSERT INTO meta VALUES('schema_version','2') ON CONFLICT(key) DO UPDATE SET value='2'")
+        from .migration_v3 import migrate_v3
+        migrate_v3(conn)
         conn.commit()
     except BaseException:
         conn.rollback()
