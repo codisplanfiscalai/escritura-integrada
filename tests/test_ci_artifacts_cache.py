@@ -29,6 +29,12 @@ class ArtifactGatesTests(unittest.TestCase):
         common = {'ok': True, 'version': self.plan['version'], 'source_sha': self.plan['source_sha']}
         write_json(self.reports / 'linux-checks.json', dict(common, tests_run=5))
         (self.reports / 'linux-checks.log').write_text('Fixture: all checks passed\n', encoding='utf-8')
+        browser_dir = self.reports / 'browser'
+        browser_dir.mkdir()
+        screenshots = ['desktop.png', 'tablet.png', 'mobile.png']
+        write_json(browser_dir / 'report.json', dict(common, checks=['fixture'] * 8, screenshots=screenshots, console_errors=[]))
+        for name in screenshots:
+            (browser_dir / name).write_bytes(b'fixture-screenshot-for-gate-test')
         self.windows_zip = self.windows / (self.prefix + 'windows-x64.zip')
         with zipfile.ZipFile(self.windows_zip, 'w') as output:
             output.writestr('fixture.txt', 'Test fixture; not a Windows executable.')
@@ -72,6 +78,8 @@ class ArtifactGatesTests(unittest.TestCase):
         final = self.root / 'final'
         files, _, _ = validate_assets(self.plan, final)
         self.assertIn(self.prefix + 'windows-x64.zip', {item.name for item in files})
+        self.assertIn(self.prefix + 'browser-evidence.zip', {item.name for item in files})
+        self.assertTrue(result['gates']['browser_flows'])
         asset = final / self.windows_zip.name
         asset.write_bytes(asset.read_bytes() + b'modified after assembly')
         with self.assertRaises(ReleaseError):
@@ -99,6 +107,16 @@ class ArtifactGatesTests(unittest.TestCase):
                 self.mutate(smoke, supervisor=supervisor)
                 with self.assertRaisesRegex(ReleaseError, 'processos'):
                     self.assemble('orphan-' + str(number))
+
+    def test_browser_evidence_requires_same_commit_and_all_captures(self):
+        report = self.reports / 'browser' / 'report.json'
+        self.mutate(report, source_sha='e' * 40)
+        with self.assertRaisesRegex(ReleaseError, 'outro commit'):
+            self.assemble('browser-old')
+        self.mutate(report, source_sha=self.plan['source_sha'])
+        (self.reports / 'browser' / 'mobile.png').unlink()
+        with self.assertRaisesRegex(ReleaseError, 'Captura'):
+            self.assemble('browser-missing')
 
     def test_modified_windows_or_offline_payload_is_rejected_before_copy(self):
         original = self.windows_zip.read_bytes()

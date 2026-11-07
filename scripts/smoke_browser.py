@@ -19,7 +19,9 @@ OUT=ROOT/'artifacts'/'browser'
 
 def main():
     OUT.mkdir(parents=True,exist_ok=True)
-    report={'ok':False,'console_errors':[],'checks':[],'screenshots':[],'lookup_fixture':True}
+    report={'ok':False,'version':(ROOT/'VERSION').read_text().strip(),
+        'source_sha':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+        'console_errors':[],'checks':[],'screenshots':[],'lookup_fixture':True}
     process=None
     try:
         with tempfile.TemporaryDirectory(prefix='escritura-browser-') as folder:
@@ -36,6 +38,7 @@ def main():
                 else:raise RuntimeError('Servidor de teste não iniciou.')
                 with sync_playwright() as playwright:
                     browser=playwright.chromium.launch(headless=True)
+                    report['browser_version']=browser.version
                     page=browser.new_page(viewport={'width':1440,'height':1000})
                     page.on('pageerror',lambda e:report['console_errors'].append(str(e)))
                     page.set_default_timeout(15000)
@@ -150,7 +153,7 @@ def main():
                         assert Path(download.value.path()).read_bytes()==(ROOT/'tests/fixtures/extrato_ficticio.csv').read_bytes()
                         check('Importação CSV pela interface preserva autenticação e confirmação')
                         nav('Livros e relatórios')
-                        page.get_by_label('Relatório',exact=False).select_option('trial-balance')
+                        page.get_by_label(re.compile('^Relatório')).select_option('trial-balance')
                         page.get_by_role('button',name='Gerar relatório',exact=True).click()
                         expect(page.get_by_role('heading',name='Balancete',exact=True)).to_be_visible()
                         shot('balancete-1440.png')

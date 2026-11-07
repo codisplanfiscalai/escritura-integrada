@@ -79,6 +79,14 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
     linux = require_report(reports_dir / 'linux-checks.json', plan)
     if linux.get('tests_run', 0) < 1:
         raise ReleaseError('Gate Linux não executou testes.')
+    browser_dir = reports_dir / 'browser'
+    browser = require_report(browser_dir / 'report.json', plan)
+    screenshots = browser.get('screenshots', [])
+    if len(browser.get('checks', [])) < 8 or len(screenshots) < 3 or browser.get('console_errors'):
+        raise ReleaseError('Gate do navegador não completou os fluxos e capturas.')
+    for name in screenshots:
+        if not isinstance(name, str) or Path(name).name != name or not name.endswith('.png') or not (browser_dir / name).is_file():
+            raise ReleaseError('Captura do navegador ausente ou inválida.')
     windows = require_report(windows_dir / 'windows-build.json', plan)
     smoke = require_report(windows_dir / 'windows-smoke.json', plan, source=False)
     if windows.get('smoke_executed') is not True or windows.get('smoke_ok') is not True or not smoke.get('packaged') or not smoke.get('shutdown_complete'):
@@ -120,12 +128,19 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
     for filename in ('linux-checks.json', 'linux-checks.log', 'images-validated.json'):
         copy_file(reports_dir / filename, output_dir / (prefix + filename))
     copy_file(images_manifest, output_dir / (prefix + 'images.json'))
+    with zipfile.ZipFile(output_dir / (prefix + 'browser-evidence.zip'), 'w', zipfile.ZIP_DEFLATED) as bundle:
+        for name in ['report.json', *screenshots]:
+            path = browser_dir / name
+            if path.is_symlink() or path.stat().st_size < 1:
+                raise ReleaseError('Evidência do navegador inválida: ' + name)
+            bundle.write(path, arcname=name)
     archive_source(root, plan, output_dir / (prefix + 'source.zip'))
     files = sorted(path for path in output_dir.iterdir() if path.is_file())
     for path in files:
         if path.stat().st_size >= MAX_ASSET_BYTES:
             raise ReleaseError('Asset excede o limite de upload: ' + path.name)
     manifest = {'schema_version': 1, 'application': 'Escritura Integrada', 'version': plan['version'], 'channel': plan['channel'], 'repository': plan['repository'], 'source_sha': plan['source_sha'], 'tag': plan['tag'], 'run_id': plan['run_id'], 'run_number': plan['run_number'], 'created_at': datetime.now(timezone.utc).isoformat(), 'gates': {'linux': True, 'windows_packaged': True, 'docker_validation': True, 'docker_published_smoke': True, 'offline_load': True}, 'images': images['images'], 'public_pullable': images.get('public_pullable'), 'platforms': ['windows/x64', 'linux/amd64'], 'assets': [{'name': path.name, 'size': path.stat().st_size, 'sha256': file_hash(path)} for path in files]}
+    manifest['gates']['browser_flows'] = True
     write_json(output_dir / (prefix + 'manifest.json'), manifest)
     checksums = ''.join(file_hash(path) + '  ' + path.name + '\n' for path in sorted(output_dir.iterdir()) if path.is_file())
     (output_dir / (prefix + 'SHA256SUMS.txt')).write_text(checksums, encoding='ascii')

@@ -56,3 +56,5 @@ O ponto de partida já possuía isolamento de empresa por sessão, transações 
 - Windows x64 é o alvo estabelecido. x86 e ARM64 não foram acrescentados. Não há sincronização automática entre bancos independentes de Windows e Docker.
 
 Consulte a [matriz de rastreabilidade](MATRIZ_RASTREABILIDADE.md), os [contratos e limites de operação](OPERACAO_0_5.md) e o [registro de validação](VALIDACAO_0_5.md).
+
+A cópia `Projetos de engenharia reversa(1).mhtml` também foi conferida: possui os mesmos 4.151.433 bytes e SHA-256 `8bc5503e5973aac8f8ed1b139b0eeaf4fa3376b5c03ec1e3686ccf9fa5561d51` do MHTML lido, sem conteúdo adicional de ramificações.

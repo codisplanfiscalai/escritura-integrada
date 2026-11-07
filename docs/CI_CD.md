@@ -117,3 +117,5 @@ A chave npm ignora a versão do projeto e considera o lock de dependências; uma
 ## Fluxos no navegador
 
 Os jobs Linux de PR e release executam `scripts/smoke_browser.py` com Chromium/Playwright 1.62.0, depois dos testes Python, testes de datas e build Vue. O cenário usa exclusivamente dados fictícios, com consulta CNPJ simulada e declarada no relatório. Percorre edição sem ativação indevida, cadastro assistido, documento → títulos/contabilidade, baixa/estorno, importação e relatório. Verifica transbordamento nas larguras 1440, 1024 e 390. Capturas e JSON ficam no artefato `browser-evidence`, inclusive em falha, por 14 dias. Esse gate não comprova disponibilidade dos provedores externos nem homologação tributária.
+
+A release também recebe `EscrituraIntegrada-<versão>-browser-evidence.zip`, com relatório e capturas. A montagem verifica aprovação, versão e commit, oito verificações concluídas e presença das imagens; o pacote integra o manifesto de hashes da distribuição.
