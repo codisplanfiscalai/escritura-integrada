@@ -24,6 +24,8 @@ Classificação OK corresponde a `MATCH_EXACT`. Achados tratados ou justificados
 
 A revisão de relatório inclui a versão do modelo. Relatórios anteriores permanecem imutáveis e baixáveis. As abas técnicas anteriores foram mantidas, ocultas, no Excel; as abas operacionais são exibidas primeiro. Não houve migração de banco nem modificação de documentos, títulos ou partidas. A prévia PDF permite enquadramento apenas pela mesma origem, exclusivamente nas respostas PDF inline autorizadas do Auditor; o restante da aplicação mantém bloqueio de enquadramento.
 
+No aplicativo Windows/macOS, a abertura utiliza o visualizador PDF nativo existente. Frames PDF são oferecidos somente em navegadores com leitor embutido disponível, evitando prévias vazias no Qt. Essa seleção também vale para os documentos auxiliares. O painel Excel foi renderizado ao lado do modelo original e teve alinhamento dos indicadores e altura das prioridades conferidos.
+
 ## Comparação reproduzível
 
 ```bash
