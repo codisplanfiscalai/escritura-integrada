@@ -16,6 +16,7 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     def date_field(label):return page.locator('label').filter(has_text=re.compile('^'+re.escape(label))).locator('input.date-input-field')
     def select_account(line,code):
         select=page.get_by_label(f'Conta da partida {line}',exact=True)
+        expect(select.locator('option').filter(has_text=re.compile('^'+re.escape(code)+' ·'))).to_have_count(1)
         options=select.locator('option').all_text_contents()
         index=next(i for i,label in enumerate(options) if label.startswith(code+' ·'))
         value=select.locator('option').nth(index).get_attribute('value')
