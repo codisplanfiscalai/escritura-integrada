@@ -10,7 +10,8 @@ def analytics(documents, findings):
     active=[d for d in documents if d.get('status') not in {'cancelled','outside_period'}]
     items=[i for d in active for i in d.get('items',[])]
     def total(rows,key): return str(sum((Decimal(str(r.get(key) or 0)) for r in rows),Decimal(0)))
-    return {'overview': {'documents':len(active),'items':len(items),'findings':len(findings),
+    from .auditor_presentation import analysis_details
+    return {**analysis_details(documents,findings),'overview': {'documents':len(active),'items':len(items),'findings':len(findings),
         'input_count':sum(d['direction']=='entrada' for d in active),'output_count':sum(d['direction']=='saida' for d in active),
         'total_value':total(active,'total_value'),'input_value':total([d for d in active if d['direction']=='entrada'],'total_value'),
         'output_value':total([d for d in active if d['direction']=='saida'],'total_value'),
@@ -79,7 +80,7 @@ def bookkeeping_document(booked):
 
 def report_revision(job):
     return digest({'snapshot':job['result']['snapshot_sha256'],'result':job['result'],
-                   'findings':job['findings'],'stale':job.get('stale_document_ids',[]),'logs':job.get('logs',[]),'attachments':job.get('attachments',[]),'template':'auditor-v2'})
+                   'findings':job['findings'],'stale':job.get('stale_document_ids',[]),'logs':job.get('logs',[]),'attachments':job.get('attachments',[]),'template':'auditor-v3-editorial'})
 
 
 def persist_report(core,conn,cid,job,fmt,content,actor):
