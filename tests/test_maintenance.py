@@ -28,10 +28,10 @@ class MaintenanceTests(unittest.TestCase):
         result=prepare(self.profile,'0.6.0-dev.1')
         self.assertTrue(result['ok']);self.assertTrue(Path(result['backup']).is_dir())
         self.assertEqual(before,integrity(self.data/'escritura.sqlite3'))
-        self.assertEqual('Conteúdo preservado',(self.data/'documento-original.txt').read_text())
+        self.assertEqual('Conteúdo preservado',(self.data/'documento-original.txt').read_text(encoding='utf-8'))
         self.assertTrue((self.profile/'maintenance.json').exists())
         finish(self.profile)
-        config=configparser.ConfigParser();config.read(self.profile/'config.ini')
+        config=configparser.ConfigParser();config.read(self.profile/'config.ini',encoding='utf-8')
         self.assertEqual('true',config['General']['start_minimized']);self.assertEqual('8765',config['General']['port'])
         self.assertFalse((self.profile/'maintenance.json').exists())
         self.assertTrue(list((self.profile/'maintenance-history').glob('*.json')))
@@ -50,7 +50,7 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(2,result['companies']);self.assertEqual(1,result['users'])
         self.assertTrue((self.data/'escritura.sqlite3').exists())
         self.assertEqual(integrity(self.data/'escritura.sqlite3'),integrity(installed/'data/escritura.sqlite3'))
-        self.assertEqual('Conteúdo preservado',(installed/'data/documento-original.txt').read_text())
+        self.assertEqual('Conteúdo preservado',(installed/'data/documento-original.txt').read_text(encoding='utf-8'))
 
     def test_existing_destination_never_merged_or_replaced_by_portable(self):
         other=self.root/'outro';BusinessCore(Database(other/'data'),demo=True)
@@ -100,7 +100,7 @@ class MaintenanceTests(unittest.TestCase):
         from app.maintenance import recover
         prepare(self.profile,'0.6.0-dev.1',owner_pid=os.getpid())
         with self.assertRaisesRegex(RuntimeError,'ainda está em execução'):recover(self.profile)
-        marker=self.profile/'maintenance.json';state=json.loads(marker.read_text());state['owner_pid']=0
-        marker.write_text(json.dumps(state))
+        marker=self.profile/'maintenance.json';state=json.loads(marker.read_text(encoding='utf-8'));state['owner_pid']=0
+        marker.write_text(json.dumps(state),encoding='utf-8')
         self.assertEqual('restored',recover(self.profile)['phase'])
         self.assertEqual(2,inspect(self.profile)['companies'])
