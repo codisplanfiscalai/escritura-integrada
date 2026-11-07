@@ -29,6 +29,8 @@ const menus=[
 {id:'accounting-imports',label:'Importações contábeis',icon:'import',component:ModuleImportView,module:'accounting',routine:'accounting.imports',props:{area:'accounting'}},
 {id:'title-imports',label:'Importação de títulos',icon:'import',component:ModuleImportView,module:'financial',routine:'financial.imports',props:{area:'financial'}},
 {id:'auditor',label:'Auditorias, achados e relatórios',icon:'shield',component:AuditorView,module:'auditor',routine:'auditor.analyses'},
+{id:'auditor-internal',label:'Auditoria da escrituração',icon:'book',component:AuditorView,module:'auditor',routine:'auditor.analyses',props:{initialSection:'internal'}},
+{id:'auditor-standalone',label:'Auditoria avulsa',icon:'upload',component:AuditorView,module:'auditor',routine:'auditor.analyses',props:{initialSection:'standalone'}},
 {id:'auditor-catalogs',label:'Catálogos e versões',icon:'book',component:AuditorView,module:'auditor',routine:'auditor.catalogs',props:{initialSection:'catalogs'}},
 {id:'prosoft',label:'Integração Prosoft',icon:'import',component:ProsoftView,module:'accounting',routine:'accounting.prosoft'},
 {id:'accounting-periods',label:'Competências contábeis',icon:'periods',component:PeriodsView,module:'accounting',routine:'accounting.periods',props:{module:'accounting'}},

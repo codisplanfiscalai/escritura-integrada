@@ -193,6 +193,19 @@ def parse_invoice(data:bytes,source_file_id:str,xml_storage_path:str,catalog:Cat
 
         ncm=re.sub(r'\D','',_text(prod,'./n:NCM'));ex_code=_text(prod,'./n:EXTIPI') or None
         actual_cst=_text(tax,'./n:IBSCBS/n:CST') or None;actual_cc=_text(tax,'./n:IBSCBS/n:cClassTrib') or None
+        if catalog.cst and actual_cst and actual_cst not in catalog.cst:
+            findings.append(finding('CST-CATALOG-001','high','classification','CST ausente na referência','CST do XML não consta da tabela congelada nesta auditoria.',document_ref,nitem,{'actual_cst':actual_cst,'catalog_version_id':catalog.version_id}))
+        if catalog.cclass and actual_cc:
+            official=catalog.cclass.get(actual_cc)
+            problems=[]
+            if not official:problems.append('Código não localizado')
+            else:
+                if official['cst']!=actual_cst:problems.append('CST incompatível')
+                if issued_on and ((official.get('valid_from') and issued_on.isoformat()<official['valid_from']) or (official.get('valid_to') and issued_on.isoformat()>official['valid_to'])):problems.append('Fora da vigência da referência')
+                indicator='indNFCe' if _text(inf,'./n:ide/n:mod')=='65' else 'indNFe'
+                applicable=(official.get('indicators') or {}).get(indicator)
+                if applicable in ('0','Não','Nao','NÃO') or (applicable is None and official.get('applicable_nfe') is False):problems.append('Não indicado para este modelo')
+            if problems:findings.append(finding('CCLASS-CATALOG-001','high','classification','Revisar cClassTrib na referência','; '.join(problems)+'. A referência é versionada; confirme sua vigência normativa.',document_ref,nitem,{'actual_cst':actual_cst,'actual_cclass_trib':actual_cc,'reference':official,'catalog_version_id':catalog.version_id}))
         match=catalog.match(ncm or None,ex_code,issued_on);entry=match.get('entry');expected_cst=entry.expected_cst if entry else None;expected_cc=entry.expected_cclass_trib if entry else None
         class_status=match['status']
         if class_status=='MATCH':
@@ -242,6 +255,8 @@ def parse_invoice(data:bytes,source_file_id:str,xml_storage_path:str,catalog:Cat
         if ean:identifiers.append({'type':'gtin','value':ean,'source':'prod/cEAN','confidence':'high'})
         if ean_taxable and ean_taxable!=ean:identifiers.append({'type':'gtin_taxable','value':ean_taxable,'source':'prod/cEANTrib','confidence':'high'})
         details={
+            'tax_path_values':{'/'.join([etree.QName(a).localname for a in list(element.iterancestors())[:list(element.iterancestors()).index(tax)]][::-1]+[etree.QName(element).localname]):(element.text or '').strip() for element in tax.xpath('.//*[not(*)]')},
+            'calculation_memory':{'rounding':'ROUND_HALF_UP','scale':2,'PIS':{'base':str(pis_base),'rate':str(pis_rate),'original':str(pis_xml),'recalculated':str(pis_expected),'scope':'ad_valorem' if tax.xpath('.//n:PIS/*/n:vBC',namespaces=NS) and tax.xpath('.//n:PIS/*/n:pPIS',namespaces=NS) else 'not_recalculated'},'COFINS':{'base':str(cof_base),'rate':str(cof_rate),'original':str(cof_xml),'recalculated':str(cof_expected),'scope':'ad_valorem' if tax.xpath('.//n:COFINS/*/n:vBC',namespaces=NS) and tax.xpath('.//n:COFINS/*/n:pCOFINS',namespaces=NS) else 'not_recalculated'}},
             'ean':ean,'ean_taxable':ean_taxable,
             'unit':_text(prod,'./n:uCom') or None,'quantity':_text(prod,'./n:qCom') or None,
             'unit_value':_text(prod,'./n:vUnCom') or None,'taxable_unit':_text(prod,'./n:uTrib') or None,

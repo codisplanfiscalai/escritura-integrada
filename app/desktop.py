@@ -699,7 +699,7 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                         const prefix = String.fromCharCode(...bytes.slice(0,4));
                         if (bytes.length < 1000 || !(format==='pdf'?prefix==='%PDF':prefix.startsWith('PK'))) throw new Error(`Arquivo ${format} inválido`);
                         return [format,bytes.length];
-                    })).then(values => {window.__escrituraSmokeExports={...Object.fromEntries(values),pending:false};})
+                    }).concat([(__AUDITOR_SMOKE__)().then(result=>['auditor',result])])).then(values => {window.__escrituraSmokeExports={...Object.fromEntries(values),pending:false};})
                     .catch(error => {window.__escrituraSmokeExports={error:String(error),pending:false};});
                 }
                 return JSON.stringify({title:document.title, ready:document.readyState,
@@ -718,6 +718,8 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                     errors:[...document.querySelectorAll('[role=alert]')].map(x=>x.textContent)
                 });
             })()"""
+            from app.auditor_smoke import browser_script
+            script=script.replace('__AUDITOR_SMOKE__',browser_script())
             def inspected(value):
                 if self._smoke_finished or self._tearing_down:
                     return
@@ -731,6 +733,7 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                 verified = (dom.get("app") and dom.get("ready") == "complete"
                             and dom.get("exports",{}).get("pdf",0)>1000
                             and dom.get("exports",{}).get("xlsx",0)>1000
+                            and dom.get("exports",{}).get("auditor",{}).get("documents")==1
                             and dom.get("loginRequested") and dom.get("companyId")
                             and dom.get("navigationItems", 0) >= 10
                             and dom.get("mainTextLength", 0) > 80

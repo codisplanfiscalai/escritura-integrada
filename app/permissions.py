@@ -151,8 +151,10 @@ def route_policy(path, method, query, payload, session):
         return module + '.imports' if module in {'accounting','financial'} else 'invalid', ('import' if write else 'export' if tail.endswith('/original') else 'read'), False
     if root == 'auditor':
         routine = 'auditor.catalogs' if '/catalogs' in tail else 'auditor.analyses'
-        action = 'book' if tail.endswith('/publish') else 'edit' if tail.endswith(('/cancel','/restore','/treatment')) else 'delete' if tail.endswith('/delete') else action
-        if tail.endswith('/import-preview'):action='import'
+        action = 'book' if tail.endswith('/publish') else 'edit' if tail.endswith(('/cancel','/restore','/treatment','/attachments')) else 'delete' if tail.endswith('/delete') else action
+        if tail.endswith(('/import-preview','/reference')):action='import'
+        if '/entries/' in tail and method=='DELETE':action='edit'
+        if tail.endswith('/logs/export') or '/reports/' in tail:action='export'
         if tail.endswith('/original'):action='export'
         if tail.endswith(('/report','/files','/auxiliary')) or (not write and query.get('format','json') != 'json'):
             action = 'print' if tail.endswith('/report') and query.get('purpose') == 'print' and query.get('format','pdf') == 'pdf' else 'export'

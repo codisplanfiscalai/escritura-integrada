@@ -8,6 +8,7 @@ version=(root/'VERSION').read_text().strip()
 datas=[(str(root/'frontend/dist'),'frontend/dist'),(str(root/'app/assets'),'app/assets'),
        (str(root/'VERSION'),'.'),(str(root/'docs/DISTRIBUICAO_DESKTOP.md'),'docs')]
 for package in ('PySide6','PySide6_Essentials','PySide6_Addons','shiboken6'):datas+=copy_metadata(package)
+datas += [(str(root/'app/auditor_engine/data'), 'app/auditor_engine/data')]
 datas += collect_data_files('reportlab', includes=['fonts/*'])
 for package in ('BrazilFiscalReport','fpdf2','fonttools','python-barcode','phonenumbers','qrcode','lxml'):datas+=copy_metadata(package)
 datas += collect_data_files('brazilfiscalreport')
