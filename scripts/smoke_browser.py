@@ -45,8 +45,12 @@ def main():
                     def shot(name):
                         page.screenshot(path=str(OUT/name),full_page=True,animations='disabled');report['screenshots'].append(name)
                     def nav(label):
-                        button=page.get_by_role('navigation',name='Navegação principal').get_by_role('button',name=label,exact=True,include_hidden=True)
-                        if not button.is_visible():button.locator('xpath=ancestor::details').locator('summary').click()
+                        navigation=page.get_by_role('navigation',name='Navegação principal')
+                        expect(navigation).to_be_visible()
+                        button=navigation.get_by_role('button',name=label,exact=True,include_hidden=True)
+                        expect(button).to_be_attached()
+                        parent=button.locator('xpath=ancestor::details')
+                        if parent.count() and parent.get_attribute('open') is None:parent.locator('summary').click()
                         button.click()
                     def check(name):report['checks'].append(name)
                     def date_field(label):return page.locator('label').filter(has_text=re.compile('^'+re.escape(label))).locator('input.date-input-field')
@@ -222,6 +226,20 @@ def main():
                         other_cid=next(c['id'] for c in companies if c['id']!=cid)
                         assert limited.get(f'/api/companies/{other_cid}/documents').status==403
                         limited.dispose()
+                        restricted=browser.new_context(viewport={'width':1440,'height':1000})
+                        try:
+                            login_result=restricted.request.post(url+'/api/login',data={'username':'consulta-ui','password':'Senha-sintetica-2026'}).json()
+                            restricted.request.post(url+'/api/context',data={'company_id':cid,'module':'fiscal','period':'2026-11'},headers={'X-CSRF-Token':login_result['csrf_token']})
+                            viewer=restricted.new_page();viewer.goto(url)
+                            navigation=viewer.get_by_role('navigation',name='Navegação principal')
+                            expect(navigation).to_be_visible()
+                            expect(navigation.get_by_role('button',name='Contas a pagar',exact=True,include_hidden=True)).to_have_count(0)
+                            navigation.get_by_role('button',name='Escrituração e documentos',exact=True).click()
+                            expect(viewer.get_by_role('heading',name='Documentos fiscais',exact=True)).to_be_visible()
+                            expect(viewer.get_by_role('button',name='Novo documento',exact=True)).to_have_count(0)
+                            viewer.screenshot(path=str(OUT/'usuario-consulta-1440.png'),full_page=True)
+                            report['screenshots'].append('usuario-consulta-1440.png')
+                        finally:restricted.close()
                         check('Grupo e usuário criados pela interface; origem efetiva exibida; API recusa escrita e outra empresa')
                         # Finalize an explicit zero-base scenario with adjustments; never assert legal certification.
                         nav('Apurações e ajustes')
