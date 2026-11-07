@@ -366,9 +366,9 @@ class CoreApiTests(unittest.TestCase):
         cid = target['id']
         self.activate(cid)
         close_payload = {'period': '2026-11', 'module': 'fiscal', 'reason': 'Competência encerrada antes de importar'}
-        self.assertEqual(200, self.client.post(self.scope('/periods/close', cid), json=close_payload).status_code)
         raw = (Path(__file__).parent / 'fixtures' / 'nfe_ficticia.xml').read_bytes()
         preview = self.client.post(self.scope('/imports/preview', cid), json={'filename': 'nfe.xml', 'content_base64': base64.b64encode(raw).decode(), 'period': '2026-11'}).json()
+        self.assertEqual(200, self.client.post(self.scope('/periods/close', cid), json=close_payload).status_code)
         confirm = self.client.post(self.scope(f"/imports/{preview['id']}/confirm", cid), json={'preview_hash': preview['preview_hash']})
         self.assertEqual(409, confirm.status_code, confirm.text)
         self.assertEqual('period_closed', confirm.json()['code'])

@@ -37,7 +37,7 @@ def main():
                     except OSError:time.sleep(.2)
                 else:raise RuntimeError('Servidor de teste não iniciou.')
                 with sync_playwright() as playwright:
-                    browser=playwright.chromium.launch(headless=True)
+                    browser=playwright.chromium.launch(headless=True,**({'executable_path':os.environ['ESCRITURA_TEST_BROWSER']} if os.environ.get('ESCRITURA_TEST_BROWSER') else {}))
                     report['browser_version']=browser.version
                     page=browser.new_page(viewport={'width':1440,'height':1000})
                     page.on('pageerror',lambda e:report['console_errors'].append(str(e)))
@@ -45,7 +45,9 @@ def main():
                     def shot(name):
                         page.screenshot(path=str(OUT/name),full_page=True,animations='disabled');report['screenshots'].append(name)
                     def nav(label):
-                        page.get_by_role('navigation',name='Navegação principal').get_by_role('button',name=label,exact=True).click()
+                        button=page.get_by_role('navigation',name='Navegação principal').get_by_role('button',name=label,exact=True)
+                        if not button.is_visible():button.locator('xpath=ancestor::details').locator('summary').click()
+                        button.click()
                     def check(name):report['checks'].append(name)
                     def date_field(label):return page.locator('label').filter(has_text=re.compile('^'+re.escape(label))).locator('input.date-input-field')
                     try:
@@ -68,7 +70,7 @@ def main():
                         expect(page.get_by_role('dialog')).to_have_count(0)
                         assert page.request.get(url+'/api/session').json()['active_company_id']==cid
                         check('Editar outra empresa mantém a empresa ativa')
-                        nav('Cadastros auxiliares')
+                        nav('Participantes, produtos e serviços')
                         page.get_by_role('button',name='Novo cadastro',exact=True).click()
                         page.get_by_label('Código *',exact=True).fill('P-UI')
                         page.get_by_label('Nome / razão social *',exact=True).fill('Fornecedor digitado — sintético')
@@ -90,7 +92,7 @@ def main():
                         accounts=page.request.get(url+f'/api/companies/{cid}/accounts').json();aid={a['access_code']:str(a['id']) for a in accounts}
                         participants=page.request.get(url+f'/api/companies/{cid}/masters/participant').json();participant=next(p for p in participants if p['code']=='P-UI')
                         assert len(participant['data']['profile']['state_registrations'])==2
-                        nav('Documentos fiscais')
+                        nav('Escrituração e documentos')
                         page.get_by_role('button',name='Novo documento',exact=True).click()
                         page.get_by_label('Número *',exact=True).fill('UI001')
                         date_field('Emissão *').fill('06112026')
@@ -119,7 +121,7 @@ def main():
                         titles=page.request.get(url+f'/api/companies/{cid}/titles').json();created=[t for t in titles if t['document']=='UI001']
                         assert len(created)==2 and sum(t['amount_cents'] for t in created)==10000
                         check('Documento → conferência → contabilidade + duas parcelas em transação única')
-                        nav('Financeiro')
+                        nav('Contas a pagar')
                         page.get_by_role('textbox',name='Pesquisar títulos').fill('UI001')
                         page.locator('tbody tr').first.get_by_role('button',name='Baixar',exact=True).click()
                         date_field('Data da baixa *').fill('10112026')
@@ -138,7 +140,7 @@ def main():
                         expect(page.get_by_text('Estornada em 11/11/2026',exact=False)).to_be_visible()
                         page.get_by_role('button',name='Fechar',exact=True).click()
                         check('Baixa parcial com juros/desconto e estorno pela interface')
-                        nav('Importações')
+                        nav('Importação de extratos')
                         page.locator('input[type=file]').set_input_files(str(ROOT/'tests/fixtures/extrato_ficticio.csv'))
                         page.get_by_label('Conta bancária do extrato',exact=False).fill('Banco sintético UI')
                         page.get_by_role('button',name='Analisar e gerar prévia',exact=True).click()
@@ -152,7 +154,7 @@ def main():
                             page.get_by_role('link',name='Baixar original',exact=True).click()
                         assert Path(download.value.path()).read_bytes()==(ROOT/'tests/fixtures/extrato_ficticio.csv').read_bytes()
                         check('Importação CSV pela interface preserva autenticação e confirmação')
-                        nav('Livros e relatórios')
+                        nav('Livros e demonstrações')
                         page.get_by_label(re.compile('^Relatório')).select_option('trial-balance')
                         page.get_by_role('button',name='Gerar relatório',exact=True).click()
                         expect(page.get_by_role('heading',name='Balancete',exact=True)).to_be_visible()
@@ -163,6 +165,88 @@ def main():
                         assert page.get_by_role('dialog').locator('tbody tr').count()>=2
                         page.get_by_role('button',name='Fechar',exact=True).click()
                         check('Relatório com totais e acesso às partidas de origem')
+                        # Independent annual calendars and explicit closure, then restore the fiscal context.
+                        nav('Competências fiscais')
+                        page.get_by_label('Ano do novo exercício',exact=True).fill('2028')
+                        page.get_by_role('button',name='Cadastrar exercício',exact=True).click()
+                        expect(page.locator('.month-card')).to_have_count(12)
+                        expect(page.get_by_label('Exercício do módulo')).to_have_value('2028')
+                        january=page.locator('.month-card').filter(has=page.get_by_role('heading',name='Janeiro',exact=True))
+                        january.get_by_role('button',name='Selecionar / consultar',exact=True).click()
+                        expect(page.locator('#active-period')).to_have_value('01/2028')
+                        january.get_by_role('button',name='Fechar',exact=True).click()
+                        page.get_by_label('Justificativa *',exact=True).fill('Conferência anual sintética')
+                        page.get_by_role('button',name='Confirmar fechamento',exact=True).click()
+                        expect(january.get_by_text('Bloqueada',exact=True)).to_be_visible()
+                        shot('competencias-1440.png')
+                        assert page.request.get(url+f'/api/companies/{cid}/periods?period=2028-01').json()['accounting']['closed'] is False
+                        january.get_by_role('button',name='Selecionada',exact=True).click()
+                        january.get_by_role('button',name='Reabrir',exact=True).click()
+                        page.get_by_label('Justificativa *',exact=True).fill('Revisão sintética autorizada')
+                        page.get_by_role('button',name='Confirmar reabertura',exact=True).click()
+                        expect(january.get_by_text('Aberta',exact=True)).to_be_visible()
+                        page.get_by_label('Exercício do módulo').select_option('2026')
+                        november=page.locator('.month-card').filter(has=page.get_by_role('heading',name='Novembro',exact=True))
+                        november.get_by_role('button',name='Selecionar / consultar',exact=True).click()
+                        expect(page.locator('#active-period')).to_have_value('11/2026')
+                        check('Exercício 2028 com 12 meses, seleção, fechamento/reabertura justificados e independência contábil')
+                        # Group and user administration through the actual UI.
+                        nav('Grupos de usuários')
+                        page.get_by_role('button',name='Novo grupo',exact=True).click()
+                        page.get_by_label('Nome *',exact=True).fill('Fiscal consulta UI')
+                        companies=page.request.get(url+'/api/companies').json()
+                        active_company=next(c for c in companies if c['id']==cid)
+                        page.get_by_role('dialog').get_by_label(active_company['code']+' · '+active_company['name'],exact=True).check()
+                        page.get_by_label('Escrituração e documentos: Consultar',exact=True).select_option('allow')
+                        page.get_by_role('button',name='Salvar grupo',exact=True).click()
+                        expect(page.get_by_role('dialog')).to_have_count(0)
+                        nav('Usuários e acessos')
+                        page.get_by_role('button',name='Novo usuário',exact=True).click()
+                        dialog=page.get_by_role('dialog')
+                        dialog.get_by_label('Usuário *',exact=True).fill('consulta-ui')
+                        dialog.get_by_label('Senha *',exact=True).fill('Senha-sintetica-2026')
+                        dialog.get_by_label('Fiscal consulta UI',exact=True).check()
+                        page.get_by_role('button',name='Salvar acesso',exact=True).click()
+                        expect(page.get_by_role('dialog')).to_have_count(0)
+                        userrow=page.locator('tbody tr').filter(has_text='consulta-ui').first
+                        userrow.get_by_role('button',name='Permissões efetivas',exact=True).click()
+                        expect(page.get_by_role('dialog').get_by_text('Grupo: Fiscal consulta UI',exact=False).first).to_be_visible()
+                        shot('permissoes-efetivas-1440.png')
+                        page.get_by_role('dialog').get_by_role('button',name='Fechar',exact=True).click()
+                        limited=playwright.request.new_context(base_url=url)
+                        logged=limited.post('/api/login',data={'username':'consulta-ui','password':'Senha-sintetica-2026'}).json()
+                        headers={'X-CSRF-Token':logged['csrf_token']}
+                        assert limited.post('/api/context',data={'company_id':cid,'module':'fiscal','period':'2026-11'},headers=headers).ok
+                        assert limited.get(f'/api/companies/{cid}/documents').ok
+                        assert limited.post(f'/api/companies/{cid}/documents',data={},headers=headers).status==403
+                        other_cid=next(c['id'] for c in companies if c['id']!=cid)
+                        assert limited.get(f'/api/companies/{other_cid}/documents').status==403
+                        limited.dispose()
+                        check('Grupo e usuário criados pela interface; origem efetiva exibida; API recusa escrita e outra empresa')
+                        # Finalize an explicit zero-base scenario with adjustments; never assert legal certification.
+                        nav('Apurações e ajustes')
+                        post(f'/companies/{cid}/tax-adjustments',{'period':'2026-11','tax':'cbs','kind':'credit','category':'credit','amount':'12.34','source':'Cenário sintético sem validade fiscal','reason':'Teste de transporte','idempotency_key':'browser-credit'})
+                        memory=post(f'/companies/{cid}/assessments',{'period':'2026-11','tax':'cbs','source':'Cenário sintético sem validade fiscal','responsible':'Teste','idempotency_key':'browser-assess','no_movement_confirmed':True,'opening_mode':'previous','entries':[]})
+                        page.reload()
+                        nav('Apurações e ajustes')
+                        page.get_by_label('Tributo da pré-apuração').select_option('cbs')
+                        page.locator('tbody tr').filter(has_text='#'+str(memory['id'])+' ·').get_by_role('button',name='Finalizar',exact=True).click()
+                        page.get_by_label('Justificativa da revisão integral',exact=True).fill('Revisão sintética completa para teste')
+                        page.get_by_role('button',name='Confirmar revisão e finalizar',exact=True).click()
+                        expect(page.get_by_role('link',name='PDF da memória',exact=True)).to_be_visible()
+                        with page.expect_download() as download:page.get_by_role('link',name='PDF da memória',exact=True).click()
+                        assert Path(download.value.path()).read_bytes().startswith(b'%PDF')
+                        with page.expect_download() as download:page.get_by_role('link',name='Excel da memória',exact=True).click()
+                        assert Path(download.value.path()).read_bytes().startswith(b'PK')
+                        shot('apuracao-finalizada-1440.png')
+                        check('Finalização fiscal revisada com saldo credor, memória persistida e exportações PDF/Excel')
+                        nav('Livros e relatórios fiscais')
+                        page.get_by_label(re.compile('^Relatório')).select_option('fiscal-documents')
+                        page.get_by_role('button',name='Gerar relatório',exact=True).click()
+                        expect(page.locator('.report-output')).to_be_visible()
+                        with page.expect_download() as download:page.get_by_role('link',name='Excel',exact=True).click()
+                        assert Path(download.value.path()).read_bytes().startswith(b'PK')
+                        check('Livro fiscal com filtros e Excel gerado no backend')
                         for width,height in [(1024,768),(390,844)]:
                             page.set_viewport_size({'width':width,'height':height})
                             assert page.evaluate('document.documentElement.scrollWidth')<=width+1,'Overflow da página'

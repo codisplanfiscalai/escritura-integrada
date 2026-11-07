@@ -43,6 +43,17 @@ class ArtifactGatesTests(unittest.TestCase):
         write_json(self.windows / 'windows-smoke.json', dict(common, packaged=True, shutdown_complete=True,
                    supervisor={'forced_cleanup': False, 'remaining_processes': 0, 'root_exit_code': 0}))
         (self.windows / 'windows-smoke.png').write_bytes(b'fixture-screenshot-for-gate-test')
+        installer=self.windows/(self.prefix+'windows-x64-setup.exe');installer.write_bytes(b'installer gate fixture only')
+        write_json(self.windows/'windows-installer-build.json',dict(common,installer=installer.name,sha256=file_hash(installer)))
+        write_json(self.windows/'windows-installer-smoke.json',dict(common,checks=['fixture']*7))
+        write_json(self.windows/'windows-installed-gui.json',common)
+        (self.windows/'windows-installed-gui.png').write_bytes(b'fixture')
+        for arch in ('arm64','x64'):
+            folder=self.root/'macos'/arch;folder.mkdir(parents=True)
+            package=folder/(self.prefix+f'macos-{arch}.pkg');package.write_bytes(b'native package gate fixture only')
+            write_json(folder/f'macos-{arch}-build.json',dict(common,package=package.name,sha256=file_hash(package)))
+            write_json(folder/f'macos-{arch}-smoke.json',dict(common,installed=True,updated=True,forced_cleanup=False,remaining_processes=0))
+            (folder/f'macos-{arch}-smoke.png').write_bytes(b'fixture')
         images = {'version': self.plan['version'], 'source_sha': self.plan['source_sha'],
                   'channel': self.plan['channel'], 'status': 'published', 'public_pullable': False,
                   'smoke': {'status': 'passed'},

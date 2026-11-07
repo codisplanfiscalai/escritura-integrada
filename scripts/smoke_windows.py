@@ -42,7 +42,7 @@ def extract_bundle(archive: Path, directory: Path) -> Path:
     return executable
 
 
-def run_smoke(archive: Path, result: Path, expected_version: str, timeout: float = 150) -> dict:
+def run_smoke(archive: Path, result: Path, expected_version: str, timeout: float = 150, *, installed_executable: Path | None = None, existing_profile: Path | None = None) -> dict:
     result.parent.mkdir(parents=True, exist_ok=True)
     raw = result.with_name("windows-smoke-app.json")
     screenshot = result.with_suffix(".png")
@@ -56,12 +56,13 @@ def run_smoke(archive: Path, result: Path, expected_version: str, timeout: float
     failures = []
     with tempfile.TemporaryDirectory(prefix="escritura-windows-smoke-", ignore_cleanup_errors=True) as temporary:
         temporary = Path(temporary)
-        profile = temporary / "Perfil de teste — isolado"
-        profile.mkdir()
+        profile = existing_profile or (temporary / "Perfil de teste — isolado")
+        profile.mkdir(parents=True, exist_ok=True)
         cwd = temporary / "Diretório de trabalho vazio"
         cwd.mkdir()
         try:
-            executable = extract_bundle(archive, temporary / "Aplicativo portátil")
+            executable = installed_executable or extract_bundle(archive, temporary / "Aplicativo portátil")
+            report["installation_test"] = bool(installed_executable)
             environment = dict(os.environ)
             for key in ("PYTHONHOME", "PYTHONPATH", "PYTHONSTARTUP", "QT_PLUGIN_PATH", "QML2_IMPORT_PATH",
                         "QTWEBENGINEPROCESS_PATH", "QTWEBENGINE_RESOURCES_PATH", "QTWEBENGINE_LOCALES_PATH"):

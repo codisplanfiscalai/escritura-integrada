@@ -2,7 +2,7 @@
 """Pacote Windows portátil com uma entrada gráfica e runtime Qt compartilhado."""
 from importlib.metadata import PackageNotFoundError
 from pathlib import Path
-from PyInstaller.utils.hooks import copy_metadata
+from PyInstaller.utils.hooks import copy_metadata, collect_data_files
 
 root = Path(SPECPATH)
 frontend = root / "frontend" / "dist"
@@ -24,6 +24,7 @@ for package in ("PySide6", "PySide6_Essentials", "PySide6_Addons", "shiboken6"):
     except PackageNotFoundError:
         pass
 
+datas += collect_data_files('reportlab', includes=['fonts/*'])
 a = Analysis(
     [str(root / "app" / "desktop.py")],
     pathex=[str(root)],
