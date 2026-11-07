@@ -125,7 +125,7 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
             assert book['Notas - Sintético']['I2'].value==65000
             assert book['Itens - Analítico']['F2'].value=='87032100'
     with page.expect_popup() as popup:main.get_by_role('link',name='Visualizar / imprimir PDF',exact=True).click()
-    pdfpage=popup.value;pdfpage.wait_for_load_state('domcontentloaded');assert '/report?format=pdf&purpose=print' in pdfpage.url
+    pdfpage=popup.value;pdfpage.wait_for_load_state('domcontentloaded');expect(pdfpage.locator('embed[type="application/pdf"]')).to_be_visible(timeout=20000);pdfpage.wait_for_timeout(1200);assert '/report?format=pdf&purpose=print' in pdfpage.url
     pdfpage.screenshot(path=str(root/'artifacts/browser/auditoria-pdf-aberto.png'));pdfpage.close()
     main.get_by_role('button',name='Documentos',exact=True).click()
     main.locator('.audit-finding summary').first.click()
@@ -136,7 +136,7 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     assert len(PdfReader(BytesIO(danfe)).pages)>=1
     (root/'artifacts/browser/danfe.pdf').write_bytes(danfe)
     with page.expect_popup() as popup:auxiliary.click()
-    popup.value.wait_for_load_state('domcontentloaded');popup.value.close()
+    popup.value.wait_for_load_state('domcontentloaded');expect(popup.value.locator('embed[type="application/pdf"]')).to_be_visible(timeout=20000);popup.value.close()
     expect(main.get_by_role('heading',name='Valores comparados',exact=True)).to_be_visible()
     expect(main.get_by_role('heading',name='Itens e memória de cálculo',exact=True)).to_be_visible()
     shot('auditor-documentos-1440.png')

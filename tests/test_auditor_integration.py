@@ -173,6 +173,13 @@ class AuditorIntegrationTests(unittest.TestCase):
         self.assertEqual(404,self.client.post(self.scope(path),json=data|{'file_id':d['original_file_id']}).status_code)
         self.assertEqual([],self.core.documents(self.a['id']))
 
+    def test_rule_validity_intersects_catalog_validity(self):
+        from app.auditor_engine.catalog import CatalogSnapshot
+        from datetime import date
+        catalog=CatalogSnapshot({'sha256':'test','valid_from':'2026-01-01','valid_to':'2026-12-31','entries':[{'ncm':'87032100','cst':'000','cclass_trib':'000001','valid_from':'2025-01-01','valid_to':'2027-12-31'}]})
+        self.assertEqual('PARAMETER_OUT_OF_VALIDITY',catalog.match('87032100',None,date(2025,12,31))['status'])
+        self.assertEqual('MATCH',catalog.match('87032100',None,date(2026,1,1))['status'])
+
     def test_new_routes_enforce_company_and_permissions(self):
         job=self.submit();cid=self.a['id']
         self.client.post('/api/users',json={'username':'auditor-leitura','password':'SenhaAuditor12345','role':'custom','company_ids':[cid],'permissions':[{'company_id':cid,'routine':'auditor.analyses','action':'read','effect':'allow'}]})

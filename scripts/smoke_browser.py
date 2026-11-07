@@ -37,7 +37,7 @@ def main():
                     except OSError:time.sleep(.2)
                 else:raise RuntimeError('Servidor de teste não iniciou.')
                 with sync_playwright() as playwright:
-                    browser=playwright.chromium.launch(headless=True,**({'executable_path':os.environ['ESCRITURA_TEST_BROWSER']} if os.environ.get('ESCRITURA_TEST_BROWSER') else {}))
+                    browser=playwright.chromium.launch(headless=True,**({'executable_path':os.environ['ESCRITURA_TEST_BROWSER']} if os.environ.get('ESCRITURA_TEST_BROWSER') else {'channel':'chromium'}))
                     report['browser_version']=browser.version
                     page=browser.new_page(viewport={'width':1440,'height':1000})
                     page.on('pageerror',lambda e:report['console_errors'].append(str(e)))

@@ -15,7 +15,7 @@ class CatalogSnapshot:
             ex=row.get('ex_code') or None
             if ex and ex.isdigit():ex=ex.zfill(2)
             e=ParamEntry(str(n),row['ncm'],ex,row.get('cst'),row.get('cclass_trib'),row.get('description'), row.get('status','valid'), row.get('validation_issues',[]),row.get('source_row',n),row.get('reduction_type'),
-                         date.fromisoformat(row.get('valid_from') or snapshot['valid_from']),date.fromisoformat(row.get('valid_to') or snapshot['valid_to']))
+                         max(date.fromisoformat(row.get('valid_from') or snapshot['valid_from']),date.fromisoformat(snapshot['valid_from'])),min(date.fromisoformat(row.get('valid_to') or snapshot['valid_to']),date.fromisoformat(snapshot['valid_to'])))
             self.by_key.setdefault((e.ncm,e.ex_code),[]).append(e)
     def match(self,ncm:str|None,ex_code:str|None,issued_on:date|None):
         if not ncm:return {'status':'DOCUMENT_NCM_MISSING','entry':None,'strategy':'none'}

@@ -114,6 +114,19 @@ def edit_entry(core,cid,iid,payload,actor,index=None,delete=False):
             ex = entry.get('ex_code') or ''
             if not isinstance(ex,str) or (ex and not re.fullmatch(r'[0-9]{1,3}',ex)): raise DomainError('EX inválido.')
             entry.update(ex_code=ex.zfill(2) if ex else '',ncm_level='hierarchy' if hierarchy else 'item',status='valid',validation_issues=[])
+            for field in ('valid_from','valid_to'):
+                entry[field]=iso_date(entry[field]) if entry.get(field) else None
+            if entry.get('valid_from') and entry.get('valid_to') and entry['valid_from']>entry['valid_to']:
+                raise DomainError('Vigência final da regra anterior à inicial.')
+            if entry.get('conditions') is not None and not isinstance(entry['conditions'],(dict,list)):
+                raise DomainError('Condições devem ser uma lista ou objeto JSON.')
+            if entry.get('reference_rate') not in (None,''):
+                from decimal import Decimal,InvalidOperation
+                try:rate=Decimal(str(entry['reference_rate']).replace(',','.'))
+                except InvalidOperation:raise DomainError('Alíquota de referência inválida.')
+                if not rate.is_finite() or rate<0:raise DomainError('Alíquota de referência inválida.')
+                entry['reference_rate']=str(rate)
+            entry={k:v for k,v in entry.items() if not k.startswith('_')}
             entry['description'] = text(entry.get('description'),'Descrição',True,2000)
             old = entries[index] if index is not None else None
             if old: entry = {**old,**entry}
@@ -132,7 +145,7 @@ def compare_catalogs(core,cid,left,right):
         a,_ = contents(select_one(conn,'auditor_catalogs',cid,left));b,_ = contents(select_one(conn,'auditor_catalogs',cid,right))
     def keyed(rows): return {(r['ncm'],r.get('ex_code') or ''):r for r in rows if r.get('ncm')}
     a,b=keyed(a),keyed(b);changes=[]
-    fields=('ncm_level','cst','cclass_trib','description','reduction_type','legal_reference_raw','conditions','valid_from','valid_to')
+    fields=('ncm_level','cst','cclass_trib','description','reference_rate','reduction_type','legal_reference_raw','conditions','valid_from','valid_to')
     for key in sorted(set(a)|set(b)):
         old,new=a.get(key),b.get(key)
         if old is None or new is None or any(old.get(f)!=new.get(f) for f in fields):
