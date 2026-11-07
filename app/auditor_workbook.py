@@ -118,14 +118,16 @@ def style_workbook(wb,job):
     kpis=[('Documentos elegíveis',a['documents']),('Valor dos documentos',num(a['total_value'])),('Base IBS/CBS informada',num(a['ibs_cbs_base'])),('IBS + CBS informados',num(Decimal(a['ibs_value'])+Decimal(a['cbs_value']))),('Entradas',a['input_count']),('Saídas',a['output_count']),('Itens / classificação OK',f"{a['items']} / {stats['classification_ok']}"),('Achados abertos / em revisão',stats['open_findings'])]
     for index,(label,value) in enumerate(kpis):
         r=4+(index//4)*3;c=(index%4)*2+1
-        merged(r,c,c+1,label,bold=True);ws.row_dimensions[r].height=28
+        label_cell=merged(r,c,c+1,label,bold=True);ws.row_dimensions[r].height=28
         v=merged(r+1,c,c+1,value,'FBE7E5' if index==7 else light,20,bold=True);ws.row_dimensions[r+1].height=38
+        for cell in (label_cell,v):cell.alignment=Alignment(horizontal='center',vertical='center',wrap_text=True)
         if index in {1,2,3}:v.number_format='"R$" #,##0.00'
     merged(11,1,8,'AÇÕES PRIORITÁRIAS',teal,12,'FFFFFF',True);ws.row_dimensions[11].height=28
     priorities=stats['priorities']
     for r,f in enumerate(priorities or [{'severity':'info','title':'Nenhum achado aberto ou em revisão','recommended_action':''}],12):
         merged(r,1,2,STATUS.get(f['severity'],f['severity']),'FBE7E5' if f['severity'] in {'critical','high'} else 'FFF1D1',bold=True)
-        merged(r,3,8,f['title']+' · '+(f.get('recommended_action') or f.get('description') or ''));ws.row_dimensions[r].height=48
+        action=f['title']+' · '+(f.get('recommended_action') or f.get('description') or '')
+        merged(r,3,8,action);ws.row_dimensions[r].height=max(28,((len(action)+109)//110)*15+8)
     r=13+max(1,len(priorities));merged(r,1,8,'COBERTURA E LEITURA DO RELATÓRIO',teal,12,'FFFFFF',True)
     notes=[f"{stats['comparable_items']} itens com recálculo comparável; {stats['not_recalculated_items']} sem recálculo. Diferenças não comprovam créditos ou débitos tributários.",f"{stats['excluded_documents']} documentos cancelados ou fora do período excluídos dos indicadores. Nas planilhas, consulte a coluna Elegível nos totais.",'Auditar ou tratar um achado não altera a escrituração. Abas técnicas do formato anterior foram preservadas, ocultas.']
     for n,note in enumerate(notes,r+1):merged(n,1,8,note);ws.row_dimensions[n].height=32
