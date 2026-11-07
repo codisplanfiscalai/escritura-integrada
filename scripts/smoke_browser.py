@@ -274,6 +274,8 @@ def main():
                         with page.expect_download() as download:page.get_by_role('link',name='Excel',exact=True).click()
                         assert Path(download.value.path()).read_bytes().startswith(b'PK')
                         check('Livro fiscal com filtros e Excel gerado no backend')
+                        from browser_exports import run as exports
+                        exports(page,url,cid,nav,check,shot)
                         from browser_evolution import run as evolution
                         evolution(page,browser,url,cid,csrf,nav,check,shot)
                         for width,height in [(1024,768),(390,844)]:

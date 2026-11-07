@@ -33,7 +33,7 @@ class FiscalReportsMixin:
         if start>end:raise DomainError('Período inicial posterior ao final.')
         if kind in {'fiscal-entries','fiscal-outputs'}:direction='incoming' if kind=='fiscal-entries' else 'outgoing';status='booked'
         with self.db.read(snapshot=True) as conn:
-            company=company_row(conn,cid);docs=[self._document(conn,cid,r[0]) for r in conn.execute('SELECT id FROM documents WHERE company_id=? AND posting_date BETWEEN ? AND ? ORDER BY posting_date,id',(cid,start,end))]
+            company=company_row(conn,cid);docs=[self._document_values(r) for r in conn.execute('SELECT * FROM documents WHERE company_id=? AND posting_date BETWEEN ? AND ? ORDER BY posting_date,id',(cid,start,end))]
             query=query.casefold().strip()
             docs=[d for d in docs if (not status or d['status']==status) and (not direction or d['direction']==direction) and (not query or query in f"{d['number']} {d['partner_name']} {d['partner_tax_id']} {d['key']}".casefold())]
             docs=[d for d in docs if (not cfop or d['cfop']==cfop or any(i.get('cfop')==cfop for i in d['items'])) and (not ncm or any(i.get('ncm')==ncm for i in d['items']))]

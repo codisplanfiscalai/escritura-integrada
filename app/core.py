@@ -495,22 +495,35 @@ class Core:
             data = {"date": payload.get("date"), "document": original["document"], "history": f"Estorno do lançamento {original['number']}: {reason}", "idempotency_key": payload.get("idempotency_key") or f"reversal:{item_id}", "lines": lines}
             return self._create_journal(conn, cid, data, actor, reversal_of=item_id)
 
-    def _document(self, conn, cid, item_id):
-        result = select_one(conn, "documents", cid, item_id)
+    @staticmethod
+    def _document_values(row):
+        result = dict(row)
         for key in ("taxes", "items", "source"):
             result[key] = json.loads(result.pop(key + "_json"))
         result.update(json.loads(result.pop("extra_json", "{}")))
         result.pop("payload_hash", None)
         result.pop("business_key", None)
+        return result
+
+    def _document(self, conn, cid, item_id):
+        result = self._document_values(select_one(conn, "documents", cid, item_id))
         result["sources"] = [{"source_hash": r["source_hash"], "source": json.loads(r["source_json"])} for r in conn.execute("SELECT * FROM document_sources WHERE company_id=? AND document_id=? ORDER BY id", (cid, item_id))]
         return result
 
-    def documents(self, cid, competence=None):
-        with self.db.read() as conn:
+    def documents(self, cid, competence=None, *, year=None):
+        with self.db.read(snapshot=True) as conn:
             company_row(conn, cid)
-            clause, params = (" AND period=?", (cid, period(competence))) if competence else ("", (cid,))
-            ids = [r["id"] for r in conn.execute("SELECT id FROM documents WHERE company_id=?" + clause + " ORDER BY posting_date DESC,id DESC", params)]
-            return [self._document(conn, cid, key) for key in ids]
+            clause, params = (" AND d.period=?", (cid, period(competence))) if competence else ("", (cid,))
+            if year is not None:
+                year = integer(year, "Exercício", 1900)
+                if year > 2199: raise DomainError("Exercício inválido.")
+                clause, params = " AND d.period BETWEEN ? AND ?", (cid, f"{year:04d}-01", f"{year:04d}-12")
+            documents = [self._document_values(r) | {"sources": []} for r in conn.execute(
+                "SELECT d.* FROM documents d WHERE d.company_id=?" + clause + " ORDER BY d.posting_date DESC,d.id DESC", params)]
+            by_id = {d["id"]: d for d in documents}
+            for row in conn.execute("SELECT s.* FROM document_sources s JOIN documents d ON d.company_id=s.company_id AND d.id=s.document_id WHERE d.company_id=?" + clause + " ORDER BY s.id", params):
+                by_id[row["document_id"]]["sources"].append({"source_hash": row["source_hash"], "source": json.loads(row["source_json"])})
+            return documents
 
     def _create_document(self, conn, cid, payload, actor):
         from .permissions import effect

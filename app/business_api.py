@@ -103,7 +103,7 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
         if format in {'pdf','xlsx'}:
             from .report_exports import export_report
             content,mime=export_report(result,format)
-            return Response(content,media_type=mime,headers={'Content-Disposition':f'attachment; filename="{kind}-{start}-{end}.{format}"'})
+            return Response(content,media_type=mime,headers={'Content-Disposition':f'{"inline" if format == "pdf" and request.query_params.get("purpose") == "print" else "attachment"}; filename="{kind}-{start}-{end}.{format}"'})
         if format!='csv':raise DomainError('Formato inválido.')
         output=io.StringIO();keys=list(dict.fromkeys(k for r in result['rows'] for k in r))
         writer=csv.writer(output,delimiter=';',lineterminator='\r\n');writer.writerow(keys)
@@ -174,9 +174,9 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
         check_period(request,payload.get('period'));return core.reverse_ledger(cid,item_id,payload,actor(request))
 
     @app.get('/api/companies/{cid}/tax-ledgers/{item_id}/report')
-    def ledger_report(cid:int,item_id:int,format:str='json'):
+    def ledger_report(cid:int,item_id:int,request:Request,format:str='json'):
         result=core.ledger_report(cid,item_id)
         if format=='json':return result
         from .report_exports import export_report
         content,mime=export_report(result,format)
-        return Response(content,media_type=mime,headers={'Content-Disposition':f'attachment; filename="apuracao-{item_id}.{format}"'})
+        return Response(content,media_type=mime,headers={'Content-Disposition':f'{"inline" if format == "pdf" and request.query_params.get("purpose") == "print" else "attachment"}; filename="apuracao-{item_id}.{format}"'})

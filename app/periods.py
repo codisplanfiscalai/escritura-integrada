@@ -23,13 +23,15 @@ def module_readable(conn, uid, cid, module):
 
 
 class PeriodMixin:
-    def session(self, token):
+    def session(self, token, *, include_permissions=True):
         result = super().session(token)
         if not result['authenticated']: return result | {'module': 'fiscal', 'permissions': {}, 'available_modules': []}
         with self.db.read() as conn:
             row = conn.execute('SELECT module FROM sessions WHERE token_hash=?', (digest(token.encode()),)).fetchone()
             result['module'] = row['module'] if row else 'fiscal'
             result['year'] = int(result['period'][:4])
+            if not include_permissions:
+                return result
             cid, uid = result['active_company_id'], result['user']['id']
             result['permissions'] = {r:[a for a in actions.split() if decision(conn,uid,cid,r,a)['allowed']]
                                      for r,(_,actions) in ROUTINES.items()} if cid else {}

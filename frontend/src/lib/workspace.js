@@ -65,7 +65,7 @@ export function changed() { state.refresh++; refreshLocks(); }
 export const ask = options => new Promise(resolve => { state.confirm = { title: 'Confirmar ação', confirmLabel: 'Confirmar', ...options, resolve }; });
 export function answer(value) { const c = state.confirm; state.confirm = null; c?.resolve(value); }
 export function useResource(load, initial = []) {
-  const data = ref(initial), loading = ref(false), error = ref(''); let seq = 0, alive = true, active = true;
+  const data = ref(initial), loading = ref(false), error = ref(''); let seq = 0, alive = true, active = true, activated = false;
   async function reload() {
     if(!active)return;
     const n = ++seq, context = `${state.companyId}:${state.module}:${state.period}`; loading.value = true; error.value = '';
@@ -74,7 +74,7 @@ export function useResource(load, initial = []) {
     finally { if (alive && n === seq) loading.value = false; }
   }
   watch(() => [state.companyId, state.period, state.refresh, state.module], (next, previous) => { if (!previous || next[0] !== previous[0] || next[1] !== previous[1]) data.value = JSON.parse(JSON.stringify(initial)); reload(); }, { immediate: true });
-  onActivated(()=>{active=true;reload();}); onDeactivated(()=>{active=false;seq++;}); onUnmounted(() => { alive = false; seq++; });
+  onActivated(()=>{active=true;if(activated)reload();activated=true;}); onDeactivated(()=>{active=false;seq++;}); onUnmounted(() => { alive = false; seq++; });
   return { data, loading, error, reload };
 }
 
