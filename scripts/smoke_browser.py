@@ -42,8 +42,8 @@ def main():
                     page=browser.new_page(viewport={'width':1440,'height':1000})
                     page.on('pageerror',lambda e:report['console_errors'].append(str(e)))
                     page.set_default_timeout(15000)
-                    def shot(name):
-                        page.screenshot(path=str(OUT/name),full_page=True,animations='disabled');report['screenshots'].append(name)
+                    def shot(name,target=None):
+                        (target or page).screenshot(path=str(OUT/name),full_page=True,animations='disabled');report['screenshots'].append(name)
                     def nav(label):
                         navigation=page.get_by_role('navigation',name='Navegação principal')
                         expect(navigation).to_be_visible()

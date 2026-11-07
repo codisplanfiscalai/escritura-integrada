@@ -11,6 +11,8 @@ Base: `develop` 3650cb33463459f7310f730cb36a74239dea97a0 (0.7.0-dev.8). Projeto 
 5. Relatórios eram produzidos sob demanda e sem histórico persistido dos arquivos. Algumas seções do original não estavam disponíveis em tabelas utilizáveis; valores monetários precisavam de células numéricas.
 6. Progresso, conciliações, qualidade do catálogo e consulta dos itens estavam incompletos na interface. A geração de auxiliares só habilitava DANFE 55, embora a dependência Python já instalada também disponibilize DANFCE, DACTE e DAMDFE.
 
+7. A janela desktop de impressão rejeitava links diretos de PDF. O Auditor agora usa o leitor Qt PDF já incluído no PySide6, com a mesma sessão local, visualização, salvamento e impressão; endereços externos não são aceitos. O smoke empacotado exige abertura de páginas PDF no leitor nativo.
+
 ## Matriz de migração e validação
 
 | Recurso / origem no Auditor 1.2.2 | Implementação nativa | Critério e evidência automatizada |
@@ -47,6 +49,8 @@ Excel mantém as abas antigas e acrescenta Resumo Executivo, Notas Sintético, I
 ## Distribuições e persistência
 
 Migração aditiva do esquema 4 para 5, concentrada no Auditor: progresso, referência/ancestralidade de catálogos, arquivos de relatórios e vínculos revisados de PDF. O mecanismo existente de backup/migração/recuperação permanece. Originais e resultados continuam no armazenamento do Escritura. Não foram introduzidos outro banco, outro login, Redis obrigatório ou MinIO obrigatório.
+
+A atualização de um banco criado pelo código original 0.7.0-dev.8 foi executada localmente: backup automático, preservação do retrato/resultado antigo, abertura de relatório e reprocessamento sem alterar a escrituração.
 
 Windows/macOS passam a processar uma auditoria e importar o catálogo histórico no smoke do aplicativo empacotado. Docker passa a criar empresa, auditar XML, conferir itens/totais/PDF/Excel/catálogo e validar persistência depois de reiniciar. Os mesmos fontes e dados de referência integram as três distribuições.
 

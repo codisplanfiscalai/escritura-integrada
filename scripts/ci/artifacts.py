@@ -116,6 +116,8 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
             raise ReleaseError('Pacote macOS sem instalação, atualização ou encerramento nativos comprovados: '+arch)
         for name in (package,f'macos-{arch}-build.json',f'macos-{arch}-smoke.json',f'macos-{arch}-smoke.png'):
             copy_file(folder/name,output_dir/(name if name==package else prefix+name))
+    for path in macos_dir.glob('*/**/*auditor-pdf.png'):
+        copy_file(path,output_dir/(prefix+path.name))
     copy_file(windows_dir/installer_name,output_dir/installer_name)
     for name in ('windows-installer-build.json','windows-installer-smoke.json','windows-installed-gui.json','windows-installed-gui.png'):
         copy_file(windows_dir/name,output_dir/(prefix+name))
@@ -141,7 +143,7 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
         if path.is_file() and path.name.startswith(prefix):
             copy_file(path, output_dir / path.name)
     copy_file(windows_dir / archive_name, output_dir / archive_name)
-    for filename in ('windows-build.json', 'windows-smoke.json', 'windows-smoke.png', 'windows-smoke-app.json', 'windows-smoke-logs.log'):
+    for filename in ('windows-build.json', 'windows-smoke.json', 'windows-smoke.png', 'windows-smoke-app.json', 'windows-smoke-logs.log','windows-smoke-app-auditor-pdf.png','windows-installed-gui-auditor-pdf.png'):
         path = windows_dir / filename
         if path.is_file():
             copy_file(path, output_dir / (prefix + filename))
@@ -151,7 +153,8 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
         copy_file(reports_dir / filename, output_dir / (prefix + filename))
     copy_file(images_manifest, output_dir / (prefix + 'images.json'))
     with zipfile.ZipFile(output_dir / (prefix + 'browser-evidence.zip'), 'w', zipfile.ZIP_DEFLATED) as bundle:
-        for name in ['report.json', *screenshots]:
+        examples=[name for name in ('auditoria-avulsa.pdf','auditoria-avulsa.xlsx','auditoria-interna.pdf','auditoria-interna.xlsx','danfe.pdf') if (browser_dir/name).is_file()]
+        for name in ['report.json', *screenshots, *examples]:
             path = browser_dir / name
             if path.is_symlink() or path.stat().st_size < 1:
                 raise ReleaseError('Evidência do navegador inválida: ' + name)

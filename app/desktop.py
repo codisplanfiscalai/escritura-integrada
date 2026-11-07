@@ -314,12 +314,16 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             factory = getattr(self, "print_page_factory", None)
             if (factory and snapshot["state"] == "running" and origin.scheme() == "http"
                     and origin.host() == "127.0.0.1" and origin.port() == local.port()):
-                # Não abre outra janela: a página interna só recebe o HTML de impressão.
+                # HTML usa a impressão existente; PDFs locais são enviados ao leitor nativo.
                 return factory()
             return None
 
     class PrintPage(QWebEnginePage):
         def acceptNavigationRequest(self, url, _nav_type, is_main_frame):
+            from app.desktop_pdf import preview_url_allowed
+            callback=getattr(self,'pdf_preview',None)
+            if callback and is_main_frame and preview_url_allowed(url.toString(),controller.snapshot()['url']):
+                QTimer.singleShot(0,lambda:callback(url));return False
             # O relatório usa window.open('') e document.write(). URLs externas,
             # arquivos locais e frames não são destinos admitidos nesta página.
             return is_main_frame and url.toString() == "about:blank"
@@ -354,6 +358,9 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             self._started_at = 0.0
             self._ipc_clients = []
             self._print_page = None
+            self._preview_requests = set()
+            self._pdf_viewers = []
+            self._auditor_pdf_pages = 0
             self._print_dialog_open = False
             self._pdf_pending = False
 
@@ -606,6 +613,7 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             self._tearing_down = True
             self.timer.stop()
             self.web.stop()
+            for viewer in list(self._pdf_viewers):viewer.close()
             if self._print_page is not None:
                 self.release_print_page(self._print_page)
             # O perfil só pode ser destruído depois de todas as suas páginas.
@@ -727,6 +735,11 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                     dom = json.loads(value) if isinstance(value, str) else {}
                 except ValueError:
                     dom = {}
+                audit_result=dom.get('exports',{}).get('auditor',{})
+                if audit_result.get('job_id') and not getattr(self,'_auditor_preview_requested',False):
+                    self._auditor_preview_requested=True
+                    self.preview_pdf(QUrl(controller.snapshot()['url']+f"/api/companies/{dom['companyId']}/auditor/jobs/{audit_result['job_id']}/report?format=pdf&purpose=print"))
+                dom['auditor_pdf_pages']=self._auditor_pdf_pages
                 if dom.get("exports",{}).get("error"):
                     self.finish_smoke(False,dom["exports"]["error"],dom)
                     return
@@ -734,6 +747,7 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                             and dom.get("exports",{}).get("pdf",0)>1000
                             and dom.get("exports",{}).get("xlsx",0)>1000
                             and dom.get("exports",{}).get("auditor",{}).get("documents")==1
+                            and self._auditor_pdf_pages>0
                             and dom.get("loginRequested") and dom.get("companyId")
                             and dom.get("navigationItems", 0) >= 10
                             and dom.get("mainTextLength", 0) > 80
@@ -803,6 +817,7 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             if self._print_page is not None:
                 self.release_print_page(self._print_page)
             page = PrintPage(self.web_profile, self)
+            page.pdf_preview = self.preview_pdf
             page.settings().setAttribute(QWebEngineSettings.JavascriptCanOpenWindows, False)
             page.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, False)
             page.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, False)
@@ -876,7 +891,42 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                 finally:
                     self._print_dialog_open = False
 
+        def preview_pdf(self,url):
+            from app.desktop_pdf import preview_url_allowed
+            value=url.toString()
+            if self._exit_requested or value in self._preview_requests or not preview_url_allowed(value,controller.snapshot()['url']):return
+            self._preview_requests.add(value);self.page.download(url,'auditoria.pdf')
+            QTimer.singleShot(30000,lambda:self._preview_requests.discard(value))
+
+        def preview_download(self,request):
+            import tempfile
+            from PySide6.QtWebEngineCore import QWebEngineDownloadRequest
+            from app.desktop_pdf import show_pdf
+            folder=tempfile.TemporaryDirectory(prefix='escritura-pdf-')
+            target=Path(folder.name)/'auditoria.pdf'
+            request.setDownloadDirectory(folder.name);request.setDownloadFileName(target.name)
+            def finished(state):
+                if state==QWebEngineDownloadRequest.DownloadState.DownloadCompleted:
+                    if request.mimeType()!='application/pdf' or not target.read_bytes().startswith(b'%PDF'):
+                        folder.cleanup();self.statusBar().showMessage('Não foi possível abrir o PDF. Confira o acesso à auditoria.',10000);return
+                    def ready(pages,dialog):
+                        self._auditor_pdf_pages=pages
+                        if smoke and pages:
+                            dialog.grab().save(str(smoke.path.with_name(smoke.path.stem+'-auditor-pdf.png')))
+                            smoke.record('auditor_pdf_opened',auditor_pdf_pages=pages)
+                            dialog.close()
+                    dialog=show_pdf(self,target,ready);self._pdf_viewers.append(dialog)
+                    def cleanup(_):
+                        if dialog in self._pdf_viewers:self._pdf_viewers.remove(dialog)
+                        folder.cleanup();dialog.deleteLater()
+                    dialog.finished.connect(cleanup)
+                elif state in (QWebEngineDownloadRequest.DownloadState.DownloadCancelled,QWebEngineDownloadRequest.DownloadState.DownloadInterrupted):
+                    folder.cleanup();self.statusBar().showMessage('A abertura do PDF foi interrompida; tente novamente.',10000)
+            request.stateChanged.connect(finished);request.accept()
+
         def download(self, request):
+            if request.url().toString() in self._preview_requests:
+                self._preview_requests.discard(request.url().toString());self.preview_download(request);return
             name = Path(request.downloadFileName().replace("\\", "/")).name or "relatorio.csv"
             folder = QStandardPaths.writableLocation(QStandardPaths.DownloadLocation)
             target, _selected = QFileDialog.getSaveFileName(self, "Salvar arquivo", str(Path(folder) / name))

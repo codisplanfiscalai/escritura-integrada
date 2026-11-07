@@ -39,5 +39,5 @@ def browser_script():
         }
         const catalog=await send('/catalogs/reference',{name:'Referência histórica - smoke',valid_from:year+'-01-01',valid_to:year+'-12-31'});
         if(catalog.entry_count!==15638||catalog.reference.cst.length!==19||catalog.reference.cclass.length!==142)throw Error('Catálogos ausentes no pacote');
-        return {...artifacts,documents:1,items:result.result.documents[0].items.length,catalog_rows:catalog.entry_count};
+        return {...artifacts,job_id:job.id,documents:1,items:result.result.documents[0].items.length,catalog_rows:catalog.entry_count};
     }'''.replace('__XML__',xml)
