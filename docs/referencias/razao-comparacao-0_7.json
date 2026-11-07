@@ -1,0 +1,14 @@
+{
+  "rows": 403,
+  "persisted_balanced_journals": 403,
+  "reference_pages": 7,
+  "generated_pages": 7,
+  "reference_sha256": "0b04ae08eb476aa8ad78df6409c65163dbbd9a71b51d220455e12c1bc4fbd5aa",
+  "generated_sha256": "31ac46aa0bdaa3f17b78745d3b26eaaaa9d1556d392ce68b8cc9aa6023a45a64",
+  "debit_difference_cents": 0,
+  "credit_difference_cents": 0,
+  "closing_difference_cents": 0,
+  "closed_period_report": true,
+  "validation_path": "PDF de referência → CSV → prévia → confirmação → SQLite → fechamento → Razão → PDF",
+  "visual_status": "Estrutura e sete páginas comparadas; tipografia e algumas quebras ainda diferem. Não é reprodução pixel a pixel."
+}

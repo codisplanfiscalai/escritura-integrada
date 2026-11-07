@@ -29,10 +29,11 @@ class PeriodMixin:
         with self.db.read() as conn:
             row = conn.execute('SELECT module FROM sessions WHERE token_hash=?', (digest(token.encode()),)).fetchone()
             result['module'] = row['module'] if row else 'fiscal'
+            result['year'] = int(result['period'][:4])
             cid, uid = result['active_company_id'], result['user']['id']
             result['permissions'] = {r:[a for a in actions.split() if decision(conn,uid,cid,r,a)['allowed']]
                                      for r,(_,actions) in ROUTINES.items()} if cid else {}
-            result['available_modules'] = [m for m in BUSINESS_MODULES if cid and module_readable(conn,uid,cid,m)]
+            result['available_modules'] = [m for m in (*BUSINESS_MODULES, 'auditor') if cid and module_readable(conn,uid,cid,m)]
         return result
 
     def context(self, token, payload):
@@ -44,14 +45,14 @@ class PeriodMixin:
             if not session: raise DomainError('Entre novamente.',401,'unauthenticated')
             require(conn,session['user_id'],cid)
             module = payload.get('module',session['module'])
-            if module not in BUSINESS_MODULES: raise DomainError('Módulo de competência inválido.')
+            if module not in (*BUSINESS_MODULES, 'auditor'): raise DomainError('Módulo de competência inválido.')
             if not module_readable(conn,session['user_id'],cid,module):
                 if payload.get('module'): raise DomainError('Sem acesso ao módulo nesta empresa.',403,'forbidden')
-                module = next((m for m in BUSINESS_MODULES if module_readable(conn,session['user_id'],cid,m)),None)
+                module = next((m for m in (*BUSINESS_MODULES, 'auditor') if module_readable(conn,session['user_id'],cid,m)),None)
                 if not module: raise DomainError('Nenhum módulo de trabalho concedido nesta empresa.',403,'forbidden')
             saved = conn.execute('SELECT period FROM session_contexts WHERE token_hash=? AND company_id=? AND module=?', (token_hash,cid,module)).fetchone()
             competence = period(payload.get('period') or (saved['period'] if saved else session['period']))
-            if not enabled(conn,cid,module,competence):
+            if module != 'auditor' and not enabled(conn,cid,module,competence):
                 if payload.get('period'):
                     raise DomainError('Exercício ainda não cadastrado neste módulo. Abra Competências e cadastre o ano.',409,'exercise_missing')
                 latest = conn.execute('SELECT year FROM exercises WHERE company_id=? AND module=? ORDER BY year DESC LIMIT 1',(cid,module)).fetchone()

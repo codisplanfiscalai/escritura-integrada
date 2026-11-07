@@ -17,9 +17,10 @@ const context = ref({}), transaction = ref(null), form = ref({title_id:'', reaso
 const titleOptions = ref([]), titlesBusy = ref(false), titleError = ref('');
 let baseline = '', suggestionSequence = 0, modalSequence = 0, alive = true;
 
-const contextKey = computed(() => `${state.companyId}:${state.period}`);
+const competence=ref(state.period);watch(()=>[state.companyId,state.period.slice(0,4)],()=>{competence.value=state.period});
+const contextKey = computed(() => `${state.companyId}:${competence.value}`);
 const { data, loading, error: loadError, reload } = useResource(async () => {
-  const id = state.companyId, period = state.period, key = `${id}:${period}`;
+  const id = state.companyId, period = competence.value, key = `${id}:${period}`;
   if (!id) return {key, banks:[]};
   const response = await api(scope(`/banks?period=${encodeURIComponent(period)}`, id));
   return {key, banks:rows(response)};
@@ -44,6 +45,7 @@ const compatibleTitles = computed(() => {
 const chosenTitle = computed(() => compatibleTitles.value.find(t => t.id === Number(form.value.title_id)));
 const periodLabel = p => String(p || '').split('-').reverse().join('/');
 
+watch(competence,()=>reload());
 watch(contextKey, () => { account.value = ''; selectedId.value = null; query.value = ''; });
 watch(filtered, list => {
   if (!list.some(b => b.id === selectedId.value)) selectedId.value = list[0]?.id ?? null;
@@ -72,7 +74,7 @@ async function openLink(candidate = null) {
   const sequence = ++modalSequence;
   mode.value = 'link';
   transaction.value = {...selected.value};
-  context.value = {id:state.companyId, name:company.value?.trade_name || company.value?.name, period:state.period};
+  context.value = {id:state.companyId, name:company.value?.trade_name || company.value?.name, period:competence.value};
   form.value = {title_id:candidate?.title_id ?? '', reason:''};
   baseline = JSON.stringify(form.value);
   error.value = ''; titleError.value = ''; titleOptions.value = []; show.value = true;
@@ -93,7 +95,7 @@ function openUnlink() {
   ++modalSequence;
   mode.value = 'unlink';
   transaction.value = {...selected.value};
-  context.value = {id:state.companyId, name:company.value?.trade_name || company.value?.name, period:state.period};
+  context.value = {id:state.companyId, name:company.value?.trade_name || company.value?.name, period:competence.value};
   form.value = {title_id:selected.value.reconciliation?.title_id ?? '', reason:''};
   baseline = JSON.stringify(form.value); error.value = ''; show.value = true;
   state.editor = {name:'Desfazer vínculo bancário', companyId:context.value.id};
@@ -109,7 +111,7 @@ async function save() {
   if (busy.value) return;
   error.value = ''; busy.value = true;
   try {
-    if (context.value.id !== state.companyId || context.value.period !== state.period)
+    if (context.value.id !== state.companyId || context.value.period !== competence.value)
       throw new Error('A empresa ou a competência mudou. Feche esta janela e confira o contexto antes de continuar.');
     if (!form.value.reason.trim()) throw new Error('Registre a justificativa da conferência.');
     if (mode.value === 'link' && !chosenTitle.value) throw new Error('Selecione um título de mesmo valor e sentido.');
@@ -147,7 +149,7 @@ onUnmounted(() => { alive = false; suggestionSequence++; modalSequence++; if (sh
 
     <div class="reconcile-grid">
       <section class="panel reconcile-bank-panel" aria-label="Movimentos do extrato">
-        <div class="panel-heading"><div><h2>Extrato bancário</h2><p>Empresa ativa · {{periodLabel(state.period)}}</p></div><span class="badge neutral">{{filtered.length}} {{filtered.length===1?'movimento':'movimentos'}}</span></div>
+        <div class="panel-heading"><div><h2>Extrato bancário</h2><label>Competência do extrato<select v-model="competence" :disabled="!!state.editor"><option v-for="m in 12" :value="`${state.period.slice(0,4)}-${String(m).padStart(2,'0')}`">{{String(m).padStart(2,'0')}} / {{state.period.slice(0,4)}}</option></select></label><p>Empresa ativa · {{periodLabel(competence)}}</p></div><span class="badge neutral">{{filtered.length}} {{filtered.length===1?'movimento':'movimentos'}}</span></div>
         <div class="reconcile-filters">
           <div class="search-field"><Icon name="search"/><input v-model="query" placeholder="Histórico ou documento" aria-label="Pesquisar movimento bancário"/></div>
           <select v-model="account" aria-label="Filtrar conta bancária"><option value="">Todas as contas</option><option v-for="item in accounts" :key="item" :value="item">{{item}}</option></select>

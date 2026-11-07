@@ -329,7 +329,7 @@ class Core:
             check_version(old, payload)
             values = self._company_values(payload, old)
             if values["tax_id"] != old["tax_id"]:
-                for table in ("journals", "documents", "titles", "bank_transactions", "imports"):
+                for table in ("journals", "documents", "titles", "bank_transactions", "imports", "auditor_jobs", "module_imports"):
                     if conn.execute(f"SELECT 1 FROM {table} WHERE company_id=? LIMIT 1", (company_id,)).fetchone():
                         raise DomainError("O CNPJ não pode ser trocado após registrar movimentos ou importações. Cadastre a outra pessoa jurídica separadamente.", 409, "company_identity_in_use")
             conn.execute(f"UPDATE companies SET {','.join(key+'=?' for key in COMPANY_FIELDS)},version=version+1,updated_at=? WHERE id=?", (*values.values(), now(), company_id))
@@ -355,30 +355,34 @@ class Core:
 
     def save_account(self, cid, payload, actor, item_id=None):
         with self.db.transaction() as conn:
-            company_row(conn, cid)
-            old = select_one(conn, "accounts", cid, item_id) if item_id else {}
-            if old:
-                check_version(old, payload)
-            values = {k: text(payload.get(k, old.get(k, "")), k, True, 200) for k in ("access_code", "classifier", "name", "nature")}
-            values["report_group"] = text(payload.get("report_group", old.get("report_group", "")), "Grupo do demonstrativo", False, 30)
-            values["prosoft_code"] = text(payload.get("prosoft_code", old.get("prosoft_code", "")), "Acesso Prosoft", False, 5)
-            if values["report_group"] not in {"", "asset", "liability", "equity", "revenue", "expense"}:
-                raise DomainError("Grupo do demonstrativo inválido.")
-            if values["prosoft_code"] and (not values["prosoft_code"].isdigit() or int(values["prosoft_code"]) == 0):
-                raise DomainError("Acesso Prosoft deve conter até cinco dígitos, maior que zero.")
-            if values["nature"] not in {"debit", "credit"}:
-                raise DomainError("Natureza deve ser debit ou credit.")
-            for flag, default in (("analytical", True), ("requires_cost_center", False), ("active", True)):
-                values[flag] = boolean(payload.get(flag), bool(old.get(flag, default)))
-            if old and conn.execute("SELECT 1 FROM journal_lines WHERE company_id=? AND account_id=? LIMIT 1", (cid, item_id)).fetchone():
-                if not values["analytical"] or values["nature"] != old["nature"] or values["requires_cost_center"] != bool(old["requires_cost_center"]):
-                    raise DomainError("Conta utilizada: natureza, tipo e exigência de centro devem ser preservados. Crie uma nova conta para outra política.", 409, "account_in_use")
-            if item_id:
-                conn.execute(f"UPDATE accounts SET {','.join(k+'=?' for k in values)},version=version+1 WHERE id=? AND company_id=?", (*values.values(), item_id, cid))
-            else:
-                item_id = conn.execute(f"INSERT INTO accounts(company_id,{','.join(values)}) VALUES({','.join('?' for _ in range(len(values)+1))})", (cid, *values.values())).lastrowid
-            audit(conn, cid, actor, "update" if old else "create", "account", item_id, values)
-            return select_one(conn, "accounts", cid, item_id)
+            return self._save_account(conn,cid,payload,actor,item_id)
+
+    def _save_account(self, conn, cid, payload, actor, item_id=None):
+        company_row(conn, cid)
+        old = select_one(conn, "accounts", cid, item_id) if item_id else {}
+        if old:
+            check_version(old, payload)
+        values = {k: text(payload.get(k, old.get(k, "")), k, True, 200) for k in ("access_code", "classifier", "name", "nature")}
+        values["report_group"] = text(payload.get("report_group", old.get("report_group", "")), "Grupo do demonstrativo", False, 30)
+        values["prosoft_code"] = text(payload.get("prosoft_code", old.get("prosoft_code", "")), "Acesso Prosoft", False, 5)
+        if values["report_group"] not in {"", "asset", "liability", "equity", "revenue", "expense"}:
+            raise DomainError("Grupo do demonstrativo inválido.")
+        if values["prosoft_code"] and (not values["prosoft_code"].isdigit() or int(values["prosoft_code"]) == 0):
+            raise DomainError("Acesso Prosoft deve conter até cinco dígitos, maior que zero.")
+        if values["nature"] not in {"debit", "credit"}:
+            raise DomainError("Natureza deve ser debit ou credit.")
+        for flag, default in (("analytical", True), ("requires_cost_center", False), ("active", True)):
+            values[flag] = boolean(payload.get(flag), bool(old.get(flag, default)))
+        if old and conn.execute("SELECT 1 FROM journal_lines WHERE company_id=? AND account_id=? LIMIT 1", (cid, item_id)).fetchone():
+            if not values["analytical"] or values["nature"] != old["nature"] or values["requires_cost_center"] != bool(old["requires_cost_center"]):
+                raise DomainError("Conta utilizada: natureza, tipo e exigência de centro devem ser preservados. Crie uma nova conta para outra política.", 409, "account_in_use")
+        if item_id:
+            conn.execute(f"UPDATE accounts SET {','.join(k+'=?' for k in values)},version=version+1 WHERE id=? AND company_id=?", (*values.values(), item_id, cid))
+        else:
+            item_id = conn.execute(f"INSERT INTO accounts(company_id,{','.join(values)}) VALUES({','.join('?' for _ in range(len(values)+1))})", (cid, *values.values())).lastrowid
+        audit(conn, cid, actor, "update" if old else "create", "account", item_id, values)
+        return select_one(conn, "accounts", cid, item_id)
+
 
     def cost_centers(self, cid):
         with self.db.read() as conn:
@@ -989,10 +993,13 @@ class Core:
             row = select_one(conn, "imports", cid, item_id)
             from .permissions import import_access
             import_access(conn,cid,json.loads(row["parsed_json"]))
-            return self._import_result(row)
+            parsed = self._import_result(row)
+            from .import_scope import classify
+            return classify(conn,cid,parsed,row['period'][:4])
 
     def preview_import(self, cid, payload, actor):
         from .importers import parse_file
+        from .import_scope import classify
         filename = text(payload.get("filename"), "Arquivo", True, 255)
         if "/" in filename or "\\" in filename or filename in {".", ".."}:
             raise DomainError("Informe somente o nome do arquivo, sem caminhos.")
@@ -1017,7 +1024,7 @@ class Core:
             if existing:
                 from .permissions import import_access
                 import_access(conn,cid,json.loads(existing["parsed_json"]),"import")
-                return self._import_result(existing)
+                return classify(conn,cid,self._import_result(existing),competence[:4])
         parsed = parse_file(filename, raw, company | {"import_options": options})
         if not isinstance(parsed, dict):
             raise DomainError("O leitor não retornou uma prévia válida.", 422, "parser_invalid_result")
@@ -1025,12 +1032,9 @@ class Core:
             if not isinstance(parsed.get(key, []), list):
                 raise DomainError("Formato de prévia inválido.", 422, "parser_invalid_result")
             parsed.setdefault(key, [])
-        for doc in parsed["documents"]:
-            if doc.get("posting_date", "")[:7] != competence:
-                parsed["issues"].append({"severity": "error", "code": "POSTING_PERIOD_MISMATCH", "message": f"Documento {doc.get('number', '')}: data de escrituração {doc.get('posting_date', '')} não pertence à competência {competence}. Informe a data de escrituração nas opções ou selecione a competência correta; a emissão será preservada.", "source": doc.get("source", {})})
-        for tx in parsed["transactions"]:
-            if tx.get("date", "")[:7] != competence:
-                parsed["issues"].append({"severity":"error", "code":"BANK_PERIOD_MISMATCH", "message":"Movimento bancário fora da competência selecionada.", "source":tx.get("source",{})})
+        from .import_scope import classify
+        with self.db.read() as conn:
+            classify(conn,cid,parsed,competence[:4])
         status = "blocked" if any(x.get("severity") == "error" for x in parsed["issues"]) else "preview"
         if not parsed["documents"] and not parsed["transactions"] and status != "blocked":
             parsed["issues"].append({"severity": "error", "code": "NO_SUPPORTED_RECORDS", "message": "Nenhum documento ou movimento suportado foi identificado.", "source": {"file": filename}})
@@ -1040,8 +1044,6 @@ class Core:
         with self.db.transaction() as conn:
             from .permissions import import_access
             import_access(conn,cid,parsed,"import")
-            if parsed["documents"]: ensure_open(conn,cid,competence,"fiscal")
-            if parsed["transactions"]: ensure_open(conn,cid,competence,"financial")
             current = company_row(conn, cid)
             if current["tax_id"] != company["tax_id"]:
                 raise DomainError("CNPJ alterado durante a leitura. Gere novamente a prévia.", 409, "stale_company")
@@ -1049,7 +1051,9 @@ class Core:
             if existing:
                 from .permissions import import_access
                 import_access(conn,cid,json.loads(existing["parsed_json"]),"import")
-                return self._import_result(existing)
+                return classify(conn,cid,self._import_result(existing),competence[:4])
+            from .file_store import store_file
+            store_file(self.db,conn,cid,int(competence[:4]),'originals',filename,raw,actor)
             iid = conn.execute("INSERT INTO imports(company_id,filename,sha256,identity_hash,preview_hash,period,company_tax_id,options_json,original,parsed_json,status,bank_account,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (cid, filename, digest(raw), identity, preview_hash, competence, company["tax_id"], pack(options), raw, pack(parsed), status, bank_account, now(), actor)).lastrowid
             audit(conn, cid, actor, "preview", "import", iid, {"sha256": digest(raw), "filename": filename, "status": status, "period": competence})
             return self._import_result(select_one(conn, "imports", cid, iid))
@@ -1071,20 +1075,27 @@ class Core:
                 previous = json.loads(batch["confirmation_json"])
                 if bank_account != batch["bank_account"]:
                     raise DomainError("Importação já confirmada em outra identificação de conta bancária.", 409, "idempotency_conflict")
+                if payload.get('selected') is not None and sorted(payload['selected']) != previous.get('selected'):
+                    raise DomainError('Lote já confirmado com outra seleção.',409,'idempotency_conflict')
                 return previous | {"duplicate": True}
             if any(issue.get("severity") == "error" for issue in parsed["issues"]) or not parsed.get("can_confirm", True):
                 raise DomainError("A prévia possui erros que impedem a confirmação. Corrija a origem ou as opções e importe novamente.", 409, "import_blocked")
+            from .import_scope import classify, selected_rows
+            classify(conn,cid,parsed,batch['period'][:4])
+            selected = selected_rows(parsed,payload)
             result = {"import_id": item_id, "status": "confirmed", "documents_created": 0, "documents_duplicate": 0, "transactions_created": 0, "transactions_duplicate": 0, "document_ids": [], "transaction_ids": []}
             for source_doc in parsed.get("documents", []):
-                if source_doc.get("posting_date", "")[:7] != batch["period"]:
-                    raise DomainError("Documento pertence a outra competência; a confirmação foi interrompida.", 409, "period_mismatch")
-                doc = self._create_document(conn, cid, source_doc, actor)
+                if source_doc['_selection'] not in selected: continue
+                doc = self._create_document(conn, cid, {k:v for k,v in source_doc.items() if not k.startswith('_')}, actor)
                 result["documents_duplicate" if doc.get("duplicate") else "documents_created"] += 1
                 result["document_ids"].append(doc["id"])
             for source_tx in parsed.get("transactions", []):
+                if source_tx['_selection'] not in selected: continue
                 tx = self._create_bank(conn, cid, source_tx, bank_account, actor)
                 result["transactions_duplicate" if tx.get("duplicate") else "transactions_created"] += 1
                 result["transaction_ids"].append(tx["id"])
+            result['selected'] = sorted(selected)
+            result['refused'] = [{'selection':r['_selection'],**r['_eligibility']} for k in ('documents','transactions') for r in parsed.get(k,[]) if r['_selection'] not in selected]
             conn.execute("UPDATE imports SET status='confirmed',bank_account=?,confirmation_json=? WHERE id=? AND company_id=?", (bank_account, pack(result), item_id, cid))
             audit(conn, cid, actor, "confirm", "import", item_id, result)
             return result

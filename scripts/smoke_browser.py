@@ -177,7 +177,7 @@ def main():
                         expect(page.get_by_label('Exercício do módulo')).to_have_value('2028')
                         january=page.locator('.month-card').filter(has=page.get_by_role('heading',name='Janeiro',exact=True))
                         january.get_by_role('button',name='Selecionar / consultar',exact=True).click()
-                        expect(page.locator('#active-period')).to_have_value('01/2028')
+                        expect(page.locator('#active-period')).to_have_value('2028')
                         january.get_by_role('button',name='Fechar',exact=True).click()
                         page.get_by_label('Justificativa *',exact=True).fill('Conferência anual sintética')
                         page.get_by_role('button',name='Confirmar fechamento',exact=True).click()
@@ -192,7 +192,7 @@ def main():
                         page.get_by_label('Exercício do módulo').select_option('2026')
                         november=page.locator('.month-card').filter(has=page.get_by_role('heading',name='Novembro',exact=True))
                         november.get_by_role('button',name='Selecionar / consultar',exact=True).click()
-                        expect(page.locator('#active-period')).to_have_value('11/2026')
+                        expect(page.locator('#active-period')).to_have_value('2026')
                         check('Exercício 2028 com 12 meses, seleção, fechamento/reabertura justificados e independência contábil')
                         # Group and user administration through the actual UI.
                         nav('Grupos de usuários')
@@ -274,6 +274,8 @@ def main():
                         with page.expect_download() as download:page.get_by_role('link',name='Excel',exact=True).click()
                         assert Path(download.value.path()).read_bytes().startswith(b'PK')
                         check('Livro fiscal com filtros e Excel gerado no backend')
+                        from browser_evolution import run as evolution
+                        evolution(page,browser,url,cid,csrf,nav,check,shot)
                         for width,height in [(1024,768),(390,844)]:
                             page.set_viewport_size({'width':width,'height':height})
                             assert page.evaluate('document.documentElement.scrollWidth')<=width+1,'Overflow da página'

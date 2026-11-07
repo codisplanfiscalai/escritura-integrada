@@ -689,9 +689,9 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                 const side = document.querySelector('.sidebar');
                 if (active?.value && !window.__escrituraSmokeExports) {
                     window.__escrituraSmokeExports = {pending:true};
-                    const [month,year] = document.querySelector('#active-period').value.split('/');
-                    const start = `${year}-${month}-01`;
-                    const end = new Date(Date.UTC(Number(year),Number(month),0)).toISOString().slice(0,10);
+                    const year = document.querySelector('#active-period').value;
+                    const start = `${year}-01-01`;
+                    const end = `${year}-12-31`;
                     Promise.all(['pdf','xlsx'].map(async format => {
                         const response = await fetch(`/api/companies/${active.value}/business-reports/fiscal-documents?start=${start}&end=${end}&format=${format}`);
                         if (!response.ok) throw new Error(`Exportação ${format}: HTTP ${response.status}`);
@@ -920,6 +920,32 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             migration_button = QPushButton('Migrar dados de uma pasta portátil…')
             migration_button.clicked.connect(self.migrate_portable)
             layout.addWidget(migration_button)
+            backup_button=QPushButton('Criar backup integral…')
+            restore_button=QPushButton('Restaurar backup em pasta nova…')
+            def backup_data():
+                target,_=QFileDialog.getSaveFileName(dialog,'Salvar backup integral',str(Path.home()/'escritura-backup.zip'),'Backup (*.zip)')
+                if not target:return
+                try:
+                    from app.snapshots import create_snapshot
+                    create_snapshot(self.current_data_dir()/'escritura.sqlite3',target)
+                    QMessageBox.information(dialog,'Backup','Backup validado. Inclui bancos, originais, usuários, permissões e vínculos de todos os exercícios.')
+                except Exception as exc:QMessageBox.warning(dialog,'Backup',str(exc))
+            def restore_data():
+                if controller.snapshot()['alive']:
+                    QMessageBox.information(dialog,'Restauração','Salve seu trabalho e use Parar antes de restaurar.');return
+                source,_=QFileDialog.getOpenFileName(dialog,'Selecionar backup','', 'Backup (*.zip)')
+                if not source:return
+                parent=QFileDialog.getExistingDirectory(dialog,'Escolher pasta para a restauração')
+                if not parent:return
+                try:
+                    from app.snapshots import restore_snapshot
+                    from app.maintenance import stamp
+                    target=Path(parent)/('escritura-restaurada-'+stamp())
+                    restore_snapshot(source,target);data_folder.setText(str(target))
+                    QMessageBox.information(dialog,'Restauração','Backup conferido e restaurado. Salve as configurações para usar a nova pasta. A origem permanece preservada.')
+                except Exception as exc:QMessageBox.warning(dialog,'Restauração',str(exc))
+            backup_button.clicked.connect(backup_data);restore_button.clicked.connect(restore_data)
+            layout.addWidget(backup_button);layout.addWidget(restore_button)
             button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
             button_box.accepted.connect(dialog.accept)
             button_box.rejected.connect(dialog.reject)

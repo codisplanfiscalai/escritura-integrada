@@ -54,13 +54,13 @@ def main():
             assert smoke.get('ok') and smoke.get('packaged') and smoke.get('shutdown_complete'),smoke.get('detail')
             assert smoke.get('tray_available'),'Barra de menus indisponível.'
             assert smoke.get('version')==a.expected_version
-            after=integrity(data/'escritura.sqlite3');assert after['schema_version']==3
+            after=integrity(data/'escritura.sqlite3');assert after['schema_version']==4
             for key in ['companies','users']:assert after[key]>=before[key]
-            assert list((data/'backups').glob('antes-schema-3-*.sqlite3'))
+            assert list((data/'backups').glob('antes-schema-4-*.sqlite3'))
             assert 'preservar=sim' in (profile/'config.ini').read_text()
             assert raw.with_suffix('.png').stat().st_size>1000
             shutil.copy2(raw.with_suffix('.png'),a.result.with_suffix('.png'))
-            report['checks']+=['Bundle Mach-O nativo abriu API, autenticação e interface Vue','Ícone na barra de menus e controles gráficos disponíveis','Primeira abertura migrou schema 2 para 3 com backup e dados preservados','Encerramento completo do motor local']
+            report['checks']+=['Bundle Mach-O nativo abriu API, autenticação e interface Vue','Ícone na barra de menus e controles gráficos disponíveis','Primeira abertura migrou schema 2 para 4 com backup e dados preservados','Encerramento completo do motor local']
             # Não há processo da aplicação nem auxiliar WebEngine remanescente deste bundle.
             running=subprocess.run(['pgrep','-f',str(app)+'/Contents/'],capture_output=True,text=True)
             assert running.returncode==1,'Processos remanescentes: '+running.stdout

@@ -74,6 +74,8 @@ def migrate(conn):
         conn.execute("UPDATE settlements SET cash_cents=amount_cents WHERE cash_cents IS NULL")
         from .migration_v3 import migrate_v3
         migrate_v3(conn)
+        from .migration_v4 import migrate_v4
+        migrate_v4(conn)
         conn.commit()
     except BaseException:
         conn.rollback()

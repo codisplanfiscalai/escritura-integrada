@@ -25,9 +25,19 @@ def create_app(data_dir=None, demo=False):
     demo = bool(demo or os.environ.get("ESCRITURA_DEMO") == "1")
     database = Database(data_dir)
     core = Core(database, demo)
-    application = FastAPI(title="Escritura Integrada", version=__version__, docs_url=None, redoc_url=None)
+    from .auditor import AuditorWorker
+    from contextlib import asynccontextmanager
+    import asyncio
+    worker=AuditorWorker(core)
+    @asynccontextmanager
+    async def lifespan(application):
+        worker.recover()
+        try:yield
+        finally:await asyncio.to_thread(worker.close)
+    application = FastAPI(lifespan=lifespan, title="Escritura Integrada", version=__version__, docs_url=None, redoc_url=None)
     application.state.core = core
     application.state.db = database
+    application.state.auditor = worker
     application.state.demo = demo
     from .lookups import LookupService
     application.state.lookups = LookupService(database)
@@ -110,10 +120,10 @@ def create_app(data_dir=None, demo=False):
                         cid = int(match.group(1))
                         if session["active_company_id"] != cid:
                             return JSONResponse({"detail": "A empresa ativa mudou. Reabra o lançamento no contexto correto.", "code": "stale_context"}, 409)
-                        for header, value in [('x-company-id',str(cid)),('x-period',session['period']),('x-module',session.get('module','fiscal'))]:
+                        for header, value in [('x-company-id',str(cid)),('x-year',session['period'][:4]),('x-module',session.get('module','fiscal'))]:
                             if request.headers.get(header) and request.headers[header] != value:
                                 return JSONResponse({'detail':'O contexto mudou. Reabra a operação na empresa, módulo e competência apresentados.','code':'stale_context'},409)
-                        expected.update(company_id=cid, period=session["period"], module=session.get('module','fiscal'))
+                        expected.update(company_id=cid, period=session["period"], year=session["period"][:4], module=session.get('module','fiscal'))
                     ctx_token = request_context.set(expected)
                 else:
                     ctx_token = request_context.set({"token_hash":digest(token.encode()),"user_id":session["user"]["id"],"write":False,"permission_company_id":permission_cid,"routine":routine,"action":action or "read"})
@@ -134,12 +144,12 @@ def create_app(data_dir=None, demo=False):
         return request.state.session["user"]["username"]
 
     def active_period(request, supplied=None):
-        return period(supplied or request.state.session["period"])
+        return check_period(request, supplied or request.state.session["period"])
 
     def check_period(request, competence):
         competence = period(competence)
-        if competence != request.state.session["period"]:
-            raise DomainError("A data pertence a outra competência. Ative a competência correta e reabra o lançamento.", 409, "stale_context")
+        if competence[:4] != request.state.session["period"][:4]:
+            raise DomainError("A data de escrituração pertence a outro exercício. Selecione o ano correto e reabra a operação.", 409, "stale_context")
         return competence
 
     def check_date(request, value, label="Data"):
@@ -234,7 +244,10 @@ def create_app(data_dir=None, demo=False):
         return core.save_cost_center(cid, payload, actor(request), item_id)
 
     @application.get("/api/companies/{cid}/journals")
-    def journals(cid: int, request: Request, period: str | None = None):
+    def journals(cid: int, request: Request, period: str | None = None, year: int | None = None):
+        if year:
+            check_period(request,f'{year:04d}-01')
+            return [r for r in core.journals(cid) if r['period'][:4]==str(year)]
         return core.journals(cid, active_period(request, period))
 
     @application.post("/api/companies/{cid}/journals", status_code=201)
@@ -248,7 +261,10 @@ def create_app(data_dir=None, demo=False):
         return core.reverse_journal(cid, item_id, payload, actor(request))
 
     @application.get("/api/companies/{cid}/documents")
-    def documents(cid: int, request: Request, period: str | None = None):
+    def documents(cid: int, request: Request, period: str | None = None, year: int | None = None):
+        if year:
+            check_period(request,f'{year:04d}-01')
+            return [r for r in core.documents(cid) if r['period'][:4]==str(year)]
         return core.documents(cid, active_period(request, period))
 
     @application.post("/api/companies/{cid}/documents", status_code=201)
@@ -418,6 +434,9 @@ def create_app(data_dir=None, demo=False):
     register_business_routes(application, core, database, actor, check_date, check_period)
     from .management_api import register_management_routes
     register_management_routes(application, core, database, actor)
+
+    from .evolution_api import register_evolution_routes
+    register_evolution_routes(application,core,database,actor,check_period)
 
     @application.get("/{resource_path:path}")
     def frontend_asset(resource_path: str):

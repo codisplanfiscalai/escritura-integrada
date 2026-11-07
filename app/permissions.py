@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-MODULES = {'fiscal': 'Fiscal', 'accounting': 'Contábil', 'financial': 'Financeiro', 'social': 'Social', 'system': 'Sistema'}
+MODULES = {'fiscal': 'Fiscal', 'accounting': 'Contábil', 'financial': 'Financeiro', 'social': 'Social', 'auditor': 'Auditor Fiscal', 'system': 'Sistema'}
 ACTIONS = {'read': 'Consultar', 'create': 'Incluir', 'edit': 'Editar', 'delete': 'Excluir/desativar',
            'import': 'Importar', 'export': 'Exportar', 'print': 'Imprimir', 'book': 'Escriturar',
            'settle': 'Realizar baixas', 'reverse': 'Estornar', 'close': 'Fechar', 'reopen': 'Reabrir'}
@@ -19,6 +19,11 @@ ROUTINES = {
     'accounting.histories': ('Históricos e modelos contábeis', 'read create edit delete'),
     'accounting.cost_centers': ('Centros de custo', 'read create edit delete'),
     'accounting.reports': ('Livros e demonstrações', 'read export print'),
+    'accounting.imports': ('Importações contábeis', 'read import export'),
+    'financial.imports': ('Importação de títulos', 'read import export'),
+    'auditor.analyses': ('Auditorias internas e avulsas', 'read create import edit delete export print'),
+    'auditor.catalogs': ('Catálogos do Auditor', 'read create edit import book export'),
+    'system.storage': ('Arquivos e integridade', 'read export'),
     'accounting.prosoft': ('Integração Prosoft', 'read export'),
     'financial.titles': ('Títulos a pagar e receber', 'read create edit reverse export print'),
     'financial.settlements': ('Baixas financeiras', 'read settle reverse'),
@@ -121,7 +126,7 @@ def route_policy(path, method, query, payload, session):
     action = {'POST': 'create', 'PUT': 'edit', 'PATCH': 'edit', 'DELETE': 'delete'}.get(method, 'read')
     if path in {'/api/context', '/api/logout', '/api/permissions/me', '/api/permissions/catalog'}:
         return None, None, False
-    if re.match(r'^/api/(users|groups|access-audit)(/|$)', path):
+    if re.match(r'^/api/(users|groups|access-audit|storage)(/|$)', path):
         return None, None, True
     if path == '/api/companies':
         return None, None, write
@@ -141,6 +146,19 @@ def route_policy(path, method, query, payload, session):
         'imports': 'fiscal.imports', 'assessments': 'fiscal.assessments', 'tax-adjustments': 'fiscal.assessments',
         'tax-ledgers': 'fiscal.assessments', 'fiscal-reports': 'fiscal.reports',
         'prosoft': 'accounting.prosoft', 'exports': 'accounting.prosoft', 'audit': 'system.audit'}
+    if root == 'module-imports':
+        module = payload.get('module') or query.get('module') or session.get('module')
+        return module + '.imports' if module in {'accounting','financial'} else 'invalid', ('import' if write else 'export' if tail.endswith('/original') else 'read'), False
+    if root == 'auditor':
+        routine = 'auditor.catalogs' if '/catalogs' in tail else 'auditor.analyses'
+        action = 'book' if tail.endswith('/publish') else 'edit' if tail.endswith(('/cancel','/restore','/treatment')) else 'delete' if tail.endswith('/delete') else action
+        if tail.endswith('/import-preview'):action='import'
+        if tail.endswith('/original'):action='export'
+        if tail.endswith(('/report','/files','/auxiliary')) or (not write and query.get('format','json') != 'json'):
+            action = 'print' if tail.endswith('/report') and query.get('purpose') == 'print' and query.get('format','pdf') == 'pdf' else 'export'
+        return routine, action, False
+    if root == 'report-models': return 'dashboard', 'read', False
+    if root == 'storage': return 'system.storage', 'export' if tail.endswith('/download') else 'read', False
     if root in {'exercises', 'periods'}:
         module = payload.get('module') or query.get('module') or session.get('module', 'fiscal')
         if module not in MODULES or module == 'system':
@@ -167,7 +185,7 @@ def route_policy(path, method, query, payload, session):
     if tail.endswith('/settle'): routine, action = 'financial.settlements', 'settle'
     if tail.endswith(('/reverse', '/unreconcile')): action = 'reverse'
     if tail.endswith(('/allocate', '/reconcile', '/renegotiate')): action = 'edit'
-    if query.get('format', 'json') != 'json': action = 'print' if query.get('purpose') == 'print' else 'export'
+    if not write and query.get('format', 'json') != 'json': action = 'print' if query.get('purpose') == 'print' and query.get('format') == 'pdf' else 'export'
     return routine, action, False
 
 

@@ -141,11 +141,11 @@ class ManagementTests(unittest.TestCase):
         self.assertTrue(result['months'][0]['closed']);self.assertFalse(result['months'][1]['closed'])
         self.assertTrue(any(x['entity']=='exercise' for x in self.core.audit(self.a['id'])))
 
-    def test_manual_title_and_settlement_reject_foreign_month(self):
-        r=self.client.post(self.scope('/titles'),json={'kind':'payable','description':'Fora da tela','partner_name':'Teste','document':'X','issue_date':'2026-12-01','due_date':'2026-12-10','amount':'10.00'})
+    def test_manual_title_and_settlement_reject_foreign_year(self):
+        r=self.client.post(self.scope('/titles'),json={'kind':'payable','description':'Fora da tela','partner_name':'Teste','document':'X','issue_date':'2027-12-01','due_date':'2027-12-10','amount':'10.00'})
         self.assertEqual(409,r.status_code,r.text)
         t=self.title()
-        r=self.client.post(self.scope(f"/titles/{t['id']}/settle"),json={'version':t['version'],'date':'2026-12-01','amount':'10.00','reason':'Fora da tela','idempotency_key':'wrong-month'})
+        r=self.client.post(self.scope(f"/titles/{t['id']}/settle"),json={'version':t['version'],'date':'2027-12-01','amount':'10.00','reason':'Fora da tela','idempotency_key':'wrong-month'})
         self.assertEqual(409,r.status_code,r.text)
         self.assertEqual(0,self.core.titles(self.a['id'])[0]['paid_cents'])
 
