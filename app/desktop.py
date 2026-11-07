@@ -341,6 +341,7 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             self._exit_requested = False
             self._restart_requested = False
             self._guard_pending = False
+            self._load_serial = 0
             self._loaded_generation = -1
             self._loading_generation = -1
             self._health_pending = False
@@ -385,6 +386,10 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             self.start_button = QPushButton("Iniciar aplicação")
             self.start_button.clicked.connect(self.start_application)
             buttons.addWidget(self.start_button)
+            self.retry_button = QPushButton("Reabrir interface")
+            self.retry_button.clicked.connect(self.retry_interface)
+            self.retry_button.setVisible(False)
+            buttons.addWidget(self.retry_button)
             config_button = QPushButton("Configurações")
             config_button.clicked.connect(self.configure)
             buttons.addWidget(config_button)
@@ -466,9 +471,22 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                 self.show_window()
 
         def show_window(self):
-            self.showNormal()
+            # showNormal() removia a maximização ao abrir o tray ou uma mensagem.
+            if self.isMinimized():
+                self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+            self.show()
             self.raise_()
             self.activateWindow()
+
+        def retry_interface(self):
+            snapshot = controller.snapshot()
+            if snapshot["state"] != "running":
+                self.start_application()
+                return
+            self.retry_button.setEnabled(False)
+            self._loading_generation = snapshot["generation"]
+            self.set_status("Reabrindo a interface…", "A sessão e os dados gravados serão preservados.")
+            self.web.setUrl(QUrl(snapshot["url"]))
 
         def closeEvent(self, event):
             if self._exit_requested and not controller.snapshot()["alive"]:
@@ -564,6 +582,7 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             alive = snapshot["alive"]
             self.actions["Iniciar"].setEnabled(not alive and not self._exit_requested)
             self.start_button.setEnabled(not alive and not self._exit_requested)
+            self.retry_button.setVisible(state == "running")
             self.actions["Parar"].setEnabled(alive and state != "stopping")
             self.actions["Reiniciar"].setEnabled(state != "stopping" and not self._exit_requested)
             if not alive:
@@ -659,12 +678,28 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             snapshot = controller.snapshot()
             if snapshot["state"] != "running" or not self._healthy:
                 return
+            self._load_serial += 1
+            serial = self._load_serial
+            self.retry_button.setEnabled(True)
             if not success:
-                self.stack.setCurrentWidget(self.status_page)
-                self.set_status("Não foi possível abrir a interface", "Reinicie a aplicação pelo menu ou confira os registros.")
-                self.show_window()
-                if smoke_result:
-                    self.finish_smoke(False, "QWebEngineView não carregou a interface.")
+                # O Qt emite false também ao entregar downloads/pop-ups ou recusar
+                # navegação. Só substituir a tela se a aplicação realmente sumiu.
+                def inspected(present):
+                    if self._tearing_down or self._exit_requested or serial != self._load_serial:
+                        return
+                    current = controller.snapshot()
+                    if current["generation"] != snapshot["generation"] or current["state"] != "running":
+                        return
+                    if present:
+                        self.stack.setCurrentWidget(self.web)
+                        logging.getLogger(__name__).info("Navegação interrompida; área de trabalho preservada")
+                        return
+                    self.stack.setCurrentWidget(self.status_page)
+                    self.set_status("Não foi possível abrir a interface", "Use Reabrir interface para continuar. Se persistir, confira os registros.")
+                    self.show_window()
+                    if smoke_result:
+                        self.finish_smoke(False, "QWebEngineView não carregou a interface.")
+                self.page.runJavaScript("Boolean(document.querySelector('#app .app-shell, #app .login-page'))", inspected)
                 return
             self._loaded_generation = snapshot["generation"]
             self.stack.setCurrentWidget(self.web)
@@ -674,10 +709,12 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
         def on_render_terminated(self, status, exit_code):
             if self._tearing_down:
                 return
+            self._load_serial += 1
+            self.retry_button.setEnabled(True)
             detail = f"O navegador integrado encerrou inesperadamente ({status}, código {exit_code})."
             logging.getLogger(__name__).error(detail)
             self.stack.setCurrentWidget(self.status_page)
-            self.set_status("Não foi possível manter a interface aberta", detail + " Use Reiniciar ou consulte os registros.")
+            self.set_status("Não foi possível manter a interface aberta", detail + " Use Reabrir interface ou consulte os registros.")
             self.show_window()
             if smoke:
                 self.finish_smoke(False, detail)
@@ -743,6 +780,8 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                     # incluindo a navegação da PrintPage e a sessão autenticada.
                     self.page.runJavaScript("(() => { const a=document.createElement('a');a.href="+json.dumps(href)+";a.target='_blank';a.rel='noopener';document.body.append(a);a.click();a.remove(); })()")
                 dom['auditor_pdf_pages']=self._auditor_pdf_pages
+                exports_verified = self.exercise_file_smoke(dom) if self._auditor_pdf_pages else False
+                dom['file_actions'] = getattr(self, '_file_checks', [])
                 if dom.get("exports",{}).get("error"):
                     self.finish_smoke(False,dom["exports"]["error"],dom)
                     return
@@ -750,7 +789,7 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                             and dom.get("exports",{}).get("pdf",0)>1000
                             and dom.get("exports",{}).get("xlsx",0)>1000
                             and dom.get("exports",{}).get("auditor",{}).get("documents")==1
-                            and self._auditor_pdf_pages>0
+                            and self._auditor_pdf_pages>0 and exports_verified
                             and dom.get("loginRequested") and dom.get("companyId")
                             and dom.get("navigationItems", 0) >= 10
                             and dom.get("mainTextLength", 0) > 80
@@ -794,6 +833,40 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                     self._smoke_paint_ready = False
                     QTimer.singleShot(300, self.inspect_smoke)
             self.page.runJavaScript(script, inspected)
+
+        def exercise_file_smoke(self, dom):
+            from app.desktop_export_smoke import cases, click_script
+            if not hasattr(self, '_file_cases'):
+                self._file_cases = cases(dom['companyId'], dom['period'][:4])
+                self._file_checks = []
+                self._file_waiting = None
+                self.showMaximized()
+                self.show_window()
+                self.page.runJavaScript("window.__escrituraFileMarker='contexto preservado';")
+                return False
+            if self._file_waiting:
+                return False
+            if len(self._file_checks) == len(self._file_cases):
+                return True
+            self._file_waiting = self._file_cases[len(self._file_checks)]
+            self.page.runJavaScript(click_script(self._file_waiting))
+            return False
+
+        def finish_file_smoke(self, **evidence):
+            if not smoke or not getattr(self, '_file_waiting', None):
+                return
+            case = dict(self._file_waiting)
+            def verify(marker):
+                if self._smoke_finished:
+                    return
+                if not marker or not self.isMaximized() or self.stack.currentWidget() is not self.web:
+                    self.finish_smoke(False, 'Exportação alterou a área de trabalho ou a maximização: '+case['name'])
+                    return
+                self._file_checks.append({'action':case['name'], 'maximized':True, 'context_preserved':True, **evidence})
+                self._file_waiting = None
+                smoke.record('file_action_verified', file_actions=self._file_checks)
+            QTimer.singleShot(300, lambda: self.page.runJavaScript(
+                "window.__escrituraFileMarker==='contexto preservado' && Boolean(document.querySelector('.app-shell'))", verify))
 
         def finish_smoke(self, success, detail, dom=None):
             if self._smoke_finished:
@@ -898,26 +971,31 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             from app.desktop_pdf import preview_url_allowed
             value=url.toString()
             if self._exit_requested or value in self._preview_requests or not preview_url_allowed(value,controller.snapshot()['url']):return
-            self._preview_requests.add(value);self.page.download(url,'auditoria.pdf')
+            self._preview_requests.add(value);self.page.download(url,'relatorio.pdf')
             QTimer.singleShot(30000,lambda:self._preview_requests.discard(value))
 
         def preview_download(self,request):
             import tempfile
             from PySide6.QtWebEngineCore import QWebEngineDownloadRequest
             from app.desktop_pdf import show_pdf
+            preview_path=request.url().path()
             folder=tempfile.TemporaryDirectory(prefix='escritura-pdf-')
-            target=Path(folder.name)/'auditoria.pdf'
+            target=Path(folder.name)/'relatorio.pdf'
             request.setDownloadDirectory(folder.name);request.setDownloadFileName(target.name)
             def finished(state):
                 if state==QWebEngineDownloadRequest.DownloadState.DownloadCompleted:
-                    if request.mimeType()!='application/pdf' or not target.read_bytes().startswith(b'%PDF'):
-                        folder.cleanup();self.statusBar().showMessage('Não foi possível abrir o PDF. Confira o acesso à auditoria.',10000);return
+                    with target.open('rb') as content: prefix = content.read(4)
+                    if request.mimeType()!='application/pdf' or prefix != b'%PDF':
+                        folder.cleanup();self.statusBar().showMessage('Não foi possível abrir o PDF. Confira a sessão, as permissões e os filtros.',10000);return
                     def ready(pages,dialog):
-                        self._auditor_pdf_pages=pages
+                        auditor='/auditor/' in preview_path
+                        if auditor:self._auditor_pdf_pages=pages
                         if smoke and pages:
-                            dialog.grab().save(str(smoke.path.with_name(smoke.path.stem+'-auditor-pdf.png')))
-                            smoke.record('auditor_pdf_opened',auditor_pdf_pages=pages)
+                            label='auditor' if auditor else preview_path.rsplit('/',1)[-1]
+                            dialog.grab().save(str(smoke.path.with_name(smoke.path.stem+'-'+label+'-pdf.png')))
+                            smoke.record('report_pdf_opened',pdf_preview=label,pdf_pages=pages,auditor_pdf_pages=self._auditor_pdf_pages)
                             dialog.close()
+                            self.finish_file_smoke(pdf_pages=pages)
                     dialog=show_pdf(self,target,ready);self._pdf_viewers.append(dialog)
                     def cleanup(_):
                         if dialog in self._pdf_viewers:self._pdf_viewers.remove(dialog)
@@ -932,7 +1010,30 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                 self._preview_requests.discard(request.url().toString());self.preview_download(request);return
             name = Path(request.downloadFileName().replace("\\", "/")).name or "relatorio.csv"
             folder = QStandardPaths.writableLocation(QStandardPaths.DownloadLocation)
-            target, _selected = QFileDialog.getSaveFileName(self, "Salvar arquivo", str(Path(folder) / name))
+            if smoke:
+                from PySide6.QtWebEngineCore import QWebEngineDownloadRequest
+                case = getattr(self, '_file_waiting', None)
+                if not case:
+                    request.cancel(); self.finish_smoke(False, 'Download inesperado no teste gráfico: '+name); return
+                if case['kind'] == 'cancel':
+                    request.cancel(); self.finish_file_smoke(cancelled=True); return
+                target = str(smoke.path.parent / ('exportacao-' + name))
+                def completed(state):
+                    if state == QWebEngineDownloadRequest.DownloadState.DownloadCompleted:
+                        size = Path(target).stat().st_size
+                        if size == 0: self.finish_smoke(False, 'Download vazio: '+name)
+                        else:
+                            from urllib.parse import urlsplit, parse_qs
+                            fmt = parse_qs(urlsplit(case['url']).query)['format'][0]
+                            with Path(target).open('rb') as content: prefix = content.read(4)
+                            if not name.endswith('.'+fmt) or (fmt == 'pdf' and prefix != b'%PDF') or (fmt == 'xlsx' and not prefix.startswith(b'PK')):
+                                self.finish_smoke(False, 'Nome ou conteúdo do arquivo exportado inválido: '+name)
+                            else: self.finish_file_smoke(filename=name, bytes=size)
+                    elif state == QWebEngineDownloadRequest.DownloadState.DownloadInterrupted:
+                        self.finish_smoke(False, 'Download interrompido: '+request.interruptReasonString())
+                request.stateChanged.connect(completed)
+            else:
+                target, _selected = QFileDialog.getSaveFileName(self, "Salvar arquivo", str(Path(folder) / name))
             if target:
                 destination = Path(target)
                 request.setDownloadDirectory(str(destination.parent))

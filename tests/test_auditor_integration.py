@@ -120,6 +120,18 @@ class AuditorIntegrationTests(unittest.TestCase):
         r=self.client.put(self.scope(f"/auditor/catalogs/{rid}/entries/{errors['rows'][0]['_index']}"),json={'version':revision['version']+1,'entry':entry});self.assertEqual(409,r.status_code)
         self.assertEqual(6,self.client.get(self.scope(f'/auditor/catalogs/{iid}/entries?status=error')).json()['total'])
 
+    def test_prepared_reports_are_reused_on_first_download_and_preview(self):
+        job=self.submit()
+        self.assertEqual(2,len(job['reports']))
+        self.assertIn('Concluído',job['logs'][-1]['message'])
+        with patch('app.auditor_reports.export_audit',side_effect=AssertionError('Relatório pronto não deve ser recalculado')):
+            for fmt in ('pdf','xlsx'):
+                response=self.client.get(self.scope(f"/auditor/jobs/{job['id']}/report?format={fmt}"))
+                self.assertEqual(200,response.status_code)
+                self.assertTrue(response.content.startswith(b'%PDF' if fmt=='pdf' else b'PK'))
+            self.assertEqual(200,self.client.get(self.scope(f"/auditor/jobs/{job['id']}/report?format=pdf&purpose=print")).status_code)
+        self.assertEqual(2,len(self.core.auditor_job(self.a['id'],job['id'])['reports']))
+
     def test_report_revisions_persist_and_treatments_do_not_replace_original_artifact(self):
         job=self.submit();rid=job['reports'][0]['id']
         original=self.client.get(self.scope(f"/auditor/jobs/{job['id']}/reports/{rid}")).content

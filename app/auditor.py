@@ -341,6 +341,15 @@ class AuditorWorker:
             from .auditor_results import persist_report
             report_job=self.core.auditor_job(cid,jid)
             report_job['status']='failed' if failure else 'completed'
+            message='Nenhum documento ou evento pôde ser auditado. Confira os arquivos recusados e o CNPJ da empresa.' if failure else None
+            report_job['error']=message
+            completion_log={'created_at':now(),
+                'message':message or ('Concluído com recusas; confira os arquivos não processados.' if result['outcome']['rejected'] else 'Concluído. Marcar achados como tratados não corrige a origem.'),
+                'level':'error' if failure else 'warning' if result['outcome']['rejected'] else 'info'}
+            # O relatório e seu retrato incluem o mesmo log final. Publicá-lo só
+            # depois da geração evitava o cache e recalculava ambos os arquivos
+            # no primeiro download. A conclusão segue atômica com os artefatos.
+            report_job['logs'].append(completion_log)
             generated=[]
             for fmt in ('pdf','xlsx'):
                 self.checkpoint(cid,jid)
@@ -351,11 +360,11 @@ class AuditorWorker:
                 if current['user_id']:
                     require(conn,current['user_id'],cid,'auditor.analyses','create')
                     if current['mode']=='standalone':require(conn,current['user_id'],cid,'auditor.analyses','import')
+                conn.execute('INSERT INTO auditor_logs(company_id,job_id,level,message,created_at) VALUES(?,?,?,?,?)',
+                             (cid,jid,completion_log['level'],completion_log['message'],completion_log['created_at']))
                 for fmt,content in generated:persist_report(self.core,conn,cid,report_job,fmt,content,job['created_by'])
-                message='Nenhum documento ou evento pôde ser auditado. Confira os arquivos recusados e o CNPJ da empresa.' if failure else None
                 conn.execute('UPDATE auditor_jobs SET status=?,stage=?,progress=100,finished_at=?,error=?,version=version+1 WHERE id=?',('failed' if failure else 'completed','failed' if failure else 'completed',now(),message,jid))
                 audit(conn,cid,job['created_by'],'failed' if failure else 'complete','auditor_job',jid,{'totals':result['totals'],'snapshot_sha256':result['snapshot_sha256'],'bookkeeping_changed':False})
-            self.log(cid,jid,message or ('Concluído com recusas; confira os arquivos não processados.' if result['outcome']['rejected'] else 'Concluído. Marcar achados como tratados não corrige a origem.'),'error' if failure else 'warning' if result['outcome']['rejected'] else 'info')
         except Cancelled:
             with self.db.transaction() as conn:conn.execute("UPDATE auditor_jobs SET status='cancelled',stage='cancelled',result_json=NULL,finished_at=?,version=version+1 WHERE id=? AND company_id=?",(now(),jid,cid))
             with self.db.transaction() as conn:

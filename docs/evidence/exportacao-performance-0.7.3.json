@@ -1,0 +1,42 @@
+{
+  "fixture_documents": 3002,
+  "scenario": "Dados sintéticos em SQLite temporário; mediana de 3 execuções; sessão leve pós-correção medida individualmente.",
+  "before": {
+    "session": {
+      "median_ms": 4.51,
+      "sql_statements": 808,
+      "rows": 0
+    },
+    "fiscal_report": {
+      "median_ms": 92.32,
+      "sql_statements": 6008,
+      "rows": 3002
+    },
+    "documents": {
+      "median_ms": 79.93,
+      "sql_statements": 6006,
+      "rows": 3002
+    }
+  },
+  "after": {
+    "session": {
+      "median_ms": 4.27,
+      "sql_statements": 808,
+      "rows": 0
+    },
+    "fiscal_report": {
+      "median_ms": 45.22,
+      "sql_statements": 4,
+      "rows": 3002
+    },
+    "documents": {
+      "median_ms": 39.51,
+      "sql_statements": 5,
+      "rows": 3002
+    },
+    "request_session": {
+      "ms": 1.34,
+      "sql_statements": 3
+    }
+  }
+}

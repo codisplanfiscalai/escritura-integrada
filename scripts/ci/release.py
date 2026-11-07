@@ -259,7 +259,9 @@ Execução: https://github.com/{plan['repository']}/actions/runs/{plan['run_id']
 - Experiência do Auditor: painel executivo, análise crítica, grade de documentos e inspeção por abas; PDF analítico/sintético e Excel com painel, componentes e diferenças recuperados do modelo original.
 - Fontes do commit testado, pacotes Compose/.env de produção/desenvolvimento e imagens Linux amd64 para uso offline.
 - Integridade e inventário: `{manifest_name}` e `{checksums_name}`. Relatórios anexos comprovam os gates Linux, interface, instalação/atualização Windows, macOS nas duas arquiteturas e imagens Docker.
-- Consulte [a cobertura e os limites da etapa](https://github.com/{plan['repository']}/blob/{plan['source_sha']}/docs/AUDITOR_EXPERIENCIA_0_7_2.md) e [a instalação](https://github.com/{plan['repository']}/blob/{plan['source_sha']}/docs/DISTRIBUICAO_DESKTOP.md).
+- Exportação preserva a área de trabalho e a janela maximizada; prévia PDF no Fiscal, Contábil, Financeiro, apurações e Auditor.
+- Consultas em lote e paginação reduzem trabalho repetido sem alterar totais ou permissões.
+- Consulte [as correções e medições](https://github.com/{plan['repository']}/blob/{plan['source_sha']}/docs/EXPORTACAO_DESEMPENHO_0_7_3.md) e [a instalação](https://github.com/{plan['repository']}/blob/{plan['source_sha']}/docs/DISTRIBUICAO_DESKTOP.md).
 - Assinatura Authenticode/Developer ID e notarização não estão configuradas. O teste no runner não homologa o download pelo SmartScreen/Gatekeeper.
 - Dados de demonstração são fictícios. Social cobre somente competências; apuração fiscal legal, livros oficiais e integração Prosoft dependem da homologação documentada.
 

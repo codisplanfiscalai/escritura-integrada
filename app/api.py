@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import Body, FastAPI, Request
+from starlette.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 
@@ -82,7 +83,9 @@ def create_app(data_dir=None, demo=False):
                 if request.headers.get("sec-fetch-site") == "cross-site":
                     return JSONResponse({"detail": "Origem da requisição não autorizada.", "code": "invalid_origin"}, 403)
             token = request.cookies.get(COOKIE, "")
-            session = core.session(token)
+            # A matriz completa pertence à apresentação da sessão. Cada rota
+            # continua autorizada no banco, inclusive depois de revogações.
+            session = await run_in_threadpool(core.session, token, include_permissions=path == '/api/session')
             request.state.session = session
             request.state.token = token
             if path not in public:
@@ -107,7 +110,7 @@ def create_app(data_dir=None, demo=False):
                     return JSONResponse({'detail':'Ative uma empresa antes de acessar esta rotina.','code':'no_company'},409)
                 writing = mutating and path not in {'/api/context', '/api/logout'}
                 try:
-                    core.authorize(session['user'], permission_cid, writing, privileged, routine, action or 'read')
+                    await run_in_threadpool(core.authorize, session['user'], permission_cid, writing, privileged, routine, action or 'read')
                 except DomainError as exc:
                     return JSONResponse({'detail': exc.detail, 'code': exc.code}, exc.status)
                 if mutating:
@@ -271,7 +274,7 @@ def create_app(data_dir=None, demo=False):
     def documents(cid: int, request: Request, period: str | None = None, year: int | None = None):
         if year:
             check_period(request,f'{year:04d}-01')
-            return [r for r in core.documents(cid) if r['period'][:4]==str(year)]
+            return core.documents(cid, year=year)
         return core.documents(cid, active_period(request, period))
 
     @application.post("/api/companies/{cid}/documents", status_code=201)

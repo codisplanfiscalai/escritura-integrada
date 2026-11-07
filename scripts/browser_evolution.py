@@ -37,11 +37,13 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
         r=ctx.request.post(url+'/api/context',data={'company_id':cid,'module':'accounting','period':'2026-11'},headers={'X-CSRF-Token':session['csrf_token']});assert r.ok,r.text()
         p=ctx.new_page();p.goto(url)
         navigation=p.get_by_role('navigation',name='Navegação principal')
+        expect(navigation).to_be_visible()
         expect(navigation.get_by_text('Fiscal',exact=True)).to_have_count(0)
         button=navigation.get_by_role('button',name='Importações contábeis',exact=True,include_hidden=True)
         parent=button.locator('xpath=ancestor::details')
         if parent.get_attribute('open') is None:parent.locator('summary').click()
         button.click()
+        expect(p.get_by_role('tab',name='Importações contábeis',exact=True)).to_have_attribute('aria-selected','true')
         p.get_by_label('Leiaute',exact=True).select_option('journals-v1')
         csv='id;date;document;history;account;debit;credit;cost_center\n'
         for key,day in [('FEV','2026-02-01'),('MAR','2026-03-01'),('ANT','2025-12-31')]:
@@ -56,6 +58,10 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
         assert ctx.request.get(url+'/api'+scope('/documents')).status==403
         assert len([j for j in ctx.request.get(url+'/api'+scope('/journals?year=2026')).json() if j['document'].startswith('CSV-UI-')])==1
         p.screenshot(path=str(root/'artifacts/browser/importacao-contabil-independente.png'),full_page=True)
+    except Exception:
+        p.screenshot(path=str(root/'artifacts/browser/importacao-contabil-failure.png'),full_page=True)
+        (root/'artifacts/browser/importacao-contabil-failure.txt').write_text(p.locator('body').inner_text(),encoding='utf-8')
+        raise
     finally:ctx.close()
     check('Usuário só contábil: menu próprio, CSV com mês aberto/fechado/outro ano, seleção explícita e Fiscal recusado')
     # Teclado: rejeição conserva o formulário, salvar e novo limpa a identidade.
