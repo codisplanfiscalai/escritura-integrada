@@ -128,8 +128,12 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       ESCRITURA_SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
-      ESCRITURA_DATA_DIR: ${{ runner.temp }}/escritura-release-tests
     steps:
+      - name: Definir diretório temporário dos testes Windows
+        shell: pwsh
+        run: |
+          $dataPath = Join-Path $env:RUNNER_TEMP 'escritura-release-tests'
+          "ESCRITURA_DATA_DIR=$dataPath" >> $env:GITHUB_ENV
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
