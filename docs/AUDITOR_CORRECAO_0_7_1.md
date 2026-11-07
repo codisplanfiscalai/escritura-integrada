@@ -40,7 +40,7 @@ A publicação não substitui retroativamente catálogos usados em auditorias. C
 4. Achados permite filtrar severidade/situação e registrar tratamento. Conciliação e margens apresenta as correspondências e estimativas da amostra.
 5. PDF e Excel são produzidos no processamento. Relatórios oferece download, visualização/impressão e revisões anteriores. Falha na geração impede o estado de conclusão.
 6. Catálogos → Importar referência 1.2.2 cria um rascunho histórico com todos os diagnósticos. Revise fonte, vigência e cada regra; nenhum erro é corrigido ou publicado automaticamente. O teste usa correções **sintéticas**, sem recomendar enquadramentos tributários.
-7. Histórico permite reprocessar, excluir logicamente e restaurar com justificativa. Reprocessamento cria um novo retrato; não sobrescreve os resultados anteriores.
+7. Histórico permite reprocessar, excluir logicamente e restaurar com justificativa. A confirmação do reprocessamento mostra o catálogo de origem e permite escolher explicitamente outra versão publicada. Reprocessamento cria um novo retrato; não sobrescreve os resultados anteriores.
 
 ## Relatórios
 

@@ -187,6 +187,17 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     expect(main.get_by_role('heading',name=f'Auditoria #{internal_id} · Concluída',exact=True)).to_be_visible()
     assert page.request.get(url+'/api'+scope(f'/auditor/jobs/{jid}')).json()['findings'][0]['status']=='reviewing'
     check('Interna: seleção do documento importado, XML vinculado, valores originais/escriturados, PDF/Excel abertos, persistência após recarga')
+    main.get_by_role('button',name='Reprocessar em novo histórico',exact=True).click()
+    dialog=page.get_by_role('dialog',name='Reprocessar auditoria',exact=True)
+    expect(dialog.get_by_label('Catálogo do novo processamento',exact=True)).to_have_value('')
+    dialog.get_by_role('button',name='Confirmar reprocessamento',exact=True).click()
+    expect(dialog).to_have_count(0)
+    expect(main.get_by_role('heading',name=re.compile(r'Auditoria #\d+ · Concluída'))).to_be_visible(timeout=45000)
+    reprocessed_id=int(re.search(r'#(\d+)',main.get_by_role('heading',name=re.compile(r'Auditoria #')).inner_text())[1])
+    assert reprocessed_id!=internal_id
+    assert page.request.get(url+'/api'+scope(f'/auditor/jobs/{reprocessed_id}')).json()['parent_id']==internal_id
+    assert before=={p:page.request.get(url+'/api'+scope(p)).json() for p in before}
+    check('Reprocessamento pela interface: revisão explícita do catálogo, novo histórico, origem e resultados anteriores preservados')
     main.get_by_role('button',name='Catálogos',exact=True).click()
     main.get_by_role('button',name='Importar referência 1.2.2',exact=True).click()
     page.get_by_role('dialog').get_by_role('button',name='Salvar rascunho',exact=True).click()
