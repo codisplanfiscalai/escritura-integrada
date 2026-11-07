@@ -118,7 +118,10 @@ def build_pdf(job):
     if excluded:story.append(table(['Documentos excluídos dos totais','Situação','Valor original'],[[d.get('number'),STATUS.get(d['status'],d['status']),amount(d['total_value'])] for d in excluded]))
     from .auditor_catalogs import diagnostics
     issues=diagnostics(catalog.get('entries',[]),catalog.get('reference',{}))
-    story.extend([p('Qualidade da parametrização',sub),table(['Linha / NCM','Diagnóstico'],[[str(r.get('source_row'))+' / '+str(r.get('ncm')),r['message']] for r in issues],[160,610])])
+    if issues:
+        story.extend([p('Qualidade da parametrização',sub),table(['Linha / NCM','Diagnóstico'],[[str(r.get('source_row'))+' / '+str(r.get('ncm')),r['message']] for r in issues],[160,610])])
+    else:
+        story.append(p('Qualidade da parametrização: nenhum diagnóstico estrutural no retrato; não equivale a homologação fiscal.',small))
     if result.get('events'):story.extend([p('Eventos preservados',sub),table(['Campo','Valor'],list(evidence_rows(result['events'])),[230,540])])
     if job.get('attachments'):story.extend([p('PDFs vinculados por revisão',sub),table(['Documento','Arquivo','Revisor / justificativa'],[[a['document_ref'],a['file_id'],a['created_by']+' / '+a['reason']] for a in job['attachments']],[300,70,400])])
     story.extend([p('Histórico do processamento',sub),table(['Data / hora','Nível','Evento'],[[day(l['created_at'])+' '+l['created_at'][11:19],l['level'],l['message']] for l in job['logs']],[130,70,570])])
