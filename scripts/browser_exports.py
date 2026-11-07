@@ -32,6 +32,7 @@ def run(page, url, cid, nav, check, shot):
         assert Path(info.value.path()).read_bytes().startswith(b'PK')
     check('Fiscal/Contábil/Financeiro: PDF, Excel, prévia, falha 403 e nova tentativa sem sair da aplicação')
     nav('Livros e relatórios fiscais')
+    expect(page.get_by_label(re.compile('^Relatório'))).to_have_value('fiscal-documents')
     report_url=url+f'/api/companies/{cid}/business-reports/fiscal-documents?start=2026-01-01&end=2026-12-31'
     payload=page.request.get(report_url).json();assert payload['rows']
     payload['rows']=[dict(payload['rows'][0],document=f'VOLUME-{n:05d}') for n in range(5000)]

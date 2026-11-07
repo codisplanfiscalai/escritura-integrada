@@ -52,6 +52,7 @@ def main():
                         parent=button.locator('xpath=ancestor::details')
                         if parent.count() and parent.get_attribute('open') is None:parent.locator('summary').click()
                         button.click()
+                        expect(page.get_by_role('tab',name=label,exact=True)).to_have_attribute('aria-selected','true')
                     def check(name):report['checks'].append(name)
                     def date_field(label):return page.locator('label').filter(has_text=re.compile('^'+re.escape(label))).locator('input.date-input-field')
                     try:
