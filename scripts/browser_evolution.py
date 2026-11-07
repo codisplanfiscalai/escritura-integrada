@@ -14,6 +14,15 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     def keyboard(field,value):
         field.focus();field.press('ControlOrMeta+A');field.press_sequentially(value)
     def date_field(label):return page.locator('label').filter(has_text=re.compile('^'+re.escape(label))).locator('input.date-input-field')
+    def select_account(line,code):
+        select=page.get_by_label(f'Conta da partida {line}',exact=True)
+        options=select.locator('option').all_text_contents()
+        index=next(i for i,label in enumerate(options) if label.startswith(code+' ·'))
+        value=select.locator('option').nth(index).get_attribute('value')
+        select.focus();select.press('Home')
+        for _ in range(index):select.press('ArrowDown')
+        select.press('Tab');expect(select).to_have_value(value)
+
     companies=page.request.get(url+'/api/companies').json()
     company=next(c for c in companies if c['id']==cid)
     # A permissão e a sessão são exclusivamente contábeis.
@@ -59,7 +68,7 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     keyboard(page.get_by_label('Documento',exact=True),'TECLA-C1')
     keyboard(page.get_by_label('Histórico *',exact=True),'Lançamento por teclado')
     for line,code in [(1,'3'),(2,'5')]:
-        select=page.get_by_label(f'Conta da partida {line}',exact=True);select.focus();select.press(code);select.press('Enter')
+        select_account(line,code)
     keyboard(page.get_by_label('Débito da partida 1',exact=True),'12,34')
     keyboard(page.get_by_label('Crédito da partida 2',exact=True),'12,34')
     page.keyboard.press('Alt+s')
@@ -72,7 +81,7 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     keyboard(page.get_by_label('Documento',exact=True),'TECLA-C2')
     keyboard(page.get_by_label('Histórico *',exact=True),'Segundo lançamento por teclado')
     for line,code in [(1,'3'),(2,'5')]:
-        select=page.get_by_label(f'Conta da partida {line}',exact=True);select.focus();select.press(code);select.press('Enter')
+        select_account(line,code)
     keyboard(page.get_by_label('Débito da partida 1',exact=True),'25,00')
     keyboard(page.get_by_label('Crédito da partida 2',exact=True),'25,00')
     page.keyboard.press('Alt+s');page.keyboard.press('Alt+s')
