@@ -13,6 +13,8 @@ def register_evolution_routes(app,core,db,actor,check_period):
     def year(request,value):
         value=integer(value if value is not None else int(request.state.session['period'][:4]),'Exercício',1900)
         check_period(request,f'{value:04d}-01');return value
+    from .auditor_api import register_auditor_routes
+    register_auditor_routes(app,core,actor,year)
 
     @app.get('/api/companies/{cid}/report-models')
     def report_models(cid:int,request:Request):
@@ -63,8 +65,9 @@ def register_evolution_routes(app,core,db,actor,check_period):
     @app.post('/api/companies/{cid}/auditor/jobs/{jid}/reprocess',status_code=201)
     def reprocess(cid:int,jid:int,request:Request,payload:dict=Body(...)):
         previous=core.auditor_job(cid,jid);year(request,previous['year'])
+        if previous['deleted_at']:raise DomainError('Restaure a auditoria antes de reprocessar.',409)
         if previous['status'] in {'queued','running'}:raise DomainError('Aguarde o processamento atual.',409)
-        snap=previous['snapshot'];data=dict(snap['input']);data['idempotency_key']=payload.get('idempotency_key');data['catalog_id']=payload.get('catalog_id',data.get('catalog_id'))
+        snap=previous['snapshot'];data=dict(snap['input']);data['parent_id']=jid;data['idempotency_key']=payload.get('idempotency_key');data['catalog_id']=payload.get('catalog_id',data.get('catalog_id'))
         if data['mode']=='standalone':
             ids={f.get('package_id',f['id']) for f in snap['files']}
             with db.read() as conn:
@@ -77,10 +80,11 @@ def register_evolution_routes(app,core,db,actor,check_period):
         from .file_store import store_file
         from .core import now,audit
         job=core.auditor_job(cid,jid);year(request,job['year'])
-        if job['status']!='completed':raise DomainError('Aguarde a conclusão da auditoria.',409)
+        if job['status']!='completed' or job['deleted_at']:raise DomainError('Conclua ou restaure a auditoria antes de gerar o documento auxiliar.',409)
         document=next((d for d in job['result']['documents'] if d['document_ref']==payload.get('document_ref')),None)
         if not document:raise DomainError('Documento não pertence à auditoria.',404)
         # O PDF importado permanece preferencial; gerar é sempre uma ação explícita.
+        if not document.get('original_file_id'):raise DomainError('XML original indisponível; não é possível gerar representação fiscal.',422)
         with db.read() as conn:r=read_file(conn,cid,document['original_file_id'])
         content,renderer=render_danfe(r['content'])
         with db.transaction() as conn:
@@ -102,7 +106,9 @@ def register_evolution_routes(app,core,db,actor,check_period):
         year(request,job['year']);return core.treat_finding(cid,fid,payload,actor(request))
 
     @app.get('/api/companies/{cid}/auditor/catalogs')
-    def catalogs(cid:int):return core.auditor_catalogs(cid)
+    def catalogs(cid:int):
+        with db.read() as conn:
+            return [dict(r) for r in conn.execute('SELECT id,name,state,version,source,valid_from,valid_to,sha256,source_id,parent_id,created_at,published_at,published_by,json_array_length(content_json) entry_count FROM auditor_catalogs WHERE company_id=? ORDER BY id DESC',(cid,))]
 
     @app.post('/api/companies/{cid}/auditor/catalogs/import-preview')
     def catalog_preview(cid:int,request:Request,payload:dict=Body(...)):
@@ -143,14 +149,17 @@ def register_evolution_routes(app,core,db,actor,check_period):
         if file_id not in {f['id'] for f in job['snapshot']['files']}|{f.get('package_id') for f in job['snapshot']['files']}|{f['file_id'] for f in job['auxiliary']}:raise DomainError('Arquivo não pertence à auditoria.',404)
         with db.read() as conn:r=read_file(conn,cid,file_id)
         ext='pdf' if r['content'].startswith(b'%PDF-') else 'xml' if r['filename'].lower().endswith('.xml') else 'zip'
-        return Response(r['content'],media_type='application/octet-stream',headers={'Content-Disposition':f'attachment; filename="original-{file_id}.{ext}"'})
+        disposition='inline' if ext=='pdf' and request.query_params.get('inline')=='1' else 'attachment'
+        return Response(r['content'],media_type='application/pdf' if ext=='pdf' else 'application/xml' if ext=='xml' else 'application/zip',headers={'Content-Disposition':f'{disposition}; filename="original-{file_id}.{ext}"','X-Content-SHA256':r['sha256']})
 
     @app.get('/api/companies/{cid}/auditor/jobs/{jid}/report')
     def report(cid:int,jid:int,request:Request,format:str='pdf'):
         from .auditor_reports import export_audit
         result=core.auditor_job(cid,jid);year(request,result['year'])
-        if result['status']!='completed':raise DomainError('Relatório disponível após conclusão.',409)
-        content,mime=export_audit(result,format)
+        if result['status'] not in {'completed','failed'} or not result['result']:raise DomainError('Relatório disponível após processamento.',409)
+        from .auditor_results import report_bytes
+        content=report_bytes(core,cid,result,format,actor(request))
+        mime='application/pdf' if format=='pdf' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         disposition='inline' if request.query_params.get('purpose')=='print' and format=='pdf' else 'attachment'
         return Response(content,media_type=mime,headers={'Content-Disposition':f'{disposition}; filename="auditoria-{jid}.{format}"'})
 

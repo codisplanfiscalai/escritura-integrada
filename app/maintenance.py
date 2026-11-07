@@ -15,7 +15,7 @@ import sys
 import tempfile
 import uuid
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def version_key(value):

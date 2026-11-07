@@ -76,6 +76,8 @@ def migrate(conn):
         migrate_v3(conn)
         from .migration_v4 import migrate_v4
         migrate_v4(conn)
+        from .migration_v5 import migrate_v5
+        migrate_v5(conn)
         conn.commit()
     except BaseException:
         conn.rollback()

@@ -302,6 +302,6 @@ class MigrationTests(unittest.TestCase):
             conn.execute("INSERT INTO settlements(company_id,title_id,date,amount_cents,reason,idempotency_key,request_hash,created_at) VALUES(1,1,'2026-11-02',2345,'Teste','key','hash','date')");conn.close()
             db=Database(folder);Database(folder)
             with db.read() as c:
-                self.assertEqual(2345,c.execute('SELECT cash_cents FROM settlements').fetchone()[0]);self.assertEqual(12345,c.execute('SELECT amount_cents FROM titles').fetchone()[0]);self.assertEqual('4',c.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0])
+                self.assertEqual(2345,c.execute('SELECT cash_cents FROM settlements').fetchone()[0]);self.assertEqual(12345,c.execute('SELECT amount_cents FROM titles').fetchone()[0]);self.assertEqual('5',c.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0])
 
 if __name__=='__main__':unittest.main()

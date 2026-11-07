@@ -1,3 +1,5 @@
+> Histórico da etapa 0.7.0. A cobertura atual do Auditor e as correções posteriores estão em [AUDITOR_CORRECAO_0_7_1.md](AUDITOR_CORRECAO_0_7_1.md).
+
 # Evolução 0.7 — diagnóstico e critérios
 
 Base confrontada: develop 6130c3b (0.6.0-dev.7), main 438ffd6 (0.4.1). O histórico MHTML e o inventário dos 18 executáveis estão descritos em MATRIZ_RASTREABILIDADE.md. A origem adicional é auditorfiscal-1.2.2(1).zip, SHA-256 f738450837965543a190ac5304362abe868aee5dc9f35d19b8725a7dd6dbe2fb (MIT).

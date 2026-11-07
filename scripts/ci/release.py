@@ -255,9 +255,10 @@ Execução: https://github.com/{plan['repository']}/actions/runs/{plan['run_id']
 - Aplicativo e instaladores `.pkg` nativos para macOS 15 ou superior: Apple Silicon (`arm64`) e Intel (`x64`).
 - Exercícios com doze meses por empresa/módulo; fechamento e reabertura independentes; grupos, acessos individuais e permissões efetivas auditáveis.
 - Menus por área; finalização e transporte segregado de apurações; livros auxiliares e relatórios com PDF/Excel.
+- Auditor Fiscal nativo: auditorias interna/avulsa, catálogos revisáveis, documentos/itens, achados, conciliação e relatórios PDF/Excel persistidos. Cobertura e limitações descritas abaixo.
 - Fontes do commit testado, pacotes Compose/.env de produção/desenvolvimento e imagens Linux amd64 para uso offline.
 - Integridade e inventário: `{manifest_name}` e `{checksums_name}`. Relatórios anexos comprovam os gates Linux, interface, instalação/atualização Windows, macOS nas duas arquiteturas e imagens Docker.
-- Consulte [a cobertura e os limites da etapa](https://github.com/{plan['repository']}/blob/{plan['source_sha']}/docs/EXPANSAO_0_6.md) e [a instalação](https://github.com/{plan['repository']}/blob/{plan['source_sha']}/docs/DISTRIBUICAO_DESKTOP.md).
+- Consulte [a cobertura e os limites da etapa](https://github.com/{plan['repository']}/blob/{plan['source_sha']}/docs/AUDITOR_CORRECAO_0_7_1.md) e [a instalação](https://github.com/{plan['repository']}/blob/{plan['source_sha']}/docs/DISTRIBUICAO_DESKTOP.md).
 - Assinatura Authenticode/Developer ID e notarização não estão configuradas. O teste no runner não homologa o download pelo SmartScreen/Gatekeeper.
 - Dados de demonstração são fictícios. Social cobre somente competências; apuração fiscal legal, livros oficiais e integração Prosoft dependem da homologação documentada.
 

@@ -110,6 +110,9 @@ def smoke(manifest):
         session = http_json(opener, url + "/api/setup", {"username": "smoke-ci", "password": secrets.token_urlsafe(32)})
         if not session.get("authenticated"):
             raise RuntimeError("Configuração inicial falhou.")
+        from smoke_auditor import run as audit_smoke
+        results['auditor']=audit_smoke(opener,url,session)
+        results['checks'].append('Auditor na imagem: XML, motor Python, consulta, relatórios PDF/XLSX e catálogo histórico')
         run(["docker", "restart", name])
         wait_healthy(name)
         # A CookieJar mantém o cookie do mesmo IP; o endereço publicado é consultado
@@ -118,6 +121,9 @@ def smoke(manifest):
         again = http_json(opener, url + "/api/session")
         if not again.get("authenticated") or again.get("setup_required"):
             raise RuntimeError("Sessão/SQLite não persistiram após reinício.")
+        audit_job=http_json(opener,url+f"/api/companies/{again['active_company_id']}/auditor/jobs/{results['auditor']['job_id']}")
+        if audit_job['status']!='completed' or not audit_job['reports']:
+            raise RuntimeError('Auditoria e relatórios não persistiram após reinício da imagem.')
         run(["docker", "exec", name, "python", "-c",
              "from pathlib import Path; assert Path('/data/escritura.sqlite3').stat().st_size > 0"])
         config_user = run(["docker", "inspect", "--format", "{{.Config.User}}", name], capture=True).stdout.strip()

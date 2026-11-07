@@ -12,12 +12,12 @@ from .db import request_context
 from .permissions import effect, require
 from .file_store import store_file, read_file
 
-ENGINE_VERSION='auditor-1.2.2/escritura-0.7.0.2'
+ENGINE_VERSION='auditor-1.2.2/escritura-0.7.1.1'
 COVERAGE={
  'read':['NF-e 55','NFC-e 65','CT-e 57','CT-e OS 67','MDF-e 58','Evento NF-e','XML','ZIP XML/PDF'],
  'arithmetic':['PIS/Cofins ad valorem com base e alíquota explícitas','IBS/CBS regular sem redução/diferimento/devolução','Conferência assistida UB16-10 recuperada'],
  'classification':'NCM/EX × CST/cClassTrib contra catálogo publicado pelo responsável; não prova enquadramento legal.',
- 'auxiliary':'DANFE 55 gerado em Python por BrazilFiscalReport 1.3.1, em XML completo; demais renderizadores pendentes de validação. PDF original preservado. Associação por chave de 44 dígitos no nome; não certifica conteúdo ou assinatura.',
+ 'auxiliary':'DANFE 55, DANFCE 65, DACTE 57 e DAMDFE 58 gerados em Python por BrazilFiscalReport 1.3.1, em XML completo; CT-e OS 67 conserva PDF original e dispõe de espelho para conferência, sem alegar equivalência homologada. PDF original preservado. Associação por chave de 44 dígitos no nome ou vinculação manual revisada; não certifica conteúdo ou assinatura.',
  'limitations':['Sem consulta SEFAZ ou validação de assinatura digital','CT-e/MDF-e: leitura, sem auditoria tributária','Sem escrituração, baixa ou contabilização automática','Custos e margens dependem da amostra; não substituem estoque/custeio','Regras especiais IBS/CBS requerem revisão fiscal','SPED/manual sem XML: comparação limitada aos valores escriturados'],
 }
 
@@ -48,13 +48,15 @@ def members(filename,raw):
 class AuditorMixin:
     def auditor_jobs(self,cid,year):
         with self.db.read() as conn:
-            return [dict(r) for r in conn.execute('SELECT id,year,mode,start,end,status,version,deleted_at,created_at,created_by,error FROM auditor_jobs WHERE company_id=? AND year=? ORDER BY id DESC',(cid,year))]
+            return [dict(r) for r in conn.execute('SELECT id,name,year,mode,start,end,status,stage,progress,processed_files,total_files,parent_id,version,deleted_at,created_at,created_by,error FROM auditor_jobs WHERE company_id=? AND year=? ORDER BY id DESC',(cid,year))]
 
     def auditor_job(self,cid,jid):
         with self.db.read(snapshot=True) as conn:
             row=select_one(conn,'auditor_jobs',cid,jid);snap=json.loads(row.pop('snapshot_json'))
             result=json.loads(row.pop('result_json')) if row['result_json'] else None
             row['snapshot']=snap;row['result']=result;row['coverage']=snap['coverage']
+            row['reports']=[dict(r) for r in conn.execute('SELECT r.*,f.sha256,length(f.content) size_bytes FROM auditor_reports r JOIN stored_files f ON f.company_id=r.company_id AND f.id=r.file_id WHERE r.company_id=? AND r.job_id=? ORDER BY r.id DESC',(cid,jid))]
+            row['attachments']=[dict(r) for r in conn.execute('SELECT * FROM auditor_attachments WHERE company_id=? AND job_id=?',(cid,jid))]
             row['auxiliary']=[dict(r) for r in conn.execute('SELECT * FROM auditor_auxiliary WHERE company_id=? AND job_id=?',(cid,jid))]
             row['findings']=[{**json.loads(r['payload_json']),**{k:r[k] for k in ('id','status','responsible','treatment','version','updated_at')}} for r in conn.execute('SELECT * FROM auditor_findings WHERE company_id=? AND job_id=? ORDER BY id',(cid,jid))]
             row['logs']=[dict(r) for r in conn.execute('SELECT level,message,created_at FROM auditor_logs WHERE company_id=? AND job_id=? ORDER BY id',(cid,jid))]
@@ -63,6 +65,9 @@ class AuditorMixin:
                 current=conn.execute('SELECT version FROM documents WHERE company_id=? AND id=?',(cid,doc['id'])).fetchone()
                 if not current or current['version']!=doc['version']:changed.append(doc['id'])
             row['stale_document_ids']=changed
+            if result:
+                from .auditor_results import analytics
+                row['analytics']=analytics(result['documents'],row['findings'])
             row.pop('request_hash',None)
             return row
 
@@ -84,8 +89,8 @@ class AuditorMixin:
             if payload.get('catalog_id'):
                 c=select_one(conn,'auditor_catalogs',cid,integer(payload['catalog_id'],'Catálogo'))
                 if c['state']!='published':raise DomainError('Publique o catálogo após revisão antes de auditar.')
-                catalog={'id':c['id'],'name':c['name'],'sha256':c['sha256'],'source':c['source'],'valid_from':c['valid_from'],'valid_to':c['valid_to'],'entries':json.loads(c['content_json'])}
-            snap={'engine':ENGINE_VERSION,'coverage':COVERAGE,'company':company,'catalog':catalog,'files':[],'bookkeeping':[],'input':{'mode':mode,'start':start,'end':end,'catalog_id':payload.get('catalog_id')}}
+                catalog={'id':c['id'],'name':c['name'],'sha256':c['sha256'],'source':c['source'],'valid_from':c['valid_from'],'valid_to':c['valid_to'],'entries':json.loads(c['content_json']),'reference':json.loads(c['reference_json'])}
+            snap={'engine':ENGINE_VERSION,'coverage':COVERAGE,'company':company,'catalog':catalog,'files':[],'bookkeeping':[],'input':{'mode':mode,'start':start,'end':end,'catalog_id':payload.get('catalog_id'),'name':text(payload.get('name') or ('Auditoria interna' if mode=='internal' else 'Auditoria avulsa'),'Nome',True,150)}}
             total_bytes=0
             for f in files:
                 encoded=f.get('content_base64','')
@@ -112,8 +117,10 @@ class AuditorMixin:
                 hashes={s['source_hash'] for d in rows for s in d['sources'] if s['source_hash']}
                 # Usa os XMLs exatos das fontes, nunca recria XML a partir do cadastro.
                 for batch in conn.execute('SELECT filename,original FROM imports WHERE company_id=?',(cid,)):
-                    try:parts=members(batch['filename'],batch['original'])
-                    except DomainError:continue
+                    try:
+                        from .auditor_sources import original_xmls
+                        parts=original_xmls(batch['filename'],batch['original'])
+                    except (DomainError,ValueError,BadZipFile):continue
                     for name,raw in parts:
                         sha=digest(raw)
                         if sha not in hashes or not name.lower().endswith('.xml'):continue
@@ -121,7 +128,12 @@ class AuditorMixin:
                         fid=store_file(self.db,conn,cid,int(start[:4]),'audit',name,raw,actor)
                         snap['files'].append({'id':fid,'name':name,'sha256':sha})
             ctx=request_context.get() or {}
+            parent=payload.get('parent_id')
+            if parent:
+                previous=select_one(conn,'auditor_jobs',cid,parent)
+                if previous['deleted_at']:raise DomainError('Restaure a auditoria antes de reprocessar.',409)
             jid=conn.execute('INSERT INTO auditor_jobs(company_id,year,mode,start,end,request_key,request_hash,snapshot_json,created_at,created_by,user_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(cid,int(start[:4]),mode,start,end,key,hashed,pack(snap),now(),actor,ctx.get('user_id'))).lastrowid
+            conn.execute('UPDATE auditor_jobs SET name=?,total_files=?,parent_id=? WHERE id=?',(snap['input']['name'],len(snap['files']),parent,jid))
             audit(conn,cid,actor,'create','auditor_job',jid,{'snapshot_sha256':digest(snap),'engine':ENGINE_VERSION,'mode':mode})
             return {'id':jid,'status':'queued'}
 
@@ -142,6 +154,8 @@ class AuditorMixin:
     def treat_finding(self,cid,fid,payload,actor):
         with self.db.transaction() as conn:
             row=select_one(conn,'auditor_findings',cid,fid);check_version(row,payload)
+            job=select_one(conn,'auditor_jobs',cid,row['job_id'])
+            if job['deleted_at']:raise DomainError('Restaure a auditoria antes de tratar os achados.',409)
             status=payload.get('status')
             if status not in {'open','reviewing','resolved','dismissed'}:raise DomainError('Situação inválida.')
             reason=text(payload.get('treatment'),'Tratamento/justificativa',True,2000);responsible=text(payload.get('responsible'),'Responsável',True,150)
@@ -186,6 +200,9 @@ class AuditorMixin:
         with self.db.transaction() as conn:
             old=select_one(conn,'auditor_catalogs',cid,iid);check_version(old,payload)
             if old['state']!='draft':raise DomainError('Catálogo já publicado.',409)
+            from .auditor_catalogs import contents,diagnostics
+            errors=[i for i in diagnostics(*contents(old)) if i['severity']=='error']
+            if errors:raise DomainError(f'Catálogo possui {len(errors)} erros impeditivos. Corrija as linhas antes de publicar.',422,'catalog_errors')
             conn.execute("UPDATE auditor_catalogs SET state='published',review_reason=?,published_at=?,published_by=?,version=version+1 WHERE id=?",(reason,now(),actor,iid))
             audit(conn,cid,actor,'publish','auditor_catalog',iid,{'sha256':old['sha256'],'reason':reason})
         return {'id':iid,'state':'published'}
@@ -200,7 +217,7 @@ class AuditorWorker:
     def recover(self):
         with self.db.transaction() as conn:
             # Trabalho interrompido nunca é declarado concluído.
-            conn.execute("UPDATE auditor_jobs SET status='queued',error='Retomado após interrupção do aplicativo.' WHERE status='running'")
+            conn.execute("UPDATE auditor_jobs SET status='queued',stage='recovery',progress=0,error='Retomado após interrupção do aplicativo.' WHERE status='running'")
             rows=[(r['company_id'],r['id']) for r in conn.execute("SELECT company_id,id FROM auditor_jobs WHERE status='queued' AND deleted_at IS NULL")]
         for cid,jid in rows:self.submit(cid,jid)
 
@@ -223,6 +240,11 @@ class AuditorWorker:
     def log(self,cid,jid,message,level='info'):
         with self.db.transaction() as conn:conn.execute('INSERT INTO auditor_logs(company_id,job_id,level,message,created_at) VALUES(?,?,?,?,?)',(cid,jid,level,message,now()))
 
+    def progress(self,cid,jid,stage,value,processed=None):
+        self.checkpoint(cid,jid)
+        with self.db.transaction() as conn:
+            conn.execute('UPDATE auditor_jobs SET stage=?,progress=?,processed_files=COALESCE(?,processed_files) WHERE id=? AND company_id=?',(stage,value,processed,jid,cid))
+
     def run(self,cid,jid):
         token=request_context.set(None)
         try:
@@ -234,19 +256,20 @@ class AuditorWorker:
             with self.db.transaction() as conn:
                 job=select_one(conn,'auditor_jobs',cid,jid)
                 if job['status']!='queued':return
-                conn.execute("UPDATE auditor_jobs SET status='running',version=version+1 WHERE id=?",(jid,))
+                conn.execute("UPDATE auditor_jobs SET status='running',stage='reading',progress=1,started_at=?,version=version+1 WHERE id=?",(now(),jid,))
                 snap=json.loads(job['snapshot_json'])
             self.checkpoint(cid,jid);self.log(cid,jid,'Leitura iniciada; escrituração preservada.')
-            catalog=CatalogSnapshot(snap['catalog']);documents=[];findings=[];events=[];seen={};pdfs=[]
-            for source in snap['files']:
+            catalog=CatalogSnapshot(snap['catalog']);documents=[];findings=[];events=[];seen={};occurrences={};pdfs=[];outcomes=[]
+            for index,source in enumerate(snap['files']):
+                self.progress(cid,jid,'reading',5+int(50*index/max(len(snap['files']),1)),index)
                 self.checkpoint(cid,jid)
                 with self.db.read() as conn:f=read_file(conn,cid,source['id'])
                 if source['name'].lower().endswith('.pdf'):
                     if not f['content'].startswith(b'%PDF-'):raise DomainError('Documento auxiliar não é PDF válido.')
-                    pdfs.append(source);continue
+                    pdfs.append(source);outcomes.append(dict(source,status='auxiliary'));continue
                 try:
                     event=parse_event(f['content'])
-                    if event:events.append(event);continue
+                    if event:events.append(event);outcomes.append(dict(source,status='event'));continue
                     doc,found=parse_invoice(f['content'],str(f['id']),str(f['id']),catalog,snap['company']['tax_id'])
                     issued=(doc.get('issued_at') or '')[:10]
                     if snap['input']['mode']=='standalone' and not job['start']<=issued<=job['end']:
@@ -254,29 +277,35 @@ class AuditorWorker:
                         doc['status']='outside_period'
                     identity=document_identity(doc)
                     if identity in seen:
-                        findings.append(duplicate_finding(seen[identity],doc,identity,2));continue
-                    if identity:seen[identity]=doc
-                    doc['original_file_id']=f['id'];documents.append(doc);findings.extend(found)
+                        findings.append(duplicate_finding(seen[identity],doc,identity,occurrences[identity]+1));occurrences[identity]+=1;outcomes.append(dict(source,status='duplicate',document_ref=doc['document_ref']));continue
+                    if identity:seen[identity]=doc;occurrences[identity]=1
+                    doc['original_file_id']=f['id'];doc['origin']='xml';documents.append(doc);findings.extend(found)
+                    outcomes.append(dict(source,status=doc['status'],document_ref=doc['document_ref']))
                 except (ValueError,TypeError,ArithmeticError) as exc:
+                    outcomes.append(dict(source,status='rejected',error=str(exc)[:300]))
                     findings.append(finding('XML-PARSE-001','critical','document','XML não auditado',str(exc)[:300],source['sha256'],evidence={'file_id':f['id'],'sha256':source['sha256']}))
                 except Exception as exc:
                     from .auditor_engine.input_validation import FiscalInputError
                     from lxml.etree import XMLSyntaxError
                     if isinstance(exc,(FiscalInputError,XMLSyntaxError)):
+                        outcomes.append(dict(source,status='rejected',error=getattr(exc,'detail','XML inválido ou empresa divergente.')))
                         findings.append(finding('XML-PARSE-001','critical','document','XML não auditado',getattr(exc,'detail','XML inválido ou empresa divergente.'),source['sha256'],evidence={'file_id':f['id'],'sha256':source['sha256']}))
                     else:raise
+            self.progress(cid,jid,'cross_checks',60,len(snap['files']))
             for doc in documents:
                 for event in events:
                     # 136 = evento não vinculado: não cancela documento automaticamente.
                     if event.get('access_key')==doc.get('access_key') and event.get('event_type')=='110111' and event.get('status_code') in {'135','155'}:
-                        doc['status']='cancelled';doc['cancellation_event']=event
+                        doc['status']='cancelled';doc['cancellation_event']=event;doc['normalized']['cancellation_event']=event
                 matches=[f for f in pdfs if doc.get('access_key') and doc['access_key'] in re.findall(r'(?<!\d)\d{44}(?!\d)',f['name'])]
                 doc['auxiliary_file_ids']=[f['id'] for f in matches]
                 booked=next((b for b in snap['bookkeeping'] if (doc.get('access_key') and b['key']==doc['access_key']) or any(s['source_hash']==doc['normalized'].get('xml_sha256') for s in b['sources'])),None)
                 if booked:
-                    doc['bookkeeping_id']=booked['id'];doc['bookkeeping_version']=booked['version']
+                    doc['bookkeeping_id']=booked['id'];doc['bookkeeping_version']=booked['version'];doc['posting_date']=booked['posting_date']
                     if Decimal(doc['total_value'])*100!=booked['total_cents']:
                         findings.append(finding('BOOKED-TOTAL-001','high','bookkeeping','Original e escrituração divergentes','O total escriturado difere do XML preservado.',doc['document_ref'],evidence={'document_id':booked['id'],'original':doc['total_value'],'booked_cents':booked['total_cents'],'version':booked['version']}))
+                    from .auditor_results import compare_bookkeeping
+                    findings.extend(compare_bookkeeping(doc,booked))
                     xml_items={int(i['item_number']):i for i in doc['items']}
                     for b in booked['items']:
                         original=xml_items.get(int(b.get('number',0))) if str(b.get('number','')).isdigit() else None
@@ -285,10 +314,16 @@ class AuditorWorker:
             for b in snap['bookkeeping']:
                 if not any(d.get('bookkeeping_id')==b['id'] for d in documents):
                     findings.append(finding('ORIGINAL-MISSING-001','medium','coverage','XML original indisponível','Registro preservado no retrato; recálculo de XML não executado.',b['key'] or str(b['id']),evidence={'document_id':b['id'],'version':b['version'],'booked_total_cents':b['total_cents']}))
+                    from .auditor_results import bookkeeping_document
+                    documents.append(bookkeeping_document(b))
             self.checkpoint(cid,jid)
             active=[d for d in documents if d['status'] not in {'cancelled','outside_period'}]
             findings.extend(apply_cross_document_rules(active))
-            result={'engine':ENGINE_VERSION,'documents':documents,'events':events,'reconciliation':build_product_reconciliation(active),'totals':{'documents':len(active),'total_cents':int(sum((Decimal(d['total_value'])*100 for d in active),Decimal(0))),'findings':len(findings)},'snapshot_sha256':digest(snap),'catalog_sha256':snap['catalog']['sha256'] if snap['catalog'] else None}
+            result={'engine':ENGINE_VERSION,'documents':documents,'events':events,'reconciliation':build_product_reconciliation(active),'totals':{'documents':len(active),'total_cents':int(sum((Decimal(d['total_value'])*100 for d in active),Decimal(0))),'findings':len(findings)},'snapshot_sha256':digest(snap),'catalog_sha256':snap['catalog']['sha256'] if snap['catalog'] else None,'file_outcomes':outcomes}
+            from .auditor_results import validate_result
+            validate_result(result)
+            failure=not documents and not events
+            result['outcome']={'rejected':sum(o['status']=='rejected' for o in outcomes),'duplicates':sum(o['status']=='duplicate' for o in outcomes),'outside_period':sum(o['status']=='outside_period' for o in outcomes),'usable_documents':len(active),'events':len(events)}
             self.checkpoint(cid,jid)
             with self.db.transaction() as conn:
                 current=select_one(conn,'auditor_jobs',cid,jid)
@@ -300,17 +335,38 @@ class AuditorWorker:
                     # Decimal da confiança é serializado sem ponto flutuante.
                     if isinstance(f.get('confidence'),Decimal):f['confidence']=str(f['confidence'])
                     conn.execute('INSERT INTO auditor_findings(company_id,job_id,payload_json) VALUES(?,?,?)',(cid,jid,pack(f)))
-                conn.execute("UPDATE auditor_jobs SET status='completed',result_json=?,finished_at=?,error=NULL,version=version+1 WHERE id=?",(pack(result),now(),jid))
-                audit(conn,cid,job['created_by'],'complete','auditor_job',jid,{'totals':result['totals'],'snapshot_sha256':result['snapshot_sha256'],'bookkeeping_changed':False})
-            self.log(cid,jid,'Concluído. Marcar achados como tratados não corrige a origem.')
+                conn.execute("UPDATE auditor_jobs SET result_json=?,stage='reports',progress=80,version=version+1 WHERE id=?",(pack(result),jid))
+            self.progress(cid,jid,'reports',85)
+            from .auditor_reports import export_audit
+            from .auditor_results import persist_report
+            report_job=self.core.auditor_job(cid,jid)
+            report_job['status']='failed' if failure else 'completed'
+            generated=[]
+            for fmt in ('pdf','xlsx'):
+                self.checkpoint(cid,jid)
+                content,_=export_audit(report_job,fmt);generated.append((fmt,content))
+            with self.db.transaction() as conn:
+                current=select_one(conn,'auditor_jobs',cid,jid)
+                if current['cancelled']:raise Cancelled()
+                if current['user_id']:
+                    require(conn,current['user_id'],cid,'auditor.analyses','create')
+                    if current['mode']=='standalone':require(conn,current['user_id'],cid,'auditor.analyses','import')
+                for fmt,content in generated:persist_report(self.core,conn,cid,report_job,fmt,content,job['created_by'])
+                message='Nenhum documento ou evento pôde ser auditado. Confira os arquivos recusados e o CNPJ da empresa.' if failure else None
+                conn.execute('UPDATE auditor_jobs SET status=?,stage=?,progress=100,finished_at=?,error=?,version=version+1 WHERE id=?',('failed' if failure else 'completed','failed' if failure else 'completed',now(),message,jid))
+                audit(conn,cid,job['created_by'],'failed' if failure else 'complete','auditor_job',jid,{'totals':result['totals'],'snapshot_sha256':result['snapshot_sha256'],'bookkeeping_changed':False})
+            self.log(cid,jid,message or ('Concluído com recusas; confira os arquivos não processados.' if result['outcome']['rejected'] else 'Concluído. Marcar achados como tratados não corrige a origem.'),'error' if failure else 'warning' if result['outcome']['rejected'] else 'info')
         except Cancelled:
-            with self.db.transaction() as conn:conn.execute("UPDATE auditor_jobs SET status='cancelled',finished_at=?,version=version+1 WHERE id=? AND company_id=?",(now(),jid,cid))
+            with self.db.transaction() as conn:conn.execute("UPDATE auditor_jobs SET status='cancelled',stage='cancelled',result_json=NULL,finished_at=?,version=version+1 WHERE id=? AND company_id=?",(now(),jid,cid))
+            with self.db.transaction() as conn:
+                conn.execute('DELETE FROM auditor_findings WHERE company_id=? AND job_id=?',(cid,jid))
+                conn.execute('DELETE FROM auditor_reports WHERE company_id=? AND job_id=?',(cid,jid))
             self.log(cid,jid,'Cancelado; nenhum resultado parcial foi publicado.','warning')
         except Exception as exc:
             message=exc.detail if isinstance(exc,DomainError) else 'Falha no processamento. Os originais e o retrato foram preservados; consulte os logs do aplicativo.'
             import logging
             logging.getLogger(__name__).exception('Auditoria %s/%s falhou',cid,jid)
-            with self.db.transaction() as conn:conn.execute("UPDATE auditor_jobs SET status='failed',error=?,finished_at=?,version=version+1 WHERE id=? AND company_id=?",(message,now(),jid,cid))
+            with self.db.transaction() as conn:conn.execute("UPDATE auditor_jobs SET status='failed',stage='failed',error=?,finished_at=?,version=version+1 WHERE id=? AND company_id=?",(message,now(),jid,cid))
             self.log(cid,jid,message,'error')
         finally:
             request_context.reset(token)
