@@ -75,3 +75,23 @@ class AuditorPresentationTests(unittest.TestCase):
         self.assertIn("frame-ancestors 'self'",preview.headers['content-security-policy'])
         self.assertEqual('DENY',self.client.get(prefix).headers['x-frame-options'])
         self.assertEqual('DENY',self.client.get('/').headers['x-frame-options'])
+
+    def test_export_keeps_document_event_and_catalog_evidence(self):
+        job=self.submit();d=job['result']['documents'][0]
+        f=deepcopy(job['findings'][0]);f.update(category='duplicate',rule_code='DUP-001',evidence={'matching_document':'987','reason':'Mesma chave'})
+        job['findings'].append(f)
+        job['result']['events']=[{'access_key':d['access_key'],'event_type':'110111','status_code':'135','description':'Cancelamento registrado','registered_at':'2026-01-20T15:00:00-03:00'}]
+        job['snapshot']['catalog']={'name':'Revisão sintética','entries':[{'ncm':'87032100','cst':'999','cclass_trib':'000001','source_sheet':'NCM_ORIGEM','source_row':87}],'reference':{}}
+        wb=load_workbook(BytesIO(export_audit(job,'xlsx')[0]),data_only=True)
+        def rows(name):
+            values=list(wb[name].values)
+            return [dict(zip(values[0],r)) for r in values[1:]]
+        finding=next(r for r in rows('Inconsistências') if r['Regra']=='DUP-001')
+        self.assertEqual(d['number'],finding['NF']);self.assertEqual(d['access_key'],finding['Chave'])
+        self.assertIn('matching_document',finding['Evidência'])
+        occurrences=rows('Duplicidades e Eventos');self.assertEqual(2,len(occurrences))
+        self.assertEqual(d['number'],occurrences[1]['NF']);self.assertEqual(d['access_key'],occurrences[1]['Chave'])
+        self.assertEqual('2026-01-20T15:00:00-03:00',occurrences[1]['Data/Evidência'])
+        quality=rows('Qualidade Parametrização')[0]
+        self.assertEqual('NCM_ORIGEM',quality['Aba']);self.assertEqual(87,quality['Linha'])
+        self.assertIn('87032100',quality['Contexto'])

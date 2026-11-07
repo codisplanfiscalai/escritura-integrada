@@ -59,6 +59,124 @@
         "cClass esperada",
         "Situação"
       ]
+    },
+    "IBS e CBS": {
+      "rows": 24,
+      "equal_cells": 312,
+      "fields": [
+        "NF",
+        "Item",
+        "NCM",
+        "CST",
+        "cClassTrib",
+        "Base XML",
+        [
+          "Base recalculada",
+          "Base assistida"
+        ],
+        "Diferença base",
+        "IBS XML",
+        [
+          "IBS recalc.",
+          "IBS recálculo"
+        ],
+        "CBS XML",
+        [
+          "CBS recalc.",
+          "CBS recálculo"
+        ],
+        "Situação"
+      ]
+    },
+    "Memória de Cálculo": {
+      "rows": 24,
+      "equal_cells": 504,
+      "fields": [
+        "NF",
+        "Item",
+        "vProd",
+        "vServ",
+        "vFrete",
+        "vSeg",
+        "vOutro",
+        "vII",
+        "vDesc",
+        "vPIS",
+        "vCOFINS",
+        "vICMS",
+        "vICMSUFDest",
+        "vFCP",
+        "vFCPUFDest",
+        "vICMSMono",
+        "vISSQN",
+        "vIS",
+        "Base XML",
+        [
+          "Base UB16-10",
+          "Base assistida UB16-10"
+        ],
+        [
+          "Diferença",
+          "Diferença base"
+        ]
+      ]
+    },
+    "Entradas x Saídas": {
+      "rows": 3,
+      "equal_cells": 27,
+      "fields": [
+        "Produto / identificador",
+        "NCM",
+        "Unidade",
+        "Qtd. entrada",
+        "Qtd. saída",
+        [
+          "Valor de entrada",
+          "Valor entrada"
+        ],
+        [
+          "Valor de saída",
+          "Valor saída"
+        ],
+        "Custo estimado",
+        "Margem estimada"
+      ]
+    },
+    "Inconsistências": {
+      "rows": 24,
+      "equal_cells": 240,
+      "fields": [
+        "Severidade",
+        "NF",
+        "Item",
+        "Categoria",
+        "Regra",
+        "Título",
+        [
+          "Evidência",
+          "Descrição"
+        ],
+        "Impacto",
+        "Ação recomendada",
+        [
+          "Status",
+          "Situação"
+        ]
+      ]
+    },
+    "Parametrização Utilizada": {
+      "rows": 1,
+      "equal_cells": 5,
+      "fields": [
+        "NCM",
+        "EX",
+        "CST esperada",
+        "cClass esperada",
+        [
+          "Linha origem",
+          "Linha"
+        ]
+      ]
     }
   },
   "original_pdf_pages": 9,
