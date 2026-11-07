@@ -154,7 +154,8 @@ def route_policy(path, method, query, payload, session):
         action = 'book' if tail.endswith('/publish') else 'edit' if tail.endswith(('/cancel','/restore','/treatment')) else 'delete' if tail.endswith('/delete') else action
         if tail.endswith('/import-preview'):action='import'
         if tail.endswith('/original'):action='export'
-        if tail.endswith(('/report','/files','/auxiliary')) or query.get('format','json') != 'json': action = 'print' if query.get('purpose') == 'print' else 'export'
+        if tail.endswith(('/report','/files','/auxiliary')) or (not write and query.get('format','json') != 'json'):
+            action = 'print' if tail.endswith('/report') and query.get('purpose') == 'print' and query.get('format','pdf') == 'pdf' else 'export'
         return routine, action, False
     if root == 'report-models': return 'dashboard', 'read', False
     if root == 'storage': return 'system.storage', 'export' if tail.endswith('/download') else 'read', False
@@ -184,7 +185,7 @@ def route_policy(path, method, query, payload, session):
     if tail.endswith('/settle'): routine, action = 'financial.settlements', 'settle'
     if tail.endswith(('/reverse', '/unreconcile')): action = 'reverse'
     if tail.endswith(('/allocate', '/reconcile', '/renegotiate')): action = 'edit'
-    if query.get('format', 'json') != 'json': action = 'print' if query.get('purpose') == 'print' else 'export'
+    if not write and query.get('format', 'json') != 'json': action = 'print' if query.get('purpose') == 'print' and query.get('format') == 'pdf' else 'export'
     return routine, action, False
 
 

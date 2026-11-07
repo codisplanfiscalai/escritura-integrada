@@ -129,6 +129,27 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(0,saved['balance_cents']);self.assertEqual(result['journal']['id'],saved['settlements'][0]['journal_id'])
         self.assertEqual(report,restored.business_report(cid,'ledger','2027-01-01','2027-12-31',account_id=self.aid['3']))
 
+    def test_print_permission_does_not_allow_original_or_excel_exports(self):
+        job=self.job();cid=self.a['id']
+        permissions=[{'company_id':cid,'routine':routine,'action':action,'effect':'allow'} for routine in ['auditor.analyses','accounting.reports'] for action in ['read','print']]
+        permissions += [{'company_id':cid,'routine':'auditor.catalogs','action':action,'effect':'allow'} for action in ['read','export']]
+        r=self.client.post('/api/users',json={'username':'impressao','password':'Senha-impressao-123','role':'custom','company_ids':[cid],'permissions':permissions});self.assertEqual(201,r.status_code,r.text)
+        with TestClient(self.app) as c:
+            session=c.post('/api/login',json={'username':'impressao','password':'Senha-impressao-123'}).json();c.headers['X-CSRF-Token']=session['csrf_token']
+            self.assertEqual(200,c.post('/api/context',json={'company_id':cid,'module':'auditor','period':'2026-11'}).status_code)
+            prefix=f"/auditor/jobs/{job['id']}"
+            self.assertEqual(200,c.get(self.scope(prefix+'/report?format=pdf&purpose=print')).status_code)
+            self.assertEqual(403,c.get(self.scope(prefix+'/report?format=xlsx&purpose=print')).status_code)
+            fid=job['snapshot']['files'][0]['id']
+            self.assertEqual(403,c.get(self.scope(prefix+f'/files?file_id={fid}&purpose=print')).status_code)
+            self.assertEqual(403,c.post(self.scope(prefix+'/auxiliary?purpose=print'),json={'document_ref':job['result']['documents'][0]['document_ref']}).status_code)
+            self.assertEqual(403,c.get(self.scope('/business-reports/ledger?start=2026-01-01&end=2026-12-31&format=xlsx&purpose=print')).status_code)
+            catalog={'name':'Tentativa sem inclusão','source':'Teste','valid_from':'2026-01-01','valid_to':'2026-12-31','entries':[{'ncm':'87032100','cst':'000','cclass_trib':'000001'}]}
+            self.assertEqual(403,c.post(self.scope('/auditor/catalogs?format=pdf'),json=catalog).status_code)
+            from app.permissions import route_policy
+            routine,action,_=route_policy(self.scope('/journals'),'POST',{'format':'pdf','purpose':'print'},{},{'module':'accounting'})
+            self.assertEqual(('accounting.journals','create'),(routine,action))
+
     def test_special_tax_scope_is_not_presented_as_recalculated_in_reports(self):
         from openpyxl import load_workbook
         raw=(Path(__file__).parent/'fixtures/auditor_demo.xml').read_bytes().replace(b'99999999000191',self.a['tax_id'].encode())
