@@ -251,6 +251,7 @@ def parse_invoice(data:bytes,source_file_id:str,xml_storage_path:str,catalog:Cat
             'additional_information':additional or None,'identifiers':identifiers,'traceability':traceability,'taxes':tax_groups,
         }
         item_data={'item_number':nitem,'product_code':product_code,'description':_text(prod,'./n:xProd') or None,'ncm':ncm or None,'ex_code':ex_code,'cfop':_text(prod,'./n:CFOP') or None,'actual_cst':actual_cst,'actual_cclass_trib':actual_cc,'expected_cst':expected_cst,'expected_cclass_trib':expected_cc,'classification_status':class_status,'product_value':str(_money(components['vProd'])),'ibs_cbs_base_xml':str(base_xml),'ibs_cbs_base_recalculated':str(base_calc),'base_difference':str(_money(base_xml-base_calc)),'ibs_xml':str(ibs_xml),'ibs_recalculated':str(ibs_calc),'cbs_xml':str(cbs_xml),'cbs_recalculated':str(cbs_calc),'tax_components':{k:str(v) for k,v in components.items()},'catalog_match':evidence,'details':details,'chassis':chassis,'plate':plate,'used_movable_good':used,'pis_cofins':str(_money(components['vPIS']+components['vCOFINS'])),'pis_cofins_base':str(pis_cofins_base)}
+        item_data['calculation_scope']='unsupported_special' if special else 'regular' if has_base_group else 'absent'
         details['reconciliation_identity']=item_identity(item_data)
         items.append(item_data)
     total=sum((Decimal(i['product_value']) for i in items),ZERO);base=sum((Decimal(i['ibs_cbs_base_xml']) for i in items),ZERO);ibs=sum((Decimal(i['ibs_xml']) for i in items),ZERO);cbs=sum((Decimal(i['cbs_xml']) for i in items),ZERO)

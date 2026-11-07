@@ -12,7 +12,7 @@ from .db import request_context
 from .permissions import effect, require
 from .file_store import store_file, read_file
 
-ENGINE_VERSION='auditor-1.2.2/escritura-0.7.0.1'
+ENGINE_VERSION='auditor-1.2.2/escritura-0.7.0.2'
 COVERAGE={
  'read':['NF-e 55','NFC-e 65','CT-e 57','CT-e OS 67','MDF-e 58','Evento NF-e','XML','ZIP XML/PDF'],
  'arithmetic':['PIS/Cofins ad valorem com base e alíquota explícitas','IBS/CBS regular sem redução/diferimento/devolução','Conferência assistida UB16-10 recuperada'],
@@ -160,7 +160,7 @@ class AuditorMixin:
         seen=set()
         for r in entries:
             if not isinstance(r,dict) or any(not isinstance(r.get(k),str) or not re.fullmatch(pattern,r[k]) for k,pattern in [('ncm',r'[0-9]{8}'),('cst',r'[0-9]{3}'),('cclass_trib',r'[0-9]{6}')]) or not r['cclass_trib'].startswith(r['cst']):raise DomainError('Cada linha exige NCM com 8 dígitos, CST com 3 e cClassTrib com 6, prefixado pelo CST. Informe os códigos como texto para preservar zeros iniciais.')
-            ex=r.get('ex_code','')
+            ex='' if r.get('ex_code') is None else r['ex_code']
             if not isinstance(ex,str) or (ex and not re.fullmatch(r'[0-9]{1,3}',ex)):raise DomainError('EX deve ser texto com até três dígitos ou vazio.')
             key=(r['ncm'],ex)
             if key in seen:raise DomainError('NCM/EX ambíguo no catálogo.')

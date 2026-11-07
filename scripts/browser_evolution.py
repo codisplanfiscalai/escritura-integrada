@@ -105,21 +105,27 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     assert company['tax_id'].encode() in raw
     page.get_by_label('XML, PDF auxiliar ou ZIP de XML/PDF',exact=True).set_input_files({'name':'auditoria.xml','mimeType':'text/xml','buffer':raw})
     page.get_by_role('button',name='Iniciar auditoria',exact=True).click()
-    expect(page.get_by_role('heading',name=re.compile(r'Auditoria #\d+ · completed'))).to_be_visible(timeout=45000)
+    expect(page.get_by_role('heading',name=re.compile(r'Auditoria #\d+ · Concluída'))).to_be_visible(timeout=45000)
     page.get_by_role('button',name='Relatórios',exact=True).click()
     for name,signature in [('Exportar PDF',b'%PDF'),('Exportar Excel',b'PK')]:
         with page.expect_download() as download:page.get_by_role('link',name=name,exact=True).click()
         assert Path(download.value.path()).read_bytes().startswith(signature)
     page.get_by_role('button',name='Documentos',exact=True).click()
     page.locator('.audit-finding summary').first.click()
-    page.get_by_role('button',name='Gerar DANFE em Python',exact=True).click()
+    page.get_by_role('button',name='Gerar DANFE',exact=True).click()
     expect(page.get_by_role('link',name=re.compile('DANFE gerado'))).to_be_visible()
+    expect(page.get_by_role('heading',name='Valores comparados',exact=True)).to_be_visible()
+    expect(page.get_by_role('heading',name='Itens e memória de cálculo',exact=True)).to_be_visible()
     shot('auditor-documentos-1440.png')
+    page.set_viewport_size({'width':390,'height':844})
+    assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Auditor transbordou a página'
+    shot('auditor-documentos-390.png')
+    page.set_viewport_size({'width':1440,'height':1000})
     after={p:page.request.get(url+'/api'+scope(p)).json() for p in before}
     assert before==after,'Auditoria alterou a escrituração'
     page.get_by_role('button',name='Auditoria da escrituração',exact=True).click()
     page.get_by_role('button',name='Iniciar auditoria',exact=True).click()
-    expect(page.get_by_role('heading',name=re.compile(r'Auditoria #\d+ · completed'))).to_be_visible(timeout=45000)
+    expect(page.get_by_role('heading',name=re.compile(r'Auditoria #\d+ · Concluída'))).to_be_visible(timeout=45000)
     shot('auditor-interno-1440.png')
     check('Auditor avulso/interno no mesmo login: originais, DANFE Python, PDF/Excel e ausência de efeitos na escrituração')
     nav('Arquivos e backup')

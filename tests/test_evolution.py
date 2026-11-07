@@ -129,6 +129,18 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(0,saved['balance_cents']);self.assertEqual(result['journal']['id'],saved['settlements'][0]['journal_id'])
         self.assertEqual(report,restored.business_report(cid,'ledger','2027-01-01','2027-12-31',account_id=self.aid['3']))
 
+    def test_special_tax_scope_is_not_presented_as_recalculated_in_reports(self):
+        from openpyxl import load_workbook
+        raw=(Path(__file__).parent/'fixtures/auditor_demo.xml').read_bytes().replace(b'99999999000191',self.a['tax_id'].encode())
+        raw=raw.replace(b'</gCBS>',b'<gRed><pRedAliq>60.00</pRedAliq><pAliqEfet>0.36</pAliqEfet></gRed></gCBS>')
+        job=self.job(files=[{'filename':'especial.xml','content_base64':base64.b64encode(raw).decode()}])
+        self.assertEqual('unsupported_special',job['result']['documents'][0]['items'][0]['calculation_scope'])
+        data=self.client.get(self.scope(f"/auditor/jobs/{job['id']}/report?format=xlsx")).content
+        sheet=load_workbook(io.BytesIO(data))['Comparativo tributos']
+        row=dict(zip([c.value for c in sheet[1]],[c.value for c in sheet[2]]))
+        self.assertEqual('Não recalculado: cenário especial',row['Cobertura'])
+        self.assertIsNone(row['IBS recalculado']);self.assertIsNone(row['CBS recalculada']);self.assertIsNotNone(row['CBS XML'])
+
     def test_internal_closed_audit_snapshot_stale_and_treatment_has_no_side_effect(self):
         d=self.client.post(self.scope('/documents'),json=self.document()).json()
         # Documento pendente impede fechamento fiscal; contábil pode ser fechado separadamente.
