@@ -65,3 +65,13 @@ class AuditorPresentationTests(unittest.TestCase):
         fresh=self.core.auditor_job(self.a['id'],job['id'])
         self.assertEqual(count-1,fresh['analytics']['open_findings']);self.assertEqual(len(job['findings']),len(fresh['findings']))
         self.assertNotIn(f['id'],[f['id'] for f in fresh['analytics']['priorities']])
+
+    def test_pdf_preview_is_same_origin_only_and_requires_permission(self):
+        job=self.submit()
+        prefix=self.scope(f"/auditor/jobs/{job['id']}/report?format=pdf")
+        preview=self.client.get(prefix+'&purpose=print')
+        self.assertEqual(200,preview.status_code)
+        self.assertEqual('SAMEORIGIN',preview.headers['x-frame-options'])
+        self.assertIn("frame-ancestors 'self'",preview.headers['content-security-policy'])
+        self.assertEqual('DENY',self.client.get(prefix).headers['x-frame-options'])
+        self.assertEqual('DENY',self.client.get('/').headers['x-frame-options'])

@@ -22,7 +22,7 @@ As agregações usam `Decimal`. Totais executivos excluem documentos cancelados 
 
 Classificação OK corresponde a `MATCH_EXACT`. Achados tratados ou justificados permanecem no histórico, mas deixam a lista de prioridades abertas. As notas de entrada mostram o emitente como contraparte; as saídas mostram o destinatário.
 
-A revisão de relatório inclui a versão do modelo. Relatórios anteriores permanecem imutáveis e baixáveis. As abas técnicas anteriores foram mantidas, ocultas, no Excel; as abas operacionais são exibidas primeiro. Não houve migração de banco nem modificação de documentos, títulos ou partidas.
+A revisão de relatório inclui a versão do modelo. Relatórios anteriores permanecem imutáveis e baixáveis. As abas técnicas anteriores foram mantidas, ocultas, no Excel; as abas operacionais são exibidas primeiro. Não houve migração de banco nem modificação de documentos, títulos ou partidas. A prévia PDF permite enquadramento apenas pela mesma origem, exclusivamente nas respostas PDF inline autorizadas do Auditor; o restante da aplicação mantém bloqueio de enquadramento.
 
 ## Comparação reproduzível
 

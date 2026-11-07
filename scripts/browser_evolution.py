@@ -264,8 +264,12 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     page.keyboard.press('Escape');expect(inspector).to_have_count(0);expect(open_note).to_be_focused()
     main.get_by_role('button',name='Relatórios',exact=True).click()
     expect(main.locator('.report-sections article')).to_have_count(6)
-    main.get_by_role('button',name='Prévia do relatório nesta tela',exact=True).click()
+    with page.expect_response(lambda r:'/report?format=pdf&purpose=print' in r.url) as preview_response:
+        main.get_by_role('button',name='Prévia do relatório nesta tela',exact=True).click()
+    assert preview_response.value.status==200
+    assert preview_response.value.headers['x-frame-options']=='SAMEORIGIN'
     expect(main.locator('iframe[title="Prévia do Relatório Analítico e Sintético"]')).to_be_visible()
+    page.wait_for_timeout(1500)
     shot('auditor-relatorios-1440.png')
     for label,fmt in [('Exportar PDF','pdf'),('Exportar Excel','xlsx')]:
         with page.expect_download() as download:main.get_by_role('link',name=label,exact=True).click()
