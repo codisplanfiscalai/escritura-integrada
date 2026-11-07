@@ -94,7 +94,7 @@ def main():
                         date_field('Escrituração *').fill('06112026')
                         page.get_by_label('CFOP informado',exact=True).fill('1102')
                         page.get_by_label('Total (R$) *',exact=True).fill('100,00')
-                        page.get_by_label('Participante cadastrado',exact=True).select_option(str(participant['id']))
+                        page.get_by_label('Participante cadastrado',exact=False).select_option(str(participant['id']))
                         page.get_by_role('button',name='Salvar documento',exact=True).click()
                         expect(page.get_by_role('dialog')).to_have_count(0)
                         row=page.locator('tbody tr').filter(has_text='UI001')
@@ -104,8 +104,8 @@ def main():
                         row.get_by_role('button',name='Escriturar',exact=True).click()
                         page.get_by_label('Observação da escrituração *',exact=True).fill('Escrituração sintética de teste')
                         page.get_by_label('Contabilizar junto com o documento',exact=False).check()
-                        page.get_by_label('Conta a debitar *',exact=True).select_option(aid['3'])
-                        page.get_by_label('Conta a creditar *',exact=True).select_option(aid['5'])
+                        page.get_by_label('Conta a debitar *',exact=False).select_option(aid['3'])
+                        page.get_by_label('Conta a creditar *',exact=False).select_option(aid['5'])
                         page.get_by_label('Gerar títulos financeiros vinculados',exact=False).check()
                         page.get_by_label('Quantidade de parcelas',exact=True).fill('2')
                         date_field('Primeiro vencimento').fill('10112026')
@@ -145,14 +145,21 @@ def main():
                         page.get_by_role('button',name='Importar registros',exact=True).click()
                         expect(page.get_by_role('button',name='Abrir conciliação',exact=True)).to_be_visible()
                         assert page.request.get(url+'/api/session').json()['authenticated']
+                        with page.expect_download() as download:
+                            page.get_by_role('link',name='Baixar original',exact=True).click()
+                        assert Path(download.value.path()).read_bytes()==(ROOT/'tests/fixtures/extrato_ficticio.csv').read_bytes()
                         check('Importação CSV pela interface preserva autenticação e confirmação')
                         nav('Livros e relatórios')
-                        page.get_by_label('Relatório',exact=True).select_option('trial-balance')
+                        page.get_by_label('Relatório',exact=False).select_option('trial-balance')
                         page.get_by_role('button',name='Gerar relatório',exact=True).click()
                         expect(page.get_by_role('heading',name='Balancete',exact=True)).to_be_visible()
                         shot('balancete-1440.png')
                         assert page.locator('.report-output tbody tr').count()>0
-                        check('Relatório com totais e origem')
+                        page.locator('.report-output tbody tr .text-button').first.click()
+                        expect(page.get_by_role('heading',name='Lançamento de origem',exact=True)).to_be_visible()
+                        assert page.get_by_role('dialog').locator('tbody tr').count()>=2
+                        page.get_by_role('button',name='Fechar',exact=True).click()
+                        check('Relatório com totais e acesso às partidas de origem')
                         for width,height in [(1024,768),(390,844)]:
                             page.set_viewport_size({'width':width,'height':height})
                             assert page.evaluate('document.documentElement.scrollWidth')<=width+1,'Overflow da página'

@@ -2,6 +2,7 @@
 import csv
 import io
 import json
+from pathlib import Path
 from typing import Any
 from fastapi import Body, Request
 from fastapi.responses import Response
@@ -138,4 +139,6 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
     def original(cid:int,item_id:int):
         with db.read() as conn:r=select_one(conn,'imports',cid,item_id)
         # Original filenames are displayed by the UI; download header uses a safe stable ID.
-        return Response(r['original'],media_type='application/octet-stream',headers={'Content-Disposition':f'attachment; filename="import-{item_id}.bin"'})
+        extension=Path(r['filename']).suffix.lower()
+        if extension not in {'.xml','.txt','.efd','.sped','.zip','.rar','.7z','.csv','.ofx','.qfx','.qif','.ofc'}:extension='.bin'
+        return Response(r['original'],media_type='application/octet-stream',headers={'Content-Disposition':f'attachment; filename="import-{item_id}{extension}"'})
