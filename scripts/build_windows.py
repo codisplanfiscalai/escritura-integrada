@@ -173,7 +173,7 @@ def collect_notices(bundle: Path) -> dict:
     """Preserva textos e metadados dos pacotes instalados, sem relicenciar o app."""
     from packaging.requirements import Requirement
     names = ["PySide6", "PySide6_Essentials", "PySide6_Addons", "shiboken6", "pyinstaller",
-             "fastapi", "pydantic", "uvicorn", "python-multipart"]
+             "fastapi", "pydantic", "uvicorn", "python-multipart", "py7zr", "rarfile"]
     licenses = bundle / "licenses"
     licenses.mkdir()
     seen, packages = set(), []

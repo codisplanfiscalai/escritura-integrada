@@ -1,118 +1,20 @@
 <script setup>
-import {ref,computed,watch,onUnmounted} from 'vue';
-import Icon from '../components/Icon.vue';
-import EmptyState from '../components/EmptyState.vue';
-import {state,company,api,scope,useResource,rows,notify} from '../lib/workspace';
-import {money,date,taxId} from '../lib/format';
-
-const kind=ref('trial-balance'),accountId=ref(''),centerId=ref(''),report=ref(null),loading=ref(false),error=ref('');
-let sequence=0,alive=true;
-const names={'diary':'Diário','ledger':'Razão','trial-balance':'Balancete'};
-const {data:catalogs,error:catalogError}=useResource(async()=>{
- if(!state.companyId)return {accounts:[],centers:[]};
- const[a,c]=await Promise.all([api(scope('/accounts')),api(scope('/cost-centers'))]);
- return {accounts:rows(a),centers:rows(c)};
-},{accounts:[],centers:[]});
-const account=computed(()=>catalogs.value.accounts.find(a=>a.id===Number(accountId.value)));
-const center=computed(()=>catalogs.value.centers.find(c=>c.id===Number(centerId.value)));
-const canUse=computed(()=>report.value&&report.value.company_id===state.companyId&&report.value.period===state.period&&!loading.value);
-const rowList=computed(()=>report.value?.rows||[]);
-const reportTitle=computed(()=>names[kind.value]);
-function balance(value){const n=Number(value||0);return `${money(Math.abs(n))}${n>0?' D':n<0?' C':''}`;}
-async function load(){
- const current=++sequence,cid=state.companyId,p=state.period,k=kind.value,a=accountId.value,cc=centerId.value;
- report.value=null;error.value='';
- if(!cid||(k==='ledger'&&!a)){loading.value=false;return;}
- loading.value=true;
- try{
-  const query=new URLSearchParams({period:p});
-  if(k==='ledger')query.set('account_id',a);
-  if(cc)query.set('cost_center_id',cc);
-  const value=await api(scope(`/reports/${k}?${query}`,cid));
-  if(alive&&current===sequence&&cid===state.companyId&&p===state.period)report.value=value;
- }catch(e){if(alive&&current===sequence)error.value=e.message;}
- finally{if(alive&&current===sequence)loading.value=false;}
-}
-watch(()=>state.companyId,()=>{accountId.value='';centerId.value='';});
-watch(()=>[kind.value,accountId.value,centerId.value,state.companyId,state.period,state.refresh],load,{immediate:true});
-watch(()=>catalogs.value,()=>{
- if(accountId.value&&!catalogs.value.accounts.some(a=>a.id===Number(accountId.value)))accountId.value='';
- if(centerId.value&&!catalogs.value.centers.some(c=>c.id===Number(centerId.value)))centerId.value='';
-});
-onUnmounted(()=>{alive=false;sequence++;});
-
-function exportRows(){
- if(kind.value==='trial-balance')return {headers:['Acesso','Classificador','Conta','Natureza','Saldo anterior (D−C)','Débitos','Créditos','Saldo final (D−C)'],data:rowList.value.map(r=>[r.access_code,r.classifier,r.account_name,r.nature==='debit'?'Devedora':'Credora',decimal(r.opening_cents),decimal(r.debit_cents),decimal(r.credit_cents),decimal(r.closing_cents)])};
- const headers=['Data','Lançamento','Documento','Histórico','Acesso','Conta','Centro de custo','Débito','Crédito'];
- if(kind.value==='ledger')headers.push('Saldo (D−C)');
- const data=rowList.value.map(r=>{const line=[date(r.date),r.number,r.document,r.history,r.access_code,r.account_name,r.cost_center_name||'',decimal(r.debit_cents),decimal(r.credit_cents)];if(kind.value==='ledger')line.push(decimal(r.balance_cents));return line;});
- return {headers,data};
-}
-function decimal(value){return (Number(value||0)/100).toFixed(2).replace('.',',');}
-function csvCell(value){let s=String(value??'');if(typeof value==='string'&&/^[\s]*[=+\-@]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';}
-function exportCSV(){
- if(!canUse.value)return;
- const output=exportRows();
- const lines=[['Relatório interno',reportTitle.value],['Empresa',company.value?.name],['CNPJ',company.value?.tax_id],['Competência',state.period],['Centro de custo',center.value?.name||'Todos'],['Conta',kind.value==='ledger'?account.value?.name:'Todas'],[],output.headers,...output.data];
- const blob=new Blob(['\uFEFF'+lines.map(line=>line.map(csvCell).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});
- const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`${kind.value}-empresa-${state.companyId}-${state.period}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
- notify('Relatório exportado em CSV. Campos de texto com prefixos de fórmula foram protegidos.');
-}
-function escapeHTML(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function printReport(){
- if(!canUse.value)return;
- const win=window.open('','_blank','width=1100,height=800');
- if(!win){notify('Permita a janela de impressão para gerar o PDF pelo navegador.','warning');return;}
- win.opener=null;
- const output=exportRows(),totals=report.value.totals;
- const title=`${reportTitle.value} · ${state.period.split('-').reverse().join('/')}`;
- win.document.open();
- win.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${escapeHTML(title)}</title><style>body{font:11px Arial,sans-serif;color:#162b35;margin:22px}h1{font-size:21px;margin:0 0 6px}p{margin:4px 0}.meta{margin-bottom:16px}.note{font-size:10px;margin-top:16px;color:#465864}table{width:100%;border-collapse:collapse}th,td{padding:6px;text-align:left;border-bottom:1px solid #d7dfe4;vertical-align:top}th{background:#eef3f5;font-size:10px}thead{display:table-header-group}tr{break-inside:avoid}tfoot td{font-weight:bold}@page{size:A4 landscape;margin:12mm}@media print{body{margin:0}}</style></head><body><h1>${escapeHTML(title)}</h1><div class="meta"><p><strong>${escapeHTML(company.value?.name)}</strong> · CNPJ ${escapeHTML(taxId(company.value?.tax_id))}</p><p>Centro de custo: ${escapeHTML(center.value?.name||'Todos')} ${kind.value==='ledger'?' · Conta: '+escapeHTML(account.value?.name):''}</p><p>Relatório interno de conferência · dados cadastrados no Escritura Integrada${state.session?.demo?' · DADOS FICTÍCIOS DE DEMONSTRAÇÃO':''}</p></div><table><thead><tr>${output.headers.map(x=>'<th>'+escapeHTML(x)+'</th>').join('')}</tr></thead><tbody>${output.data.map(line=>'<tr>'+line.map(x=>'<td>'+escapeHTML(x)+'</td>').join('')+'</tr>').join('')}</tbody></table><p class="note">Totais do recorte: débitos ${escapeHTML(money(totals.debit_cents))}; créditos ${escapeHTML(money(totals.credit_cents))}. ${escapeHTML(report.value.scope_note)} Saldo assinado = débitos menos créditos. Este relatório não é um livro legal homologado. Utilize a opção Salvar como PDF na janela de impressão.</p></body></html>`);
- win.document.close();win.addEventListener('load',()=>{win.focus();win.print();},{once:true});
-}
+import {ref,computed,watch} from 'vue';import DateInput from '../components/DateInput.vue';import BaseModal from '../components/BaseModal.vue';import {state,api,scope,useResource,notify} from '../lib/workspace';import {money,date,statusLabel} from '../lib/format';
+const kinds={diary:'Diário Geral','consolidated-diary':'Diário Consolidado',ledger:'Razão','trial-balance':'Balancete','cost-centers':'Movimentos por centro de custo','balance-sheet':'Balanço patrimonial','income-statement':'Demonstração do resultado','fiscal-book':'Livro auxiliar fiscal',financial:'Títulos por vencimento','cash-flow':'Caixa realizado',partners:'Conciliação de clientes e fornecedores'};
+const kind=ref('trial-balance'),start=ref(''),end=ref(''),account=ref(''),center=ref(''),query=ref(''),status=ref(''),direction=ref(''),page=ref(1),result=ref(null),busy=ref(false),error=ref(''),origin=ref(null);let sequence=0;
+const {data}=useResource(async()=>{if(!state.companyId)return {accounts:[],centers:[]};const [accounts,centers]=await Promise.all([api(scope('/accounts')),api(scope('/cost-centers'))]);return {accounts,centers};},{accounts:[],centers:[]});
+watch(()=>[state.companyId,state.period],()=>{sequence++;result.value=null;account.value='';center.value='';start.value=state.period+'-01';const [y,m]=state.period.split('-').map(Number);end.value=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10);},{immediate:true});
+const accounting=computed(()=>['diary','consolidated-diary','ledger','trial-balance','cost-centers','balance-sheet','income-statement'].includes(kind.value));
+const searchable=computed(()=>['diary','ledger','fiscal-book','financial','cash-flow','partners'].includes(kind.value));
+const statuses=computed(()=>kind.value==='fiscal-book'?['pending','reviewed','booked']:['financial','partners'].includes(kind.value)?['open','partial','settled','cancelled','renegotiated']:[]);
+const originRecord=computed(()=>origin.value?.data?.document&&typeof origin.value.data.document==='object'?origin.value.data.document:origin.value?.data);
+watch(kind,()=>{status.value='';direction.value='';query.value='';account.value='';center.value='';});
+const labels={date:'Data',journal_id:'Lançamento',number:'Número',document:'Documento',history:'Histórico',account_id:'Conta ID',access_code:'Acesso',classifier:'Classificação',account_name:'Conta',nature:'Natureza',report_group:'Grupo',cost_center_id:'Centro ID',cost_center_name:'Centro de custo',debit_cents:'Débitos',credit_cents:'Créditos',opening_cents:'Saldo inicial',balance_cents:'Saldo',closing_cents:'Saldo final',journal_ids:'Lançamentos de origem',result_cents:'Resultado',document_id:'Documento ID',series:'Série',model:'Modelo',partner_name:'Participante',direction:'Operação',cfop:'CFOP',total_cents:'Total',status:'Situação',title_id:'Título',kind:'Tipo',description:'Descrição',issue_date:'Emissão',due_date:'Vencimento',amount_cents:'Valor original',paid_cents:'Principal baixado',cash_cents:'Caixa',settlement_id:'Baixa',event:'Evento',consistent:'Consistente',settlement_ids:'Baixas',bank_ids:'Movimentos bancários',assets_cents:'Ativo',liabilities_cents:'Passivo',equity_cents:'Patrimônio líquido',unclosed_result_cents:'Resultado não encerrado',difference_cents:'Diferença',documents:'Documentos'};
+const columns=computed(()=>[...new Set((result.value?.rows||[]).flatMap(Object.keys))].filter(k=>!['nature','account_id','cost_center_id'].includes(k)));const visible=computed(()=>(result.value?.rows||[]).slice((page.value-1)*50,page.value*50));
+function parameters(){const p=new URLSearchParams({start:start.value,end:end.value,query:searchable.value?query.value:'',status:statuses.value.length?status.value:'',direction:!accounting.value?direction.value:''});if(accounting.value&&account.value)p.set('account_id',account.value);if(accounting.value&&center.value)p.set('cost_center_id',center.value);return p;}
+async function run(){const seq=++sequence;busy.value=true;error.value='';try{const cid=state.companyId;const url=scope(`/business-reports/${kind.value}?${parameters()}`,cid);const r=await api(url);if(seq===sequence){result.value={...r,url};page.value=1;}}catch(e){if(seq===sequence)error.value=e.message;}finally{if(seq===sequence)busy.value=false;}}
+function display(k,v){if(k.endsWith('_cents'))return money(v);if(k==='date'||k.endsWith('_date'))return date(v);if(Array.isArray(v))return v.map(x=>'#'+x).join(', ');if(typeof v==='boolean')return v?'Sim':'Não';if(['status','kind','direction'].includes(k))return statusLabel(v);if(k==='report_group')return ({asset:'Ativo',liability:'Passivo',equity:'Patrimônio líquido',revenue:'Receita',expense:'Despesa'})[v]||'Não classificado';return v??'—';}
+async function showOrigin(row,key){try{if(key==='journal_id')origin.value={type:'Lançamento',data:await api(scope(`/journals/${row[key]}`,result.value.company_id))};else if(key==='document_id')origin.value={type:'Documento',data:await api(scope(`/documents/${row[key]}/trace`,result.value.company_id))};else if(key==='title_id'){const t=await api(scope('/titles',result.value.company_id));origin.value={type:'Título',data:t.find(t=>t.id===row[key])};}}catch(e){notify(e.message,'error');}}
+function printReport(){window.print();}
 </script>
-
-<template>
- <div class="view reports-view">
-  <header class="view-heading"><div><div class="eyebrow">CONFERÊNCIA CONTÁBIL</div><h1>Livros e relatórios</h1><p>Consulte movimentos, saldos e centros de custo na empresa ativa.</p></div><div class="actions"><button class="button outline" :disabled="!canUse" @click="exportCSV"><Icon name="download"/>Exportar CSV</button><button class="button outline" :disabled="!canUse" @click="printReport"><Icon name="file"/>Imprimir / PDF</button></div></header>
-  <div class="segmented"><button v-for="(label,key) in names" :key="key" :class="{selected:kind===key}" @click="kind=key"><Icon :name="key==='trial-balance'?'reports':'book'" :size="16"/>{{label}}</button></div>
-  <section class="panel report-filters"><div class="form-grid three"><label>Competência em uso<span class="read-field"><Icon name="periods" :size="16"/>{{state.period.split('-').reverse().join('/')}}</span></label><label v-if="kind==='ledger'">Conta analítica *<select v-model="accountId" aria-label="Conta do Razão"><option value="">Selecione uma conta</option><option v-for="a in catalogs.accounts.filter(a=>a.analytical)" :key="a.id" :value="a.id">{{a.access_code}} · {{a.name}}</option></select></label><label v-else>Contas incluídas<span class="read-field">{{kind==='trial-balance'?'Todas as contas analíticas':'Todas as contas com movimentos'}}</span></label><label>Centro de custo<select v-model="centerId" aria-label="Centro de custo do relatório"><option value="">Todos os centros</option><option v-for="c in catalogs.centers" :key="c.id" :value="c.id">{{c.code}} · {{c.name}}</option></select></label></div></section>
-  <div v-if="error||catalogError" class="message error" role="alert">{{error||catalogError}}</div>
-  <div v-if="centerId" class="message subtle"><Icon name="info"/><span>O centro de custo filtra cada partida. Contrapartidas sem esse centro não compõem o recorte; seus débitos e créditos podem ser diferentes.</span></div>
-  <section class="panel report-content">
-   <div class="panel-heading"><div><h2>{{reportTitle}}</h2><p>{{company?.name}}<template v-if="kind==='ledger'&&account"> · {{account.classifier}} · {{account.name}}</template></p></div><span class="badge neutral">{{rowList.length}} {{kind==='trial-balance'?'contas':'partidas'}}</span></div>
-   <div v-if="loading" class="loading-line"><Icon name="loading"/>Preparando o relatório...</div>
-   <EmptyState v-else-if="kind==='ledger'&&!accountId" title="Selecione a conta do Razão" text="A consulta mostra o saldo anterior e a evolução de uma conta específica." icon="book"/>
-   <template v-else-if="report">
-    <div v-if="kind==='ledger'" class="summary-strip"><div><span>Saldo anterior</span><strong>{{balance(report.totals.opening_cents)}}</strong></div><div><span>Débitos</span><strong>{{money(report.totals.debit_cents)}}</strong></div><div><span>Créditos</span><strong>{{money(report.totals.credit_cents)}}</strong></div><div class="push-right"><span>Saldo final</span><strong>{{balance(report.totals.closing_cents)}}</strong></div></div>
-    <div v-if="rowList.length" class="table-scroll"><table v-if="kind==='trial-balance'"><thead><tr><th>Acesso / classificação</th><th>Conta</th><th class="right">Saldo anterior</th><th class="right">Débitos</th><th class="right">Créditos</th><th class="right">Saldo final</th></tr></thead><tbody><tr v-for="r in rowList" :key="r.account_id"><td class="mono">{{r.access_code}}<small class="cell-secondary">{{r.classifier}}</small></td><td><strong>{{r.account_name}}</strong><small class="cell-secondary">Natureza {{r.nature==='debit'?'devedora':'credora'}}</small></td><td class="right money">{{balance(r.opening_cents)}}</td><td class="right money">{{money(r.debit_cents)}}</td><td class="right money">{{money(r.credit_cents)}}</td><td class="right money"><strong>{{balance(r.closing_cents)}}</strong></td></tr></tbody><tfoot><tr><th colspan="2">Total do recorte</th><th class="right money">{{balance(report.totals.opening_cents)}}</th><th class="right money">{{money(report.totals.debit_cents)}}</th><th class="right money">{{money(report.totals.credit_cents)}}</th><th class="right money">{{balance(report.totals.closing_cents)}}</th></tr></tfoot></table>
-    <table v-else><thead><tr><th>Data / nº</th><th>{{kind==='ledger'?'Documento / histórico':'Conta / histórico'}}</th><th>Centro de custo</th><th class="right">Débito</th><th class="right">Crédito</th><th v-if="kind==='ledger'" class="right">Saldo</th></tr></thead><tbody><tr v-for="(r,i) in rowList" :key="`${r.journal_id}:${i}`"><td class="nowrap">{{date(r.date)}}<small class="cell-secondary mono">{{r.number}}</small></td><td class="report-history"><strong>{{kind==='ledger'?(r.document||'Sem documento'):`${r.access_code} · ${r.account_name}`}}</strong><small class="cell-secondary">{{r.history}}<template v-if="kind==='diary'&&r.document"> · {{r.document}}</template></small></td><td>{{r.cost_center_name||'—'}}</td><td class="right money">{{r.debit_cents?money(r.debit_cents):'—'}}</td><td class="right money">{{r.credit_cents?money(r.credit_cents):'—'}}</td><td v-if="kind==='ledger'" class="right money">{{balance(r.balance_cents)}}</td></tr></tbody><tfoot><tr><th colspan="3">Total do recorte</th><th class="right money">{{money(report.totals.debit_cents)}}</th><th class="right money">{{money(report.totals.credit_cents)}}</th><th v-if="kind==='ledger'" class="right money">{{balance(report.totals.closing_cents)}}</th></tr></tfoot></table></div>
-    <EmptyState v-else title="Sem movimentos neste recorte" text="Os filtros não encontraram partidas. Saldos anteriores, quando existentes, permanecem no resumo do Razão." icon="reports"/>
-    <footer class="table-footer"><span>Saldos: D = devedor · C = credor. Estornos permanecem como novas partidas.</span><span>Relatório interno</span></footer>
-   </template>
-  </section>
-  <div class="message subtle"><Icon name="shield"/><span>Os relatórios refletem os lançamentos cadastrados e os filtros selecionados. Não substituem livros legais homologados ou validação em obrigação acessória.</span></div>
- </div>
-</template>
-
-<style scoped>
-.report-filters{padding:16px 20px}.report-filters .form-grid{margin:0}.report-history{min-width:230px;max-width:490px}.report-content tfoot th{border-top:1px solid #dce4e8;background:#f6f9fa;padding:13px 14px;font-size:12px}.report-filters .read-field{display:flex;align-items:center;gap:8px}.reports-view .summary-strip{flex-wrap:wrap}
-@media(min-width:761px){
- .reports-view>.view-heading{margin-bottom:12px}
- .reports-view>.view-heading .eyebrow{margin-bottom:4px}
- .reports-view>.view-heading p{margin-top:3px}
- .reports-view>.segmented{margin-bottom:8px;padding:3px}
- .reports-view>.segmented button{padding-top:6px;padding-bottom:6px}
- .report-filters{padding-top:8px;padding-bottom:8px}
- .report-filters label{gap:4px}
- .report-content>.panel-heading{padding-top:10px;padding-bottom:10px}
- .report-content>.panel-heading p{margin-top:3px}
- .report-content thead th{padding-top:8px;padding-bottom:8px}
- .report-content tbody td{padding-top:7px;padding-bottom:7px}
- .report-content .cell-secondary{margin-top:1px}
- .report-content tfoot th{padding-top:8px;padding-bottom:8px}
- .report-content>.table-footer{padding-top:7px;padding-bottom:7px}
- .reports-view>.message{margin-top:8px;margin-bottom:0;padding-top:8px;padding-bottom:8px}
-}
-@media(max-width:700px){.report-filters{padding:14px}.report-filters .form-grid{grid-template-columns:1fr}.reports-view .view-heading .actions{flex-wrap:wrap}}
-</style>
+<template><div class="view reports-view"><header class="view-heading"><div><div class="eyebrow">LIVROS E DEMONSTRATIVOS</div><h1>Livros e relatórios</h1><p>Filtros explícitos, valores conferíveis e acesso à origem.</p></div></header><form class="panel report-controls" @submit.prevent="run"><div class="form-grid three"><label>Relatório<select v-model="kind"><option v-for="(label,key) in kinds" :value="key" :key="key">{{label}}</option></select></label><label>Data inicial<DateInput v-model="start" required/></label><label>Data final<DateInput v-model="end" required/></label><label>Conta<select v-model="account" :disabled="!accounting"><option value="">Todas</option><option v-for="a in data.accounts" :value="a.id" :key="a.id">{{a.access_code}} · {{a.name}}</option></select></label><label>Centro de custo<select v-model="center" :disabled="!accounting"><option value="">Todos</option><option v-for="c in data.centers" :value="c.id" :key="c.id">{{c.code}} · {{c.name}}</option></select></label><label>Documento, participante ou histórico<input v-model="query" :disabled="!searchable"/></label><label>Situação<select v-model="status" :disabled="!statuses.length"><option value="">Todas</option><option v-for="k in statuses" :key="k" :value="k">{{statusLabel(k)}}</option></select></label><label>Operação<select v-model="direction" :disabled="accounting"><option value="">Todas</option><template v-if="kind==='fiscal-book'"><option value="incoming">Entrada fiscal</option><option value="outgoing">Saída fiscal</option></template><template v-else><option value="payable">A pagar</option><option value="receivable">A receber</option></template></select></label><button class="button primary" :disabled="busy">{{busy?'Consultando…':'Gerar relatório'}}</button></div></form><p v-if="error" class="message error" role="alert">{{error}}</p><section v-if="result" class="panel report-output"><header class="panel-heading"><div><h2>{{kinds[result.kind]}}</h2><p>{{result.company_name}} · {{date(result.start)}} a {{date(result.end)}}</p></div><div class="actions no-print"><a class="button outline" :href="`/api${result.url}&format=csv`" download>Exportar CSV</a><button class="button" @click="printReport">Imprimir / PDF</button></div></header><p class="report-note">{{result.scope_note}}</p><div class="summary-strip"><div v-for="(value,key) in result.totals" :key="key"><span>{{labels[key]||key}}</span><strong>{{display(key,value)}}</strong></div></div><div class="table-scroll"><table><thead><tr><th v-for="key in columns" :key="key">{{labels[key]||key}}</th></tr></thead><tbody><tr v-for="(r,i) in result.rows" v-show="i>=(page-1)*50&&i<page*50" :key="i"><td v-for="key in columns" :key="key" :class="{'right money':key.endsWith('_cents')}"><button v-if="['journal_id','document_id','title_id'].includes(key)&&r[key]" class="text-button" @click="showOrigin(r,key)">#{{r[key]}}</button><span v-else-if="key==='journal_ids'" class="actions"><button v-for="id in r[key]" :key="id" class="text-button" @click="showOrigin({journal_id:id},'journal_id')">#{{id}}</button></span><span v-else>{{display(key,r[key])}}</span></td></tr></tbody></table></div><footer class="table-footer no-print"><span>{{result.rows.length}} linhas · página {{page}} · totais abrangem todas as linhas</span><div class="actions"><button class="button small" @click="page--" :disabled="page===1">Anterior</button><button class="button small" @click="page++" :disabled="page*50>=result.rows.length">Próxima</button></div></footer><p v-if="result.rows.length>50" class="message subtle no-print">Impressão e CSV incluem todas as linhas.</p></section><BaseModal v-if="origin" :title="origin.type+' de origem'" wide @close="origin=null"><div v-if="originRecord"><dl class="origin-summary"><dt>Documento</dt><dd>{{originRecord.number||originRecord.document||'—'}}</dd><dt>Data</dt><dd>{{date(originRecord.date||originRecord.posting_date||originRecord.issue_date)}}</dd><dt>Histórico / participante</dt><dd>{{originRecord.history||originRecord.description||originRecord.partner_name}}</dd><dt>Valor</dt><dd>{{money(originRecord.total_cents??originRecord.amount_cents)}}</dd></dl><div v-if="originRecord.lines" class="table-scroll"><table><thead><tr><th>Conta</th><th>Centro</th><th>Débito</th><th>Crédito</th></tr></thead><tbody><tr v-for="line in originRecord.lines" :key="line.id"><td>{{line.access_code}} · {{line.account_name}}</td><td>{{line.cost_center_name||'—'}}</td><td>{{money(line.debit_cents)}}</td><td>{{money(line.credit_cents)}}</td></tr></tbody></table></div><div v-if="originRecord.settlements" class="table-scroll"><p>Saldo atual: <strong>{{money(originRecord.balance_cents)}}</strong></p><table><thead><tr><th>Baixa</th><th>Principal</th><th>Caixa</th><th>Situação</th></tr></thead><tbody><tr v-for="s in originRecord.settlements" :key="s.id"><td>{{date(s.date)}}</td><td>{{money(s.amount_cents)}}</td><td>{{money(s.cash_cents)}}</td><td>{{s.reversed_at?'Estornada':'Ativa'}}</td></tr></tbody></table></div><div v-if="origin.data.titles" class="table-scroll"><table><thead><tr><th>Título</th><th>Vencimento</th><th>Valor</th><th>Saldo</th></tr></thead><tbody><tr v-for="t in origin.data.titles" :key="t.id"><td>{{t.description}}</td><td>{{date(t.due_date)}}</td><td>{{money(t.amount_cents)}}</td><td>{{money(t.balance_cents)}}</td></tr></tbody></table></div></div><template #footer><button class="button" @click="origin=null">Fechar</button></template></BaseModal></div></template>

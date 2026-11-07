@@ -11,10 +11,11 @@ from urllib.parse import urlsplit
 
 from fastapi import Body, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from . import __version__
-from .core import Core, DomainError, digest, iso_date, period, select_one
+from .business import BusinessCore as Core
+from .core import DomainError, digest, iso_date, period, select_one
 from .db import ContextConflict, Database, request_context
 
 COOKIE = "escritura_session"
@@ -28,6 +29,8 @@ def create_app(data_dir=None, demo=False):
     application.state.core = core
     application.state.db = database
     application.state.demo = demo
+    from .lookups import LookupService
+    application.state.lookups = LookupService(database)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
     @application.exception_handler(DomainError)
@@ -75,11 +78,19 @@ def create_app(data_dir=None, demo=False):
             if path not in public:
                 if not session["authenticated"]:
                     return JSONResponse({"detail": "Entre no aplicativo para acessar os dados.", "code": "unauthenticated"}, 401)
+                match_permission = re.match(r"^/api/companies/(\d+)(?:/|$)", path)
+                permission_cid = int(match_permission.group(1)) if match_permission else None
+                privileged = path.startswith('/api/users') or (path == '/api/companies' and mutating)
+                writing = mutating and path not in {'/api/context', '/api/logout'}
+                try:
+                    core.authorize(session['user'], permission_cid, writing, privileged)
+                except DomainError as exc:
+                    return JSONResponse({'detail': exc.detail, 'code': exc.code}, exc.status)
                 if mutating:
                     csrf = request.headers.get("x-csrf-token", "")
                     if not csrf or not hmac.compare_digest(csrf, session["csrf_token"]):
                         return JSONResponse({"detail": "Confirmação de sessão inválida. Atualize a página.", "code": "invalid_csrf"}, 403)
-                    expected = {"token_hash": digest(token.encode())}
+                    expected = {"token_hash": digest(token.encode()), "user_id": session["user"]["id"], "write": writing, "admin": privileged, "permission_company_id": permission_cid}
                     match = re.match(r"^/api/companies/(\d+)/", path)
                     if match:
                         cid = int(match.group(1))
@@ -158,11 +169,17 @@ def create_app(data_dir=None, demo=False):
 
     @application.post("/api/context")
     def context(request: Request, payload: dict[str, Any] = Body(...)):
+        core.authorize(request.state.session["user"], payload.get("company_id"))
         return core.context(request.state.token, payload)
 
     @application.get("/api/companies")
-    def companies():
-        return core.companies()
+    def companies(request: Request):
+        all_companies = core.companies()
+        if request.state.session['user']['role'] == 'admin':
+            return all_companies
+        with database.read() as conn:
+            allowed = {r[0] for r in conn.execute('SELECT company_id FROM user_companies WHERE user_id=?', (request.state.session['user']['id'],))}
+        return [c for c in all_companies if c['id'] in allowed]
 
     @application.post("/api/companies", status_code=201)
     def create_company(request: Request, payload: dict[str, Any] = Body(...)):
@@ -308,8 +325,9 @@ def create_app(data_dir=None, demo=False):
         return core.simulate_rule(cid, item_id, payload, actor(request))
 
     @application.get("/api/templates")
-    def templates():
-        return core.templates()
+    def templates(request: Request):
+        allowed = {c['id'] for c in companies(request)}
+        return [t for t in core.templates() if t['source_company_id'] in allowed]
 
     @application.post("/api/templates", status_code=201)
     def create_template(request: Request, payload: dict[str, Any] = Body(...)):
@@ -319,6 +337,9 @@ def create_app(data_dir=None, demo=False):
 
     @application.post("/api/companies/{cid}/templates/{item_id}/apply")
     def apply_template(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
+        visible = {t['id'] for t in templates(request)}
+        if item_id not in visible:
+            raise DomainError('Modelo não disponível para este usuário.', 403, 'forbidden')
         return core.apply_template(cid, item_id, payload, actor(request))
 
     @application.get("/api/companies/{cid}/imports")
@@ -366,6 +387,9 @@ def create_app(data_dir=None, demo=False):
     @application.get("/api/companies/{cid}/audit")
     def audit_entries(cid: int, limit: int = 100):
         return core.audit(cid, limit)
+
+    from .business_api import register_business_routes
+    register_business_routes(application, core, database, actor, check_date, check_period)
 
     @application.get("/{resource_path:path}")
     def frontend_asset(resource_path: str):

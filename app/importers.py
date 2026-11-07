@@ -860,8 +860,17 @@ def _parse(filename, data, company, result, state, depth):
     suffix = PurePosixPath(filename.lower()).suffix
     try:
         if suffix in (".rar", ".7z") or data.startswith((b"Rar!", b"7z\xbc\xaf\x27\x1c")):
-            raise ImportProblem("ARCHIVE_FORMAT_UNSUPPORTED", "RAR/7z não são suportados nesta versão. Converta para ZIP sem senha; nenhuma extração parcial foi realizada.")
-        if suffix == ".zip" or data.startswith(b"PK\x03\x04"):
+            if depth >= MAX_ARCHIVE_DEPTH:
+                raise ImportProblem("ARCHIVE_DEPTH", "Pacote excede dois níveis de contêiner.")
+            from .archives import read_archive
+            fmt = "7z" if suffix == ".7z" or data.startswith(b"7z") else "rar"
+            children=read_archive(fmt,data,state,(MAX_FILE_BYTES,MAX_EXPANDED_BYTES,MAX_ARCHIVE_MEMBERS,MAX_COMPRESSION_RATIO))
+            for name,child in children:
+                if state["expanded"]+len(child)>MAX_EXPANDED_BYTES:
+                    raise ImportProblem("ARCHIVE_EXPANSION", "Lote excede limite total de descompressão.")
+                state["expanded"]+=len(child)
+                _parse(filename+"!/"+name.replace("\\","/"),child,company,result,state,depth+1)
+        elif suffix == ".zip" or data.startswith(b"PK\x03\x04"):
             fmt = _zip(filename, data, company, result, state, depth)
         elif suffix in (".ofx", ".qfx"):
             fmt = _bank_markup(filename, data, company, result, digest)
