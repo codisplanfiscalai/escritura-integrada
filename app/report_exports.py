@@ -26,9 +26,16 @@ def display(key,value):
     if isinstance(value,bool):return 'Sim' if value else 'Não'
     return VALUES.get(str(value),str(value))
 
+REPORT_TITLES={'diary':'Diário Geral','consolidated-diary':'Diário Consolidado',
+    'ledger':'Razão','trial-balance':'Balancete','cost-centers':'Movimentos por centro de custo',
+    'balance-sheet':'Balanço patrimonial','income-statement':'Demonstração do resultado',
+    'fiscal-book':'Livro auxiliar fiscal','financial':'Títulos por vencimento',
+    'cash-flow':'Caixa realizado','partners':'Conciliação de clientes e fornecedores'}
+
+
 def export_report(result,kind):
     rows=result['rows'];keys=list(dict.fromkeys(k for r in rows for k in r))
-    title=result.get('title') or result['kind'];output=BytesIO()
+    title=result.get('title') or REPORT_TITLES.get(result['kind'],result['kind']);output=BytesIO()
     if kind=='xlsx':
         from openpyxl import Workbook
         from openpyxl.styles import Font,PatternFill,Alignment

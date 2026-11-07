@@ -58,6 +58,10 @@ class ExportPerformanceTests(unittest.TestCase):
                 response=client.get(path+'&purpose=print')
                 self.assertEqual(200,response.status_code,response.text[:100] if response.status_code!=200 else '')
                 self.assertTrue(response.content.startswith(b'%PDF'));self.assertTrue(response.headers['content-disposition'].startswith('inline;'))
+                from pypdf import PdfReader
+                from io import BytesIO
+                label={'fiscal-documents':'Documentos fiscais','diary':'Diário Geral','financial':'Títulos por vencimento'}[kind]
+                self.assertIn(label,PdfReader(BytesIO(response.content)).pages[0].extract_text())
                 self.assertTrue(preview_url_allowed('http://127.0.0.1:3456'+path+'&purpose=print','http://127.0.0.1:3456'))
         self.assertTrue(preview_url_allowed('http://127.0.0.1:3456'+self.scope('/tax-ledgers/1/report?format=pdf&purpose=print'),'http://127.0.0.1:3456'))
         self.assertFalse(preview_url_allowed('http://127.0.0.1:3456'+self.scope('/business-reports/diary?format=pdf&purpose=export'),'http://127.0.0.1:3456'))

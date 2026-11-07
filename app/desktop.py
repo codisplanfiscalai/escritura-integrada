@@ -978,6 +978,7 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             import tempfile
             from PySide6.QtWebEngineCore import QWebEngineDownloadRequest
             from app.desktop_pdf import show_pdf
+            preview_path=request.url().path()
             folder=tempfile.TemporaryDirectory(prefix='escritura-pdf-')
             target=Path(folder.name)/'relatorio.pdf'
             request.setDownloadDirectory(folder.name);request.setDownloadFileName(target.name)
@@ -987,10 +988,12 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                     if request.mimeType()!='application/pdf' or prefix != b'%PDF':
                         folder.cleanup();self.statusBar().showMessage('Não foi possível abrir o PDF. Confira a sessão, as permissões e os filtros.',10000);return
                     def ready(pages,dialog):
-                        self._auditor_pdf_pages=pages
+                        auditor='/auditor/' in preview_path
+                        if auditor:self._auditor_pdf_pages=pages
                         if smoke and pages:
-                            dialog.grab().save(str(smoke.path.with_name(smoke.path.stem+'-auditor-pdf.png')))
-                            smoke.record('auditor_pdf_opened',auditor_pdf_pages=pages)
+                            label='auditor' if auditor else preview_path.rsplit('/',1)[-1]
+                            dialog.grab().save(str(smoke.path.with_name(smoke.path.stem+'-'+label+'-pdf.png')))
+                            smoke.record('report_pdf_opened',pdf_preview=label,pdf_pages=pages,auditor_pdf_pages=self._auditor_pdf_pages)
                             dialog.close()
                             self.finish_file_smoke(pdf_pages=pages)
                     dialog=show_pdf(self,target,ready);self._pdf_viewers.append(dialog)
