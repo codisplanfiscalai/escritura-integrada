@@ -687,7 +687,23 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                 const brand = document.querySelector('.app-shell .brand img');
                 const main = document.querySelector('.main-content');
                 const side = document.querySelector('.sidebar');
+                if (active?.value && !window.__escrituraSmokeExports) {
+                    window.__escrituraSmokeExports = {pending:true};
+                    const [month,year] = document.querySelector('#active-period').value.split('/');
+                    const start = `${year}-${month}-01`;
+                    const end = new Date(Date.UTC(Number(year),Number(month),0)).toISOString().slice(0,10);
+                    Promise.all(['pdf','xlsx'].map(async format => {
+                        const response = await fetch(`/api/companies/${active.value}/business-reports/fiscal-documents?start=${start}&end=${end}&format=${format}`);
+                        if (!response.ok) throw new Error(`Exportação ${format}: HTTP ${response.status}`);
+                        const bytes = new Uint8Array(await response.arrayBuffer());
+                        const prefix = String.fromCharCode(...bytes.slice(0,4));
+                        if (bytes.length < 1000 || !(format==='pdf'?prefix==='%PDF':prefix.startsWith('PK'))) throw new Error(`Arquivo ${format} inválido`);
+                        return [format,bytes.length];
+                    })).then(values => {window.__escrituraSmokeExports={...Object.fromEntries(values),pending:false};})
+                    .catch(error => {window.__escrituraSmokeExports={error:String(error),pending:false};});
+                }
                 return JSON.stringify({title:document.title, ready:document.readyState,
+                    exports:window.__escrituraSmokeExports || {},
                     app:Boolean(document.querySelector('.app-shell')),
                     loginRequested:Boolean(window.__escrituraSmokeLoginRequested),
                     mainTextLength:main?.innerText.length || 0,
@@ -709,7 +725,12 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                     dom = json.loads(value) if isinstance(value, str) else {}
                 except ValueError:
                     dom = {}
+                if dom.get("exports",{}).get("error"):
+                    self.finish_smoke(False,dom["exports"]["error"],dom)
+                    return
                 verified = (dom.get("app") and dom.get("ready") == "complete"
+                            and dom.get("exports",{}).get("pdf",0)>1000
+                            and dom.get("exports",{}).get("xlsx",0)>1000
                             and dom.get("loginRequested") and dom.get("companyId")
                             and dom.get("navigationItems", 0) >= 10
                             and dom.get("mainTextLength", 0) > 80

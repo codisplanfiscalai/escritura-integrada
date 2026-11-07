@@ -14,13 +14,13 @@ O PDF foi renderizado e inspecionado. A fonte Bitstream Vera distribuída com Re
 
 ## Instalação Windows
 
-O job Windows executa a suíte Python, constrói o ZIP, inicia o executável real e verifica API, interface, versão e encerramento. Em seguida compila o instalador Inno Setup e executa instalação nova, atualização/reinstalação, recusa com PID ativo, recusa de downgrade, migração de base produzida pela versão 0.5/schema 2, abertura gráfica instalada e desinstalação com preservação dos dados.
+O job Windows executa a suíte Python, constrói o ZIP, inicia o executável real e verifica API, interface, geração real de PDF/Excel pelo backend empacotado, versão e encerramento. Em seguida compila o instalador Inno Setup e executa instalação nova, atualização/reinstalação, recusa com PID ativo, recusa de downgrade, migração de base produzida pela versão 0.5/schema 2, abertura gráfica instalada e desinstalação com preservação dos dados.
 
 A versão anterior do programa é simulada no registro para o teste de atualização; o pacote antigo completo não é instalado. O banco portátil antigo é efetivamente criado pelo código publicado 51537872f8598af84d22b4544f75a4001f42f56f. O teste de aplicação aberta utiliza um bloqueio com PID ativo. Não substitui validação de todas as versões históricas, antivirus e edições Windows em uso no escritório.
 
 ## macOS
 
-Os jobs separados `macos-15` (arm64) e `macos-15-intel` (x64) constroem bundles Mach-O nativos e verificam a arquitetura. Instalam/reinstalam o `.pkg` com o Installer, abrem a aplicação Qt/WebEngine, conferem API, interface, barra de menus e encerramento, além de backup e migração de base schema 2. O relatório registra a versão real do host.
+Os jobs separados `macos-15` (arm64) e `macos-15-intel` (x64) constroem bundles Mach-O nativos e verificam a arquitetura. Instalam/reinstalam o `.pkg` com o Installer, abrem a aplicação Qt/WebEngine, conferem API, interface, geração real de PDF/Excel, barra de menus e encerramento, além de backup e migração de base schema 2. O relatório registra a versão real do host.
 
 O mínimo declarado é macOS 15.0. Não há evidência para macOS anterior, Rosetta ou pacote universal. Assinatura ad hoc não equivale a Developer ID/notarização. O caminho de download com quarentena/Gatekeeper não é homologado pelo teste do runner.
 
