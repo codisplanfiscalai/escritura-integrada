@@ -134,8 +134,15 @@ def create_app(data_dir=None, demo=False):
                 request_context.reset(ctx_token)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        # A prévia do Auditor pode ser enquadrada somente pela própria aplicação.
+        # Autorização, empresa e exercício já foram validados antes da resposta.
+        audit_pdf = (response.status_code == 200
+            and bool(re.fullmatch(r'/api/companies/\d+/auditor/jobs/\d+/(report|files)', path))
+            and response.headers.get('content-type', '').startswith('application/pdf')
+            and response.headers.get('content-disposition', '').startswith('inline;'))
+        response.headers["X-Frame-Options"] = "SAMEORIGIN" if audit_pdf else "DENY"
+        ancestors = "'self'" if audit_pdf else "'none'"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors " + ancestors
         if path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
