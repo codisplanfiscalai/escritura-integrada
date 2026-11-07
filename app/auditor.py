@@ -24,6 +24,7 @@ COVERAGE={
 class Cancelled(Exception):pass
 
 def members(filename,raw):
+    if not isinstance(filename,str) or not filename.strip():raise DomainError('Informe o nome do arquivo original.')
     suffix=PurePosixPath(filename).suffix.lower()
     if suffix in {'.xml','.pdf'}:return [(filename,raw)]
     if suffix!='.zip':raise DomainError('Auditor: envie XML, PDF auxiliar ou ZIP de XML/PDF.')
@@ -158,9 +159,9 @@ class AuditorMixin:
         if start>end or not isinstance(entries,list) or not 1<=len(entries)<=25000:raise DomainError('Vigência ou quantidade de linhas inválida (1 a 25.000).')
         seen=set()
         for r in entries:
-            if not isinstance(r,dict) or not re.fullmatch(r'\d{8}',str(r.get('ncm',''))) or not re.fullmatch(r'\d{3}',str(r.get('cst',''))) or not re.fullmatch(r'\d{6}',str(r.get('cclass_trib',''))) or not r['cclass_trib'].startswith(r['cst']):raise DomainError('Cada linha exige NCM com 8 dígitos, CST com 3 e cClassTrib com 6, prefixado pelo CST.')
-            ex=r.get('ex_code') or ''
-            if ex and not re.fullmatch(r'\d{1,3}',ex):raise DomainError('EX deve conter até três dígitos.')
+            if not isinstance(r,dict) or any(not isinstance(r.get(k),str) or not re.fullmatch(pattern,r[k]) for k,pattern in [('ncm',r'[0-9]{8}'),('cst',r'[0-9]{3}'),('cclass_trib',r'[0-9]{6}')]) or not r['cclass_trib'].startswith(r['cst']):raise DomainError('Cada linha exige NCM com 8 dígitos, CST com 3 e cClassTrib com 6, prefixado pelo CST. Informe os códigos como texto para preservar zeros iniciais.')
+            ex=r.get('ex_code','')
+            if not isinstance(ex,str) or (ex and not re.fullmatch(r'[0-9]{1,3}',ex)):raise DomainError('EX deve ser texto com até três dígitos ou vazio.')
             key=(r['ncm'],ex)
             if key in seen:raise DomainError('NCM/EX ambíguo no catálogo.')
             seen.add(key)

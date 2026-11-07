@@ -72,6 +72,9 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual((4,2,2),(preview['rows'],preview['eligible'],preview['excluded']))
         self.assertTrue(preview['entries'][1]['inherited_ncm']);self.assertEqual(4,preview['entries'][1]['source_row'])
         payload={'name':'Versão revisada','source':'Tabela sintética de teste','valid_from':'2026-01-01','valid_to':'2026-12-31','entries':preview['entries'],'source_id':preview['source_id']}
+        for field,value in [('ncm',87032100),('cst',0),('cclass_trib',1),('ex_code',1)]:
+            invalid=payload|{'entries':[preview['entries'][0]|{field:value}],'acknowledge_issues':True}
+            self.assertEqual(400,self.client.post(self.scope('/auditor/catalogs'),json=invalid).status_code)
         self.assertEqual(400,self.client.post(self.scope('/auditor/catalogs'),json=payload).status_code)
         r=self.client.post(self.scope('/auditor/catalogs'),json=payload|{'acknowledge_issues':True});self.assertEqual(201,r.status_code,r.text)
         self.assertEqual(raw,self.client.get(self.scope(f"/auditor/catalogs/{r.json()['id']}/original")).content)
