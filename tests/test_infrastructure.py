@@ -91,7 +91,7 @@ class InfrastructureTests(unittest.TestCase):
     def test_runtime_lock_pins_all_runtime_packages_and_windows_marker(self):
         text = (ROOT / "docker/runtime.lock").read_text()
         blocks = [b for b in text.split("\n\n") if re.search(r"(?m)^[a-z][\w.-]*==", b)]
-        self.assertEqual(len(blocks), 31)
+        self.assertEqual(len(blocks), 38)
         for block in blocks:
             self.assertRegex(block, r"--hash=sha256:[0-9a-f]{64}")
         self.assertIn('colorama==0.4.6 ; sys_platform == "win32"', text)

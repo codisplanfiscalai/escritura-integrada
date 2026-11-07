@@ -14,7 +14,10 @@ from .tax_assessment import TaxAssessmentMixin
 from .tax_ledger import TaxLedgerMixin,ensure_unfinalized
 from .fiscal_reports import FiscalReportsMixin
 
-class BusinessCore(TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
+from .auditor import AuditorMixin
+from .module_imports import ModuleImportsMixin
+
+class BusinessCore(AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
     def _validate_document_links(self,conn,cid,payload):
         for k,kind in [('participant_id','participant'),('establishment_id','establishment')]:
             if payload.get(k):
@@ -28,6 +31,15 @@ class BusinessCore(TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin,
             if item.get('master_id'):
                 m=self._master(conn,cid,integer(item['master_id'],'Produto/serviço'),active=True)
                 if m['kind'] not in {'product','service'}:raise DomainError('Item deve referenciar um produto ou serviço.')
+
+    def create_document(self,cid,payload,actor):
+        with self.db.transaction() as conn:
+            if payload.get('idempotency_key'):
+                key,hashed,previous=self._operation(conn,cid,'manual-document',payload)
+                if previous:return previous
+            result=self._create_document(conn,cid,payload,actor)
+            if payload.get('idempotency_key'):self._record_operation(conn,cid,'manual-document',key,hashed,result)
+            return result
 
     def _create_document(self,conn,cid,payload,actor):
         self._validate_document_links(conn,cid,payload)

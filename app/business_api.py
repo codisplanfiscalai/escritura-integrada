@@ -88,9 +88,17 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
     def partner_reconciliation(cid:int):return core.partner_reconciliation(cid)
 
     @app.get('/api/companies/{cid}/business-reports/{kind}')
-    def report(cid:int,kind:str,start:str,end:str,account_id:int|None=None,cost_center_id:int|None=None,query:str='',status:str='',direction:str='',cfop:str='',ncm:str='',format:str='json'):
+    def report(cid:int,kind:str,request:Request,start:str,end:str,account_id:int|None=None,cost_center_id:int|None=None,query:str='',status:str='',direction:str='',cfop:str='',ncm:str='',format:str='json',model:str='internal',first_page:int=1,show_numbers:bool=False):
+        check_period(request,start[:7]);check_period(request,end[:7])
         from .fiscal_reports import FISCAL_REPORTS
         result=core.fiscal_report(cid,kind,start,end,query,status,direction,cfop,ncm) if kind in FISCAL_REPORTS else core.business_report(cid,kind,start,end,account_id,cost_center_id,query,status,direction)
+        if model!='internal':
+            from .report_models import ledger_pdf
+            if model!='prosoft-ledger-v1' or kind!='ledger':raise DomainError('Modelo incompatível com o relatório.')
+            result['model']=model
+            if format=='pdf':
+                content,mime=ledger_pdf(result,first_page,show_numbers)
+                return Response(content,media_type=mime,headers={'Content-Disposition':'inline; filename="razao-analitico.pdf"'})
         if format=='json':return result
         if format in {'pdf','xlsx'}:
             from .report_exports import export_report

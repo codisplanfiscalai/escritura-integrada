@@ -1,0 +1,11 @@
+{
+  "rows": 403,
+  "reference_pages": 7,
+  "generated_pages": 7,
+  "reference_sha256": "0b04ae08eb476aa8ad78df6409c65163dbbd9a71b51d220455e12c1bc4fbd5aa",
+  "generated_sha256": "43ecb4f5e1b830cfd5c56f6a16577207ce740b80e0583606aa8abfc062d2418b",
+  "debit_difference_cents": 0,
+  "credit_difference_cents": 0,
+  "closing_difference_cents": 0,
+  "visual_status": "Comparado: estrutura e sete páginas; tipografia e algumas quebras ainda diferem. Não é reprodução pixel a pixel."
+}

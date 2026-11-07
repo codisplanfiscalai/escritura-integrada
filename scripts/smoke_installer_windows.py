@@ -77,9 +77,9 @@ def main():
             old_counts=integrity(portable/'escritura.sqlite3');source_hash=db_digest(portable/'escritura.sqlite3')
             profile=root/'Perfil migrado';setup([f'/PORTABLEDATA={portable}'])
             new_counts=integrity(profile/'data/escritura.sqlite3')
-            if old_counts['schema_version']!=2 or new_counts['schema_version']!=3 or old_counts['companies']!=new_counts['companies'] or old_counts['users']!=new_counts['users']:raise RuntimeError('Migração portátil inconsistente.')
+            if old_counts['schema_version']!=2 or new_counts['schema_version']!=4 or old_counts['companies']!=new_counts['companies'] or old_counts['users']!=new_counts['users']:raise RuntimeError('Migração portátil inconsistente.')
             if db_digest(portable/'escritura.sqlite3')!=source_hash:raise RuntimeError('A origem portátil foi alterada.')
-            report['checks'].append('Banco portátil 0.5/schema 2 migrado para schema 3 pela seleção do instalador; origem preservada')
+            report['checks'].append('Banco portátil 0.5/schema 2 migrado para schema 4 pela seleção do instalador; origem preservada')
             archive=ROOT/'artifacts'/f'EscrituraIntegrada-{args.version}-windows-x64.zip'
             gui=run_smoke(archive,args.result.with_name('windows-installed-gui.json'),args.version,installed_executable=exe,existing_profile=profile)
             if not gui.get('ok'):raise RuntimeError('Aplicativo instalado não aprovou abertura gráfica e encerramento.')

@@ -29,3 +29,10 @@ Na primeira abertura de uma base de versão anterior, um backup SQLite `backups/
 ## Operação
 
 Fechar a janela mantém o aplicativo em segundo plano. **Abrir, Iniciar, Parar, Reiniciar, Configurações e Sair** estão no tray/barra de menus. É possível iniciar minimizado. O backup contém dados do escritório; mantenha as permissões da pasta e faça cópias externas conforme sua rotina.
+
+
+## Backup de dados pela interface (0.7)
+
+**Sistema → Arquivos e backup** permite ao administrador baixar o backup integral. **Configurações → Criar backup** oferece o mesmo formato no aplicativo desktop. O ZIP inclui banco, arquivos originais e manifesto de conferência; não inclui configurações externas de execução do desktop.
+
+Para recuperar, pare o motor e use **Configurações → Restaurar backup**, escolhendo uma pasta nova. A verificação confere SQLite, vínculos, contagens, totais e hashes antes de concluir. Aplique a pasta de dados restaurada e inicie o motor. A origem e as demais instalações são preservadas. Não existe restauração isolada de empresa/exercício que descarte suas dependências históricas.

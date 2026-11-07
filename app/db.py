@@ -243,7 +243,7 @@ class Database:
                     from .permissions import require
                     require(conn, expected["user_id"], expected.get("permission_company_id"),
                             expected.get("routine"), expected.get("action", "read"), expected.get("admin", False))
-                if expected.get("company_id") is not None and (session["active_company_id"] != expected["company_id"] or session["period"] != expected["period"] or (expected.get("module") and session["module"] != expected["module"])):
+                if expected.get("company_id") is not None and (session["active_company_id"] != expected["company_id"] or session["period"][:4] != expected["period"][:4] or (expected.get("module") and session["module"] != expected["module"])):
                     raise ContextConflict("A empresa ou competência ativa mudou. Reabra o lançamento no contexto correto.")
             yield conn
             conn.commit()
