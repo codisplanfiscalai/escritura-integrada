@@ -39,7 +39,7 @@ O Auditor separa leitura, recálculo aritmético e validação normativa. Seus c
 | Importação contábil/financeira → requisito operacional atual | module_imports.py + ModuleImportView; journals-v1, openings-v1, accounts-v1, titles-v1 | API testa usuário exclusivamente contábil, rejeição de outra empresa, equilíbrio, bloqueios, reenvio e seleção explícita |
 | Exercício flexível → requisito atual | Contexto anual na API/Vue; fechamento continua por empresa/módulo/mês | Meses diferentes do ano aceitos; outro ano recusado; emissão anterior preservada |
 | Salvar e novo → CTB020100, LFSDOCTOS e requisito atual | JournalView/DocumentsView/BaseModal; defaults opcionais, foco, atalhos e idempotência | Teste API de reenvio; roteiro de Chromium cobre sequência por teclado e erro preservado |
-| Razão → PDF fornecido e CTB020400 | report_models.py + catálogo na interface; folha inicial, agrupamento, saldos, continuação | 403 movimentos e 7 folhas; diferenças numéricas zero; tipografia/quebras ainda não idênticas |
+| Razão → PDF fornecido e CTB020400 | report_models.py + catálogo na interface; folha inicial, agrupamento, saldos, continuação | 403 movimentos importados via CSV, confirmados e persistidos; competência fechada consultada; 7 folhas e diferenças numéricas zero; tipografia/quebras ainda não idênticas |
 | Arquivos → requisito atual | file_store.py; migração aditiva do índice dos originais, diretórios por empresa/ano/hash | Banco canônico contém originais; cópias de disco são reconstruídas e verificadas |
 | Recuperação → requisito atual | snapshots.py; tela Sistema/Arquivos; Configurações do desktop | Snapshot online, integridade SQLite/FKs, contagens, totais monetários e hashes; restauração em destino novo |
 

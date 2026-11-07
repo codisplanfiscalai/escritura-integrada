@@ -52,7 +52,10 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     nav('Lançamentos contábeis')
     page.get_by_role('button',name='Novo lançamento',exact=True).focus();page.keyboard.press('Enter')
     keyboard(date_field('Data do lançamento *'),'01032026')
+    page.keyboard.press('Tab');expect(page.get_by_role('button',name='Abrir calendário',exact=True)).to_be_focused()
     page.keyboard.press('Tab');expect(page.get_by_label('Documento',exact=True)).to_be_focused()
+    page.keyboard.press('Shift+Tab');expect(page.get_by_role('button',name='Abrir calendário',exact=True)).to_be_focused()
+    page.keyboard.press('Tab')
     keyboard(page.get_by_label('Documento',exact=True),'TECLA-C1')
     keyboard(page.get_by_label('Histórico *',exact=True),'Lançamento por teclado')
     for line,code in [(1,'3'),(2,'5')]:
