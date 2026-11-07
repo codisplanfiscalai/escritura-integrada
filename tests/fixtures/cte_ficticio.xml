@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cteProc xmlns="http://www.portalfiscal.inf.br/cte" versao="4.00">
+  <CTe><infCte Id="CTe35261187654321000198570010000000521000000520" versao="4.00">
+    <ide><cUF>35</cUF><CFOP>5353</CFOP><mod>57</mod><serie>1</serie><nCT>52</nCT><dhEmi>2026-11-05T11:30:00-03:00</dhEmi><tpAmb>2</tpAmb><tpServ>0</tpServ><toma3><toma>0</toma></toma3></ide>
+    <emit><CNPJ>87654321000198</CNPJ><xNome>TRANSPORTADORA FICTICIA BETA</xNome></emit>
+    <rem><CNPJ>12345678000195</CNPJ><xNome>TOMADOR REMETENTE FICTICIO ALFA</xNome></rem>
+    <dest><CNPJ>11222333000181</CNPJ><xNome>DESTINATARIO FICTICIO GAMA</xNome></dest>
+    <vPrest><vTPrest>125.50</vTPrest><vRec>115.50</vRec></vPrest>
+    <imp><ICMS><ICMS00><CST>00</CST><vBC>125.50</vBC><pICMS>12.00</pICMS><vICMS>15.06</vICMS></ICMS00></ICMS></imp>
+    <infCTeNorm><infCarga><vCarga>9000.00</vCarga><proPred>CARGA FICTICIA</proPred></infCarga></infCTeNorm>
+  </infCte></CTe>
+  <protCTe versao="4.00"><infProt><tpAmb>2</tpAmb><chCTe>35261187654321000198570010000000521000000520</chCTe><nProt>000000000000002</nProt><cStat>100</cStat><xMotivo>PROTOCOLO FICTICIO PARA TESTE</xMotivo></infProt></protCTe>
+</cteProc>

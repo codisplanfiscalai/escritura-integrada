@@ -1,0 +1,316 @@
+name: Release main e develop
+run-name: Release ${{ github.ref_name }} · ${{ github.run_number }}
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 'SHA esperado; vazio usa o head atual da branch selecionada'
+        type: string
+        required: false
+      reason:
+        description: 'Motivo da execução manual ou da sincronização'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+# queue:max preserves pending stable runs instead of replacing them. Every
+# mutation also checks the current head; obsolete runs cannot publish old code.
+concurrency:
+  group: escritura-release-${{ github.ref }}
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Reservar SemVer e gravar manifests
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: escritura-release-mutations
+      queue: max
+      cancel-in-progress: false
+    outputs:
+      proceed: ${{ steps.plan.outputs.proceed }}
+      needs_release: ${{ steps.plan.outputs.needs_release }}
+      already_released: ${{ steps.plan.outputs.already_released }}
+      version: ${{ steps.plan.outputs.version }}
+      source_sha: ${{ steps.plan.outputs.source_sha }}
+      branch: ${{ steps.plan.outputs.branch }}
+      channel: ${{ steps.plan.outputs.channel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: python -m scripts.ci.release prepare
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-plan
+          path: build/ci-plan.json
+          retention-days: 30
+          overwrite: true
+          if-no-files-found: error
+
+  linux:
+    name: Linux, testes e interface
+    needs: prepare
+    if: needs.prepare.outputs.needs_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            docker/runtime.lock
+            requirements-test.txt
+      - run: python -m scripts.ci.versioning check --expected "$RELEASE_VERSION"
+      - run: python -m scripts.ci.dependencies
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: build/npm-cache-key.txt
+      - name: Instalar runtime fixado e testes
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r docker/runtime.lock
+          python -m pip install -c build/runtime-constraints.txt -r requirements-test.txt
+          python -m pip check
+      - name: Compilar interface e avisos
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - run: python -m scripts.ci.checks --version "$RELEASE_VERSION" --source-sha "$SOURCE_SHA"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: linux-report
+          path: artifacts/linux-checks.*
+          retention-days: 30
+          overwrite: true
+
+  windows:
+    name: Windows x64 e smoke do binário distribuído
+    needs: [prepare, linux]
+    runs-on: windows-2022
+    timeout-minutes: 35
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      ESCRITURA_SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+      ESCRITURA_DATA_DIR: ${{ runner.temp }}/escritura-release-tests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            docker/runtime.lock
+            requirements-test.txt
+            requirements-desktop.txt
+      - run: python -m scripts.ci.versioning check --expected $env:RELEASE_VERSION
+      - run: python -m scripts.ci.dependencies
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: frontend-dist
+          path: frontend/dist
+      - name: Instalar runtime comum e empacotador
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r docker/runtime.lock
+          python -m pip install -c build/runtime-constraints.txt -r requirements-test.txt -r requirements-desktop.txt
+          python -m pip check
+      - run: python -m unittest discover -s tests -v
+      - name: Conferir fonte Windows sem alterações de teste
+        run: git diff --exit-code
+      - run: python scripts/build_windows.py --skip-frontend --smoke
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: windows-dist
+          path: artifacts/*
+          retention-days: 14
+          overwrite: true
+          compression-level: 0
+
+  docker:
+    name: Construção e smoke Docker sem publicação
+    needs: [prepare, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+      RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python scripts/build_images.py validate --version "$RELEASE_VERSION" --channel "$RELEASE_CHANNEL" --revision "$SOURCE_SHA" --output artifacts/images-validated.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: docker-validation
+          path: artifacts/images-validated*.json
+          retention-days: 30
+          overwrite: true
+
+  publish:
+    name: GHCR, bundles conferidos e release
+    needs: [prepare, linux, windows, docker]
+    if: needs.prepare.outputs.needs_release == 'true' && needs.linux.result == 'success' && needs.windows.result == 'success' && needs.docker.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+    concurrency:
+      group: escritura-release-mutations
+      queue: max
+      cancel-in-progress: false
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+      RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-plan
+          path: build
+      - name: Recusar commit ou versão superados
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m scripts.ci.release guard
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-dist
+          path: artifacts/windows
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: linux-report
+          path: artifacts/reports
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: docker-validation
+          path: artifacts/reports
+      - name: Reservar tag estável antes do primeiro push OCI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m scripts.ci.release reserve --output artifacts/reservation.json
+      - name: Autenticar somente após todos os gates
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publicar imagens por versão e digest
+        run: python scripts/build_images.py publish --version "$RELEASE_VERSION" --channel "$RELEASE_CHANNEL" --revision "$SOURCE_SHA" --output artifacts/images-published.json
+      - name: Preparar os dois ambientes Compose
+        run: python scripts/package_deploy.py --version "$RELEASE_VERSION" --channel "$RELEASE_CHANNEL" --images-manifest artifacts/images-published.json --output-dir artifacts/deploy
+      - name: Exportar imagens e comprovar carga offline
+        run: python scripts/export_images.py --images-manifest artifacts/images-published.json --output "artifacts/deploy/EscrituraIntegrada-$RELEASE_VERSION-linux-amd64-images.tar.gz" --verify-load
+      - name: Conferir fonte sem alterações de construção
+        run: git diff --exit-code
+      - name: Montar assets com inventário e SHA-256
+        run: python -m scripts.ci.artifacts
+      - name: Publicar tag e release do commit testado
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m scripts.ci.release publish
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: publication-reports
+          path: |
+            artifacts/publication.json
+            artifacts/reservation.json
+            artifacts/images-published*.json
+            artifacts/release/*manifest.json
+            artifacts/release/*SHA256SUMS.txt
+          retention-days: 30
+          overwrite: true
+
+  sync-develop:
+    name: Integrar main e disparar próxima pré-release
+    needs: [prepare, publish]
+    if: always() && needs.prepare.outputs.proceed == 'true' && needs.prepare.outputs.branch == 'main' && (needs.publish.result == 'success' || needs.prepare.outputs.already_released == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    concurrency:
+      group: escritura-release-mutations
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-plan
+          path: build
+      - name: Merge real com resolução restrita aos números de versão
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m scripts.ci.release sync-develop --output artifacts/develop-sync.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: develop-sync
+          path: artifacts/develop-sync.json
+          retention-days: 30
+          overwrite: true

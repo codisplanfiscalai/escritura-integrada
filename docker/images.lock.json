@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-11-07",
+  "source_url": "https://github.com/codisplanfiscalai/escritura-integrada",
+  "platforms": [
+    "linux/amd64"
+  ],
+  "upstreams": {
+    "python": {
+      "repository": "docker.io/library/python",
+      "tag": "3.12.16-slim-bookworm",
+      "digest": "sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df",
+      "reference": "docker.io/library/python:3.12.16-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df",
+      "source_url": "https://github.com/docker-library/official-images/blob/master/library/python",
+      "verified_by": "Docker Registry API v2 manifest bytes + Docker-Content-Digest",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm",
+          "os": "linux",
+          "variant": "v7"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux",
+          "variant": "v8"
+        },
+        {
+          "architecture": "386",
+          "os": "linux"
+        },
+        {
+          "architecture": "ppc64le",
+          "os": "linux"
+        }
+      ]
+    },
+    "node": {
+      "repository": "docker.io/library/node",
+      "tag": "24.22.2-bookworm-slim",
+      "digest": "sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9",
+      "reference": "docker.io/library/node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9",
+      "source_url": "https://github.com/docker-library/official-images/blob/master/library/node",
+      "verified_by": "Docker Registry API v2 manifest bytes + Docker-Content-Digest",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux",
+          "variant": "v8"
+        },
+        {
+          "architecture": "ppc64le",
+          "os": "linux"
+        }
+      ]
+    },
+    "redis": {
+      "repository": "docker.io/library/redis",
+      "tag": "8.2.11-bookworm",
+      "digest": "sha256:b0b01167ff47bc3868e56a967895a26be4230891a1f42a78ab61cdd227accc8d",
+      "reference": "docker.io/library/redis:8.2.11-bookworm@sha256:b0b01167ff47bc3868e56a967895a26be4230891a1f42a78ab61cdd227accc8d",
+      "source_url": "https://github.com/docker-library/official-images/blob/master/library/redis",
+      "verified_by": "Docker Registry API v2 manifest bytes + Docker-Content-Digest",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm",
+          "os": "linux",
+          "variant": "v7"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux",
+          "variant": "v8"
+        },
+        {
+          "architecture": "386",
+          "os": "linux"
+        },
+        {
+          "architecture": "ppc64le",
+          "os": "linux"
+        }
+      ]
+    },
+    "postgres": {
+      "repository": "docker.io/library/postgres",
+      "tag": "17.11-bookworm",
+      "digest": "sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994",
+      "reference": "docker.io/library/postgres:17.11-bookworm@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994",
+      "source_url": "https://github.com/docker-library/official-images/blob/master/library/postgres",
+      "verified_by": "Docker Registry API v2 manifest bytes + Docker-Content-Digest",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm",
+          "os": "linux",
+          "variant": "v7"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux",
+          "variant": "v8"
+        },
+        {
+          "architecture": "386",
+          "os": "linux"
+        },
+        {
+          "architecture": "ppc64le",
+          "os": "linux"
+        }
+      ]
+    },
+    "mysql": {
+      "repository": "docker.io/library/mysql",
+      "tag": "8.4.13-oraclelinux9",
+      "digest": "sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902",
+      "reference": "docker.io/library/mysql:8.4.13-oraclelinux9@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902",
+      "source_url": "https://github.com/docker-library/official-images/blob/master/library/mysql",
+      "verified_by": "Docker Registry API v2 manifest bytes + Docker-Content-Digest",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux",
+          "variant": "v8"
+        }
+      ]
+    },
+    "golang": {
+      "repository": "docker.io/library/golang",
+      "tag": "1.26.10-bookworm",
+      "digest": "sha256:5de7c99eb78ca5e515a4c340235d0955ec5964a5071c492c15503d7c267da473",
+      "reference": "docker.io/library/golang:1.26.10-bookworm@sha256:5de7c99eb78ca5e515a4c340235d0955ec5964a5071c492c15503d7c267da473",
+      "source_url": "https://github.com/docker-library/official-images/blob/master/library/golang",
+      "verified_by": "Docker Registry API v2 manifest bytes + Docker-Content-Digest",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm",
+          "os": "linux",
+          "variant": "v7"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux",
+          "variant": "v8"
+        },
+        {
+          "architecture": "386",
+          "os": "linux"
+        },
+        {
+          "architecture": "ppc64le",
+          "os": "linux"
+        }
+      ]
+    }
+  },
+  "minio_source": {
+    "version": "RELEASE.2025-10-15T17-29-55Z",
+    "commit": "9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a",
+    "url": "https://codeload.github.com/minio/minio/tar.gz/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a",
+    "sha256": "45521908307306e925c98d629e1c17d78c8b72b6ee242b1bfb1409f7d8ee5841",
+    "release_url": "https://github.com/minio/minio/releases/tag/RELEASE.2025-10-15T17-29-55Z",
+    "license_url": "https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/LICENSE",
+    "note": "Build próprio do código-fonte oficial; não é imagem oficial MinIO. Perfil opcional sem integração com o aplicativo."
+  },
+  "images": {
+    "app": {
+      "repository": "ghcr.io/codisplanfiscalai/escritura-integrada",
+      "dockerfile": "Dockerfile"
+    },
+    "base": {
+      "repository": "ghcr.io/codisplanfiscalai/escritura-integrada-base",
+      "dockerfile": "docker/base.Dockerfile"
+    },
+    "redis": {
+      "repository": "ghcr.io/codisplanfiscalai/escritura-integrada-redis",
+      "dockerfile": "docker/mirrors/redis.Dockerfile"
+    },
+    "postgres": {
+      "repository": "ghcr.io/codisplanfiscalai/escritura-integrada-postgres",
+      "dockerfile": "docker/mirrors/postgres.Dockerfile"
+    },
+    "mysql": {
+      "repository": "ghcr.io/codisplanfiscalai/escritura-integrada-mysql",
+      "dockerfile": "docker/mirrors/mysql.Dockerfile"
+    },
+    "minio": {
+      "repository": "ghcr.io/codisplanfiscalai/escritura-integrada-minio",
+      "dockerfile": "docker/minio.Dockerfile"
+    }
+  }
+}

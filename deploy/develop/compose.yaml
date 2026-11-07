@@ -1,0 +1,212 @@
+{
+  "name": "${COMPOSE_PROJECT_NAME:-escritura-develop}",
+  "services": {
+    "app": {
+      "image": "${ESCRITURA_IMAGE:?Use a imagem publicada ou o pacote de deploy da release}",
+      "pull_policy": "missing",
+      "platform": "linux/amd64",
+      "init": true,
+      "ports": [
+        {
+          "target": 8000,
+          "published": "${ESCRITURA_PORT:-8001}",
+          "host_ip": "${ESCRITURA_BIND:-127.0.0.1}",
+          "protocol": "tcp"
+        }
+      ],
+      "environment": {
+        "ESCRITURA_DATA_DIR": "/data",
+        "ESCRITURA_DEMO": "0",
+        "ESCRITURA_COOKIE_SECURE": "${ESCRITURA_COOKIE_SECURE:-0}"
+      },
+      "volumes": [
+        "app-data:/data"
+      ],
+      "networks": [
+        "application",
+        "internal"
+      ],
+      "read_only": true,
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,size=64m"
+      ],
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "restart": "unless-stopped",
+      "stop_grace_period": "30s",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "python",
+          "-c",
+          "import json,urllib.request; r=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=3)); assert r.get('status') == 'ok'"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "start_period": "30s",
+        "retries": 3
+      }
+    },
+    "redis": {
+      "image": "${REDIS_IMAGE:-ghcr.io/codisplanfiscalai/escritura-integrada-redis:8.2.11-bookworm-d5e51585d63aa5e7}",
+      "pull_policy": "missing",
+      "platform": "linux/amd64",
+      "profiles": [
+        "redis"
+      ],
+      "environment": {
+        "REDIS_PASSWORD": "${REDIS_PASSWORD:-}"
+      },
+      "volumes": [
+        "redis-data:/data"
+      ],
+      "networks": [
+        "internal"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "restart": "on-failure:3",
+      "stop_grace_period": "60s",
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli --no-auth-warning ping | grep -q PONG"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "start_period": "30s",
+        "retries": 5
+      }
+    },
+    "postgres": {
+      "image": "${POSTGRES_IMAGE:-ghcr.io/codisplanfiscalai/escritura-integrada-postgres:17.11-bookworm-479e959b5363ce7a}",
+      "pull_policy": "missing",
+      "platform": "linux/amd64",
+      "profiles": [
+        "postgres"
+      ],
+      "environment": {
+        "POSTGRES_DB": "${POSTGRES_DB:-escritura}",
+        "POSTGRES_USER": "${POSTGRES_USER:-escritura}",
+        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:-}"
+      },
+      "volumes": [
+        "postgres-data:/var/lib/postgresql/data"
+      ],
+      "networks": [
+        "internal"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "restart": "on-failure:3",
+      "stop_grace_period": "60s",
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "start_period": "30s",
+        "retries": 5
+      }
+    },
+    "mysql": {
+      "image": "${MYSQL_IMAGE:-ghcr.io/codisplanfiscalai/escritura-integrada-mysql:8.4.13-oraclelinux9-4d750207bb38a629}",
+      "pull_policy": "missing",
+      "platform": "linux/amd64",
+      "profiles": [
+        "mysql"
+      ],
+      "environment": {
+        "MYSQL_DATABASE": "${MYSQL_DATABASE:-escritura}",
+        "MYSQL_USER": "${MYSQL_USER:-escritura}",
+        "MYSQL_PASSWORD": "${MYSQL_PASSWORD:-}",
+        "MYSQL_ROOT_PASSWORD": "${MYSQL_ROOT_PASSWORD:-}"
+      },
+      "volumes": [
+        "mysql-data:/var/lib/mysql"
+      ],
+      "networks": [
+        "internal"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "restart": "on-failure:3",
+      "stop_grace_period": "60s",
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin --protocol=TCP --host=127.0.0.1 --user=root ping --silent"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "start_period": "90s",
+        "retries": 8
+      }
+    },
+    "minio": {
+      "image": "${MINIO_IMAGE:-ghcr.io/codisplanfiscalai/escritura-integrada-minio:RELEASE.2025-10-15T17-29-55Z-194ab1eefb3ef113}",
+      "pull_policy": "missing",
+      "platform": "linux/amd64",
+      "profiles": [
+        "minio"
+      ],
+      "environment": {
+        "MINIO_ROOT_USER": "${MINIO_ROOT_USER:-}",
+        "MINIO_ROOT_PASSWORD": "${MINIO_ROOT_PASSWORD:-}"
+      },
+      "volumes": [
+        "minio-data:/data"
+      ],
+      "networks": [
+        "internal"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "restart": "on-failure:3",
+      "stop_grace_period": "60s",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:9000/minio/health/live',timeout=3).status == 200"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "start_period": "30s",
+        "retries": 5
+      },
+      "init": true,
+      "read_only": true,
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,size=64m"
+      ],
+      "cap_drop": [
+        "ALL"
+      ]
+    }
+  },
+  "volumes": {
+    "app-data": {},
+    "redis-data": {},
+    "postgres-data": {},
+    "mysql-data": {},
+    "minio-data": {}
+  },
+  "networks": {
+    "application": {},
+    "internal": {
+      "internal": true
+    }
+  }
+}

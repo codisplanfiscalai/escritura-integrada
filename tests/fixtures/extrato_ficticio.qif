@@ -1,0 +1,12 @@
+!Type:Bank
+D2026-11-05
+T100.00
+NQIF-001
+PRecebimento ficticio
+MSem valor financeiro
+^
+D2026-11-06
+T-25.50
+NQIF-002
+PPagamento ficticio
+^

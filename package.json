@@ -1,0 +1,8 @@
+{
+  "name": "escritura-integrada-preview",
+  "version": "0.4.0",
+  "private": true,
+  "scripts": {
+    "dev": "python3 scripts/run_preview.py"
+  }
+}

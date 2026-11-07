@@ -1,0 +1,146 @@
+name: CI de pull request
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: escritura-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux, testes e interface
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      source_sha: ${{ steps.plan.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            docker/runtime.lock
+            requirements-test.txt
+      - name: Calcular versão local de conferência
+        id: plan
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python -m scripts.ci.release plan-pr
+      - run: python -m scripts.ci.dependencies
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: build/npm-cache-key.txt
+      - name: Instalar runtime fixado e dependências de teste
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r docker/runtime.lock
+          python -m pip install -c build/runtime-constraints.txt -r requirements-test.txt
+          python -m pip check
+      - name: Compilar interface e avisos de terceiros
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Verificar o projeto completo
+        env:
+          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+          SOURCE_SHA: ${{ steps.plan.outputs.source_sha }}
+        run: python -m scripts.ci.checks --version "$RELEASE_VERSION" --source-sha "$SOURCE_SHA"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: linux-report
+          path: artifacts/linux-checks.*
+          retention-days: 14
+          overwrite: true
+
+  windows:
+    name: Windows x64 empacotado e smoke gráfico
+    needs: linux
+    runs-on: windows-2022
+    timeout-minutes: 35
+    env:
+      RELEASE_VERSION: ${{ needs.linux.outputs.version }}
+      ESCRITURA_SOURCE_SHA: ${{ needs.linux.outputs.source_sha }}
+      ESCRITURA_DATA_DIR: ${{ runner.temp }}/escritura-pr-tests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.linux.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            docker/runtime.lock
+            requirements-test.txt
+            requirements-desktop.txt
+      - run: python -m scripts.ci.versioning set $env:RELEASE_VERSION
+      - run: python -m scripts.ci.dependencies
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: frontend-dist
+          path: frontend/dist
+      - name: Instalar runtime comum e ferramentas Windows
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r docker/runtime.lock
+          python -m pip install -c build/runtime-constraints.txt -r requirements-test.txt -r requirements-desktop.txt
+          python -m pip check
+      - run: python -m unittest discover -s tests -v
+      - run: python scripts/build_windows.py --skip-frontend --smoke
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: windows-diagnostics
+          path: artifacts/*
+          retention-days: 7
+          overwrite: true
+          compression-level: 0
+
+  docker:
+    name: Imagens Linux amd64 e serviços opcionais
+    needs: linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RELEASE_VERSION: ${{ needs.linux.outputs.version }}
+      SOURCE_SHA: ${{ needs.linux.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.linux.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python -m scripts.ci.versioning set "$RELEASE_VERSION"
+      # The default Docker driver resolves the locally built base during validate.
+      # PR has no packages:write, registry login, or release operation.
+      - run: python scripts/build_images.py validate --version "$RELEASE_VERSION" --channel develop --revision "$SOURCE_SHA" --output artifacts/images-validated.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: docker-validation
+          path: artifacts/images-validated*.json
+          retention-days: 14
+          overwrite: true
