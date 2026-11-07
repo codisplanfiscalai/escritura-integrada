@@ -18,9 +18,21 @@ Registro de 07/11/2026. A validação abaixo distingue código executado, evidê
 
 ## Validação visual e distribuição
 
-O Chromium local não iniciou devido à restrição de sockets do ambiente. O navegador compartilhado também não alcançou o servidor da prévia. Não foram fabricadas capturas nem considerados esses testes aprovados.
+O Chromium local encontrou restrição de sockets e a prévia não ficou acessível pelo navegador compartilhado. A validação foi executada no runner GitHub, com Chromium 151.0.7922.34.
 
-Foi incluído `scripts/smoke_browser.py` nos workflows de PR e release para executar os fluxos de interface no runner, com relatório e capturas nas larguras 1440, 1024 e 390. O resultado do run e os artefatos serão registrados após a execução. As capturas também integram o pacote `browser-evidence.zip` da release, validado por versão e commit. Builds e smokes Windows/Docker da versão 0.5 também dependem desse run; a existência do workflow não comprova publicação.
+**Run aprovado:** [42338563297](https://github.com/codisplanfiscalai/escritura-integrada/actions/runs/42338563297), versão de conferência `0.5.0-pr.1.6`, commit de integração da PR `3451c2b69ec9e19e7e9b6b72a6d185649539475a` e código da branch `2fdbe79522ea277012a953893154a4afe1c65295`.
+
+| Gate | Resultado |
+|---|---|
+| Linux, testes e interface | Aprovado: 132 testes Python, cinco testes de datas, build Vue e oito controles no Chromium |
+| Windows x64 empacotado | Aprovado: suíte Windows, construção do executável, API, autenticação de demonstração, renderização Qt/WebEngine e encerramento sem processos remanescentes |
+| Imagens Linux amd64 | Aprovado: aplicação/base e inicialização isolada de Redis, PostgreSQL, MySQL e MinIO; somente a aplicação publica porta |
+
+O navegador percorreu login/contexto, edição de outra empresa, consulta CNPJ simulada com aplicação seletiva e múltiplas IEs, documento → conferência → lançamento + duas parcelas, baixa parcial com juros/desconto e estorno, importação CSV sem perda de sessão, download idêntico ao original e Balancete com acesso às partidas de origem. O teste detectou e motivou a correção do histórico financeiro que podia mostrar dados anteriores ao abrir imediatamente após a baixa.
+
+Foram produzidas oito capturas e nenhum erro JavaScript. A página de relatórios não apresentou transbordamento horizontal em 1440, 1024 e 390 px; a área de trabalho usa rolagem vertical própria e tabelas com rolagem horizontal quando necessário. Essas resoluções não constituem validação de todas as telas em todos os dispositivos. [Capturas e relatório da PR](https://github.com/codisplanfiscalai/escritura-integrada/actions/runs/42338563297/artifacts/13559984560).
+
+A publicação repete os gates na versão reservada da `develop`. As capturas passam a integrar `EscrituraIntegrada-<versão>-browser-evidence.zip`, com versão e commit conferidos e SHA-256 no manifesto. Os smokes do Docker, publicação GHCR e teste de carregamento offline têm relatórios próprios na [pré-release contínua](https://github.com/codisplanfiscalai/escritura-integrada/releases/tag/develop). O run de PR não equivale, sozinho, à comprovação de upload ou de carregamento do bundle offline.
 
 ## Homologação operacional necessária
 

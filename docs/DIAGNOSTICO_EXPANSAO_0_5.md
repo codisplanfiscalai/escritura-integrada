@@ -23,7 +23,7 @@ Há links de navegação para outras conversas/ramificações. Seus corpos não 
 | Inventario_Projetos.csv | 18 finalidades, versões, controles, funções e falhas confrontados | Contagem de pseudocódigo não mede cobertura funcional |
 | Metadados e formulários | Varredura sistemática de nomes, controles e rótulos dos 18 projetos | ActiveX, recursos binários e chamadas externas não expõem toda a regra |
 | 40 prints de referência | Arquivos localizados; telas de empresas, documentos, Diário e conciliações inspecionadas | Não foi afirmada inspeção visual integral dos 40 prints nesta etapa |
-| DIX_092026_Pacote_Integracao_Prosoft.zip | Layout CTBLCTOS integral e especificações de integração disponíveis | Dados reais do pacote não foram incluídos no repositório nem em testes |
+| Pacote de integração Prosoft fornecido (09/2026) | Layout CTBLCTOS integral e especificações de integração disponíveis | Dados reais do pacote não foram incluídos no repositório nem em testes |
 | LAYOUT_CTBLCTOS.PDF | LC1 de 448 / LC2 de 342 posições; simples e detalhado | Homologação no sistema de destino ainda necessária; CTA/TRC/SLD não exportados nesta etapa |
 | Layouts fiscais e modelos XLSX do pacote | Identificados no pacote | Exportação fiscal Prosoft por esses perfis não está implementada |
 
