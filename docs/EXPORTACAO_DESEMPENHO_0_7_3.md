@@ -15,6 +15,8 @@
 - Relatórios e documentos exibem até 50 registros por página. Os totais e as exportações incluem todos os registros filtrados. Os relatórios anteriormente criavam todas as linhas no DOM e apenas ocultavam as excedentes.
 - Recursos da interface não repetem o carregamento na primeira ativação de uma guia. Reativação, mudança de empresa/exercício e alterações continuam atualizando os dados.
 
+- No Auditor, o log de conclusão era incluído após a geração dos relatórios e alterava a assinatura da revisão. O primeiro download gerava o PDF/Excel novamente, mesmo estando prontos. Agora os artefatos e o log final são publicados na mesma transação, com assinatura consistente. Tratamentos e alterações de origem continuam produzindo novas revisões; arquivos anteriores permanecem preservados.
+
 ## Medição local reproduzível
 
 Reproduzir a versão corrente: `python scripts/benchmark_fiscal.py`.
@@ -32,6 +34,7 @@ Ambiente Linux de desenvolvimento, SQLite temporário, usuário personalizado, 3
 ## Validação
 
 - `tests/test_export_performance.py`: equivalência da listagem com o detalhe, origens, ordenação, isolamento entre empresas, filtro por ano, totais, limites de consultas SQL, desativação de usuário e impressão sem permissão de exportar.
+- `tests/test_auditor_integration.py`: primeiro download e prévia reutilizam os relatórios prontos; tratamento gera revisão sem substituir o original.
 - `frontend/tests/files.test.js`: erros 401/403/409/500, arquivo vazio, nomes de arquivo, acentos, PDF e originais JSON.
 - `scripts/browser_exports.py`: PDF/Excel/prévia nos três módulos, resposta 403 seguida de nova exportação, preservação da aplicação e tabela de 5.000 registros com somente 50 linhas no DOM.
 - `app/desktop_export_smoke.py`: download direto legado, exportações fiscais/contábeis, cancelamento financeiro e prévias dos três módulos. O executável verifica a área de trabalho, um marcador de contexto e a maximização depois de cada ação. O teste gráfico anterior do Auditor permanece.
