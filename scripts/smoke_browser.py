@@ -45,7 +45,7 @@ def main():
                     def shot(name):
                         page.screenshot(path=str(OUT/name),full_page=True,animations='disabled');report['screenshots'].append(name)
                     def nav(label):
-                        button=page.get_by_role('navigation',name='Navegação principal').get_by_role('button',name=label,exact=True)
+                        button=page.get_by_role('navigation',name='Navegação principal').get_by_role('button',name=label,exact=True,include_hidden=True)
                         if not button.is_visible():button.locator('xpath=ancestor::details').locator('summary').click()
                         button.click()
                     def check(name):report['checks'].append(name)

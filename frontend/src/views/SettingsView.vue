@@ -224,7 +224,7 @@ onUnmounted(()=>{requestSequence++;releaseEditor();});
         <div class="actions"><button class="button" :disabled="busy" @click="close">{{editableModal?'Cancelar':'Fechar'}}</button>
           <button v-if="['catalog','rule','template','apply'].includes(modal)" class="button primary" type="submit" form="settings-form" :disabled="busy||(modal==='template'&&!form.rule_ids.length)"><Icon :name="busy?'loading':modal==='apply'?'copy':'check'"/>{{saveLabel}}</button>
           <button v-if="modal==='simulate'" class="button primary" type="submit" form="settings-simulation-form" :disabled="busy"><Icon :name="busy?'loading':'settings'"/>{{simulation?'Simular novamente':'Simular valores'}}</button>
-          <button v-if="modal==='versions'&&versionSelected" class="button outline" :disabled="!versionSelected.active||versionSelected.rate===null||versionSelected.rate===''" @click="openSimulation(versionSelected,true)">Simular esta versão</button>
+          <button v-if="modal==='versions'&&versionSelected" class="button outline" :disabled="!versionSelected.active||versionSelected.rate===null||versionSelected.rate===''" v-allow="['fiscal.parameters','create']" @click="openSimulation(versionSelected,true)">Simular esta versão</button>
         </div>
       </template>
     </BaseModal>
