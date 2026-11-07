@@ -94,7 +94,7 @@ class ReportsMixin:
                     for s in conn.execute('''SELECT s.*,t.kind,t.description,t.partner_name,t.document FROM settlements s
                         JOIN titles t ON t.id=s.title_id WHERE s.company_id=?''',(cid,)):
                         sign=1 if s['kind']=='receivable' else -1
-                        base={'settlement_id':s['id'],'title_id':s['title_id'],'partner_name':s['partner_name'],'document':s['document'],'description':s['description']}
+                        base={'settlement_id':s['id'],'title_id':s['title_id'],'kind':s['kind'],'partner_name':s['partner_name'],'document':s['document'],'description':s['description']}
                         if start<=s['date']<=end:rows.append(base|{'date':s['date'],'cash_cents':sign*s['cash_cents'],'event':'Baixa'})
                         if s['reversal_date'] and start<=s['reversal_date']<=end:rows.append(base|{'date':s['reversal_date'],'cash_cents':-sign*s['cash_cents'],'event':'Estorno'})
                     rows.sort(key=lambda r:(r['date'],r['settlement_id']))

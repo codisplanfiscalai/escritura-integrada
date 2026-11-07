@@ -9,6 +9,10 @@ from .core import DomainError, iso_date, select_one, decimal_text
 
 
 def register_business_routes(app,core,db,actor,check_date,check_period):
+    @app.get('/api/companies/{cid}/journals/{item_id}')
+    def journal_origin(cid:int,item_id:int):
+        with db.read(snapshot=True) as conn:return core._journal(conn,cid,item_id)
+
     @app.get('/api/lookups/{kind}/{value}')
     def lookup(kind:str,value:str,request:Request,provider:str='auto',refresh:bool=False):
         return app.state.lookups.query(kind,value,provider,refresh)

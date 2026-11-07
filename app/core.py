@@ -1097,7 +1097,10 @@ class Core:
             for row in conn.execute("SELECT kind,SUM(amount_cents-paid_cents) AS balance FROM titles WHERE company_id=? AND cancelled=0 GROUP BY kind", (cid,)):
                 financial[row["kind"] + "_cents"] = row["balance"]
             financial["overdue_cents"] = conn.execute("SELECT COALESCE(SUM(amount_cents-paid_cents),0) FROM titles WHERE company_id=? AND cancelled=0 AND due_date<?", (cid, date.today().isoformat())).fetchone()[0]
-            bank = dict(conn.execute("SELECT COUNT(*) AS total,COUNT(r.id) AS matched FROM bank_transactions b LEFT JOIN reconciliations r ON r.transaction_id=b.id WHERE b.company_id=? AND substr(b.date,1,7)=?", (cid, competence)).fetchone())
+            bank = dict(conn.execute("""SELECT COUNT(*) AS total,COALESCE(SUM(CASE WHEN r.id IS NOT NULL OR
+                (SELECT COALESCE(SUM(a.amount_cents),0) FROM bank_allocations a WHERE a.transaction_id=b.id AND a.reversed_at IS NULL)>=ABS(b.amount_cents)
+                THEN 1 ELSE 0 END),0) AS matched FROM bank_transactions b LEFT JOIN reconciliations r ON r.transaction_id=b.id
+                WHERE b.company_id=? AND substr(b.date,1,7)=?""", (cid, competence)).fetchone())
             bank["pending"] = bank["total"] - bank["matched"]
             return {"company_id": cid, "period": competence, "documents": docs, "accounting": accounting, "financial": financial, "reconciliation": bank, "periods": self._periods(conn, cid, competence)}
 

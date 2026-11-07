@@ -5,7 +5,7 @@ Registro de 07/11/2026. A validação abaixo distingue código executado, evidê
 | Etapa | Execução comprovada | Limite |
 |---|---|---|
 | Contexto | MHTML integralmente extraído e lido; hashes conferidos dos 18 executáveis do ZIP; levantamento dos 281 formulários | Conversas apenas mencionadas/ligadas no MHTML não têm seu conteúdo recuperado; não houve execução dos legados |
-| Núcleo | `python -m unittest discover -s tests -q`: **130 testes aprovados** | Fixtures sintéticas; não certificam cálculos tributários ou comportamento integral dos legados |
+| Núcleo | `python -m unittest discover -s tests -q`: **131 testes aprovados** | Fixtures sintéticas; não certificam cálculos tributários ou comportamento integral dos legados |
 | Interface | **5 testes de datas aprovados** e `npm --prefix frontend run build` concluído | Build não substitui navegação no navegador |
 | Cadastros e consultas | Testes de normalização, cache, fallback, IE distinta de isenção, revisão/versão e isolamento | Consulta real de CEP 01001000 concluída via BrasilAPI após indisponibilidade do ViaCEP; tentativa real de CNPJ não obteve resposta útil dos três provedores |
 | Fiscal → financeiro → contábil | Testes de escrituração com modelo, parcelas, deduplicação, soma e reversão transacional | Apuração legal automática por regime/UF/município não implementada |

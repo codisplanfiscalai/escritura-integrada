@@ -138,12 +138,16 @@ class BusinessTests(unittest.TestCase):
         p={'reason':'Conferido','idempotency_key':'allocation','allocations':[{'title_id':t1['id'],'amount':'40.00'},{'title_id':t2['id'],'amount':'60.00'}]}
         r=self.post(f"/banks/{bank['id']}/allocate",p)
         self.assertTrue(r['bank']['reconciled']);self.assertEqual(0,r['settlements_created'])
+        self.assertEqual(1,self.core.dashboard(self.a['id'],'2026-11')['reconciliation']['matched'])
         self.assertEqual(10000,sum(t['balance_cents'] for t in self.core.titles(self.a['id'])))
         self.assertTrue(self.post(f"/banks/{bank['id']}/allocate",p)['duplicate'])
         for a in r['allocation_ids']:self.post(f'/allocations/{a}/reverse',{'reason':'Rever vínculos'})
+        self.assertEqual(1,self.core.dashboard(self.a['id'],'2026-11')['reconciliation']['pending'])
         p['settle']=True;p['idempotency_key']='allocation2'
         r=self.post(f"/banks/{bank['id']}/allocate",p)
         self.assertEqual(2,r['settlements_created']);self.assertEqual(0,sum(t['balance_cents'] for t in self.core.titles(self.a['id'])))
+        self.assertEqual(-10000,self.core.business_report(self.a['id'],'cash-flow','2026-11-01','2026-11-30',direction='payable')['totals']['cash_cents'])
+        self.assertEqual([],self.core.business_report(self.a['id'],'cash-flow','2026-11-01','2026-11-30',direction='receivable')['rows'])
         settlement=self.core.titles(self.a['id'])[0]['settlements'][0]
         self.post(f"/settlements/{settlement['id']}/reverse",{'date':'2026-11-08','reason':'Rever','idempotency_key':'u1'},409)
         r=self.post(f"/allocations/{r['allocation_ids'][0]}/reverse",{'reason':'Desvincular'})
@@ -196,6 +200,12 @@ class BusinessTests(unittest.TestCase):
         for a in self.accounts:
             self.core.save_account(self.a['id'],a|{'report_group':'asset' if a['access_code']=='3' else 'equity'},'teste',a['id'])
         self.assertEqual(0,self.core.business_report(self.a['id'],'balance-sheet','2026-11-01','2026-11-30')['totals']['difference_cents'])
+
+    def test_journal_origin_api_is_scoped_and_complete(self):
+        j=self.core.create_journal(self.a['id'],self.journal(),'teste')
+        r=self.client.get(self.scope('/journals/'+str(j['id'])))
+        self.assertEqual(200,r.status_code);self.assertEqual(j['lines'],r.json()['lines'])
+        self.assertEqual(404,self.client.get(self.scope('/journals/'+str(j['id']),self.b['id'])).status_code)
 
     def test_assessment_segregation_precision_staleness_and_adjustment(self):
         d=self.reviewed();self.post(f"/documents/{d['id']}/book",self.booking(d,generate_titles=False,lines=[]))

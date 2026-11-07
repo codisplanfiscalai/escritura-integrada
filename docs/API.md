@@ -98,4 +98,4 @@ Os endpoints anteriores são preservados. `app/business_api.py` e `tests/test_bu
 | Originais | `GET .../imports/{id}/original`; arquivo original preservado, com nome seguro no download |
 | Usuários | `GET/POST /api/users`, `PUT /api/users/{id}`; administrador gerencia papéis `admin/operator/viewer` e empresas autorizadas. Alterar acesso revoga sessões existentes |
 
-Relatórios disponíveis: `diary`, `consolidated-diary`, `ledger`, `trial-balance`, `cost-centers`, `balance-sheet`, `income-statement`, `fiscal`, `financial`, `cash-flow`, `partners`. Os nomes de campos e regras completas dos corpos são documentados pela interface e pelos testes de contrato; dados sem revisão não recebem confirmação implícita.
+Relatórios disponíveis: `diary`, `consolidated-diary`, `ledger`, `trial-balance`, `cost-centers`, `balance-sheet`, `income-statement`, `fiscal-book`, `financial`, `cash-flow`, `partners`. Os nomes de campos e regras completas dos corpos são documentados pela interface e pelos testes de contrato; dados sem revisão não recebem confirmação implícita.
