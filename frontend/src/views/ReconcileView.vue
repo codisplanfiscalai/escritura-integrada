@@ -1,11 +1,14 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue';
+import BankAllocation from '../components/BankAllocation.vue';
 import Icon from '../components/Icon.vue';
 import BaseModal from '../components/BaseModal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import { state, company, api, scope, useResource, rows, notify, ask, changed } from '../lib/workspace';
 import { money, date, dateTime, normalized } from '../lib/format';
 
+const allocationBank=ref(null);
+async function undoAllocation(a){const reason=await ask({title:'Desfazer vínculo do rateio',message:'A baixa financeira vinculada será preservada; estorne-a separadamente no Financeiro se necessário.',inputLabel:'Justificativa',required:true,confirmLabel:'Desfazer vínculo'});if(!reason)return;try{await api(scope(`/allocations/${a.id}/reverse`),{method:'POST',body:{reason}});changed();}catch(e){notify(e.message,'error');}}
 const query = ref(''), status = ref('pending'), account = ref(''), selectedId = ref(null);
 const suggestions = ref([]), suggestionBusy = ref(false), suggestionError = ref('');
 const show = ref(false), mode = ref('link'), busy = ref(false), error = ref('');
@@ -35,7 +38,7 @@ const isDirty = computed(() => show.value && baseline !== JSON.stringify(form.va
 const compatibleTitles = computed(() => {
   if (!transaction.value) return [];
   const kind = transaction.value.amount_cents > 0 ? 'receivable' : 'payable';
-  return titleOptions.value.filter(t => t.kind === kind && t.amount_cents === Math.abs(transaction.value.amount_cents));
+  return titleOptions.value.filter(t => !t.cancelled && !t.allocations?.length && t.kind === kind && t.amount_cents === Math.abs(transaction.value.amount_cents));
 });
 const chosenTitle = computed(() => compatibleTitles.value.find(t => t.id === Number(form.value.title_id)));
 const periodLabel = p => String(p || '').split('-').reverse().join('/');
@@ -171,7 +174,7 @@ onUnmounted(() => { alive = false; suggestionSequence++; modalSequence++; if (sh
             <div v-if="selected.source?.file" class="reconcile-source"><Icon name="file" :size="14"/><span>{{selected.source.file}}<template v-if="selected.source.line"> · linha {{selected.source.line}}</template></span></div>
           </div>
 
-          <template v-if="selected.reconciled">
+          <div class="reconcile-detail"><p v-if="selected.allocated_cents">Valor conciliado: {{money(selected.allocated_cents)}} · disponível: {{money(selected.remaining_cents)}}</p><p v-for="a in selected.allocations" :key="a.id">#{{a.title_id}} {{a.title_description}} · {{money(a.amount_cents)}} <button class="text-button" @click="undoAllocation(a)">Desfazer vínculo</button><small v-if="a.settlement_id"> · baixa #{{a.settlement_id}}</small></p><button v-if="!selected.reconciled" class="button primary" @click="allocationBank={...selected}">Conciliar por rateio / agrupamento</button></div><template v-if="selected.reconciled&&selected.reconciliation">
             <div class="reconcile-linked">
               <div class="reconcile-linked-heading"><Icon name="checks"/><div><h3>Vínculo registrado</h3><p>{{selected.reconciliation?.title_description||`Título ${selected.reconciliation?.title_id}`}}</p></div></div>
               <dl class="reconcile-facts"><div><dt>Responsável</dt><dd>{{selected.reconciliation?.created_by||'—'}}</dd></div><div><dt>Registrado em</dt><dd>{{dateTime(selected.reconciliation?.created_at)}}</dd></div></dl>
@@ -179,8 +182,8 @@ onUnmounted(() => { alive = false; suggestionSequence++; modalSequence++; if (sh
               <div class="actions"><button class="button outline" @click="navigate('finance')">Abrir financeiro<Icon name="arrow" :size="15"/></button><button class="button" @click="openUnlink" :disabled="loading"><Icon name="unlink" :size="16"/>Desfazer vínculo</button></div>
             </div>
           </template>
-          <template v-else>
-            <div class="panel-heading reconcile-candidates-heading"><div><h2>Títulos sugeridos</h2><p>Mesmo valor e sentido, com vencimento próximo.</p></div><span class="count">{{suggestions.length}}</span></div>
+          <template v-else-if="!selected.reconciled">
+            <div class="panel-heading reconcile-candidates-heading"><div><h2>Títulos sugeridos</h2><p>Mesmo sentido e vencimento próximo; confira valor e referência.</p></div><span class="count">{{suggestions.length}}</span></div>
             <div v-if="suggestionBusy" class="loading-line"><Icon name="loading"/>Buscando títulos compatíveis...</div>
             <div v-else-if="suggestionError" class="message error" role="alert">{{suggestionError}} <button class="text-button" @click="loadSuggestions">Tentar novamente</button></div>
             <div v-else-if="suggestions.length" class="reconcile-candidates">
@@ -197,6 +200,7 @@ onUnmounted(() => { alive = false; suggestionSequence++; modalSequence++; if (sh
       </section>
     </div>
 
+    <BankAllocation v-if="allocationBank" :bank="allocationBank" @close="allocationBank=null"/>
     <BaseModal v-if="show" :title="mode==='link'?'Conferir vínculo bancário':'Desfazer vínculo bancário'" :subtitle="`${context.name} · ${periodLabel(context.period)}`" @close="close">
       <div class="context-notice"><Icon name="building"/><span>Empresa: <strong>{{context.name}}</strong> · {{periodLabel(context.period)}}</span></div>
       <div v-if="error" class="message error" role="alert">{{error}}</div>

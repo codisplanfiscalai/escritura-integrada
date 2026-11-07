@@ -1,3 +1,5 @@
+> Documento histórico da implementação inicial. Consulte o [diagnóstico 0.5](DIAGNOSTICO_EXPANSAO_0_5.md), a [operação](OPERACAO_0_5.md) e a [validação atual](VALIDACAO_0_5.md).
+
 # Análise das referências e proposta da Escritura Integrada
 
 **Data:** 06/11/2026 · **Aplicação nova:** 0.4.0-dev.1.

@@ -335,8 +335,8 @@ class ArchiveSafetyTests(unittest.TestCase):
         self.assertIn("MULTIPLE_BANK_ACCOUNTS", codes(result))
         self.assertFalse(result["can_confirm"])
 
-    def test_unsupported_archives_and_executables_are_explicit(self):
-        for name, data, code in (("legacy.rar", b"Rar!fake", "ARCHIVE_FORMAT_UNSUPPORTED"), ("legacy.7z", b"7z\xbc\xaf\x27\x1cfake", "ARCHIVE_FORMAT_UNSUPPORTED"), ("program.exe", b"MZfake", "FORMAT_UNSUPPORTED")):
+    def test_corrupt_archives_and_executables_are_explicit(self):
+        for name, data, code in (("legacy.rar", b"Rar!fake", "ARCHIVE_INVALID"), ("legacy.7z", b"7z\xbc\xaf\x27\x1cfake", "ARCHIVE_INVALID"), ("program.exe", b"MZfake", "FORMAT_UNSUPPORTED")):
             result = parse_file(name, data, ALFA)
             self.assertIn(code, codes(result))
             self.assertFalse(result["can_confirm"])

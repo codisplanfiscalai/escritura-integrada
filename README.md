@@ -71,26 +71,30 @@ Versionamento, concorrência, recuperação de falhas, caches e comandos de manu
 
 | Área | Disponível |
 |---|---|
-| Empresas | Cadastro, edição em modal, ativação explícita, CNPJ numérico/alfanumérico e controle de versão |
-| Documentos fiscais | Entradas/saídas, itens, origem, revisão e escrituração com contabilização opcional |
-| Importações | XML, SPED parcial, ZIP e formatos bancários, com prévia, diagnósticos, origem e confirmação |
-| Contabilidade | Plano por empresa, centros de custo, partidas balanceadas e estorno rastreável |
-| Financeiro | Pagar/receber, baixa parcial, proteção de saldo e contabilização escolhida |
-| Conciliação | Correspondência individual entre movimento bancário e título, com justificativa |
-| Relatórios | Diário, Razão por conta e Balancete, filtros por centro, CSV e impressão/PDF |
+| Empresas e cadastros | Empresas, estabelecimentos, participantes, produtos, serviços e históricos; consultas CNPJ/CEP revisáveis, múltiplas IEs e versões |
+| Documentos fiscais | Entradas/saídas, itens vinculados aos cadastros, revisão, escrituração com geração transacional de parcelas e contabilização por modelo, consulta da origem e reversão |
+| Importações | XML, SPED parcial, ZIP, 7z, RAR e formatos bancários, com prévia, diagnósticos, originais e confirmação sem duplicação |
+| Contabilidade | Plano por empresa, centros de custo, saldos iniciais, múltiplas partidas balanceadas, modelos com vigência e estornos rastreáveis |
+| Financeiro | Pagar/receber, parcelas, baixas parciais/totais com juros, multa e desconto; estorno de baixa e renegociação reversível |
+| Conciliação | Vínculos individuais ou rateados; baixa somente mediante escolha explícita; consulta de títulos e pagamentos por participante |
+| Relatórios | Diário, Diário Consolidado por dia, Razão, Balancete, centros de custo, Balanço/DRE por classificação, fiscal, títulos, caixa e participantes; CSV e impressão/PDF |
 | Parâmetros | CFOP, NCM, receitas, serviços, regras com vigência/versões e modelos reutilizáveis |
+| Pré-apuração | Bases revisadas, regras versionadas por tributo, ajustes, memória de cálculo e identificação de alterações posteriores |
+| Prosoft | Prévia e exportação CTBLCTOS LC1/LC2, com mapeamentos, validação de posições/tamanhos e confirmação |
 | Competências | Fechamento fiscal e contábil independentes, com reabertura motivada |
+| Acesso | Administrador, operador e consulta, com permissões por empresa |
 
 As guias compartilham a empresa e a competência do cabeçalho. Editar outra empresa não a ativa. Modais preservam seu destino, e o servidor confere novamente contexto, propriedade dos registros e bloqueios dentro da transação.
 
 ## Limites que permanecem explícitos
 
 - Regras e catálogos fiscais começam vazios. A simulação matemática não constitui apuração legal automática nem aprovação tributária.
-- SPED corresponde ao perfil parcial documentado de EFD ICMS/IPI; não abrange todas as obrigações. RAR/7z e transmissão de obrigações não estão implementados.
+- SPED corresponde ao perfil parcial documentado de EFD ICMS/IPI; não abrange todas as obrigações. Compactados são limitados por tamanho, quantidade, profundidade e codecs; arquivos criptografados ou multipartes são rejeitados. RAR comprimido depende de libarchive/bsdtar no Docker ou tar compatível do Windows. Transmissão de obrigações não está implementada.
 - XML, bancos e leiautes reais exigem homologação. O código recuperado das referências não foi tratado como fonte original completa ou regra fiscal comprovada.
-- Relatórios são internos; ECD/ECF, livros legais, encerramento anual e consolidação não estão implementados.
-- O código de correspondência Prosoft é cadastral. Não há escrita na base Prosoft nem exportação/sincronização homologada.
-- O acesso atual é administrativo. Perfis detalhados por operador/empresa, backup online, restauração assistida e adaptadores PostgreSQL/MySQL/Redis/MinIO continuam pendentes.
+- Relatórios são internos; ECD/ECF, livros legais, encerramento anual e consolidação entre empresas não estão implementados. Balanço/DRE exigem classificação explícita do plano; não presumem o encerramento do resultado.
+- CTBLCTOS segue o PDF fornecido, limitado a LC1/LC2. Importação efetiva na Prosoft, versões da instalação de destino, leiaute fiscal e registros CTA/TRC/SLD permanecem sujeitos a implementação/homologação. Não há escrita na base Prosoft.
+- Perfis são por empresa, sem permissões por campo. Backup online, restauração assistida e adaptadores PostgreSQL/MySQL/Redis/MinIO continuam pendentes.
+- Consultas dependem da cobertura e disponibilidade dos provedores. Ausência de IE não significa isenção. CNPJ alfanumérico é cadastrado manualmente; consulta externa numérica não certifica regime tributário.
 - O banco SQLite deve permanecer em disco local, com uma instância gravadora por instalação. Bases Windows e Docker diferentes não se sincronizam automaticamente.
 
 ## Desenvolvimento e testes
@@ -126,4 +130,4 @@ python -m uvicorn app.api:app --host 127.0.0.1 --port 8765
 | `.github/workflows/` | CI, release e manutenção de caches |
 | `docs/` | Contratos, arquitetura, distribuição e validação |
 
-[Contrato da API](docs/API.md) · [Arquitetura e análise](docs/ANALISE_E_PROPOSTA.md) · [Validação funcional inicial](docs/VALIDACAO.md)
+[Operação 0.5](docs/OPERACAO_0_5.md) · [Diagnóstico e histórico](docs/DIAGNOSTICO_EXPANSAO_0_5.md) · [Matriz de rastreabilidade](docs/MATRIZ_RASTREABILIDADE.md) · [Validação 0.5](docs/VALIDACAO_0_5.md) · [Contrato da API](docs/API.md)

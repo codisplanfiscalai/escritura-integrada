@@ -200,6 +200,8 @@ class Database:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
             conn.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('schema_version','1')")
+            from .migrations import migrate
+            migrate(conn)
         if os.name != "nt":
             self.path.chmod(0o600)
 
@@ -212,11 +214,14 @@ class Database:
         return conn
 
     @contextmanager
-    def read(self):
+    def read(self, snapshot=False):
         conn = self.connect()
         try:
+            if snapshot:
+                conn.execute("BEGIN")
             yield conn
         finally:
+            conn.rollback()
             conn.close()
 
     @contextmanager
@@ -229,6 +234,13 @@ class Database:
                 session = conn.execute("SELECT active_company_id,period,expires_at FROM sessions WHERE token_hash=?", (expected["token_hash"],)).fetchone()
                 if not session or session["expires_at"] <= time.time():
                     raise ContextConflict("A sessão foi encerrada. Entre novamente antes de salvar.")
+                if expected.get("user_id"):
+                    user = conn.execute("SELECT role,active FROM users WHERE id=?", (expected["user_id"],)).fetchone()
+                    if not user or not user["active"] or (expected.get("write") and user["role"] == "viewer") or (expected.get("admin") and user["role"] != "admin"):
+                        raise ContextConflict("A permissão foi alterada. Entre novamente.")
+                    permission_cid = expected.get("permission_company_id")
+                    if permission_cid and user["role"] != "admin" and not conn.execute("SELECT 1 FROM user_companies WHERE user_id=? AND company_id=?", (expected["user_id"], permission_cid)).fetchone():
+                        raise ContextConflict("A permissão para esta empresa foi revogada.")
                 if expected.get("company_id") is not None and (session["active_company_id"] != expected["company_id"] or session["period"] != expected["period"]):
                     raise ContextConflict("A empresa ou competência ativa mudou. Reabra o lançamento no contexto correto.")
             yield conn

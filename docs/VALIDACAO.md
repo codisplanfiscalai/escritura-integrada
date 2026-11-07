@@ -1,3 +1,5 @@
+> Documento histórico da implementação inicial. Consulte o [diagnóstico 0.5](DIAGNOSTICO_EXPANSAO_0_5.md), a [operação](OPERACAO_0_5.md) e a [validação atual](VALIDACAO_0_5.md).
+
 # Validação funcional inicial — 0.4.0-dev.1
 
 Este é o registro histórico da avaliação anterior à integração CI/CD. As distribuições posteriores possuem seus próprios runs, resultados e manifestos de release. As pendências de plataforma aqui registradas descrevem aquela etapa; consulte o run da versão desejada para o estado de seu binário e suas imagens.

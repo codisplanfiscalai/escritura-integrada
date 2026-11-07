@@ -14,6 +14,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     ESCRITURA_DATA_DIR=/data \
     ESCRITURA_DEMO=0
+RUN apt-get update && apt-get install -y --no-install-recommends libarchive-tools=3.6.2-1+deb12u5 libarchive13=3.6.2-1+deb12u5 \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY docker/runtime.lock /usr/share/escritura/runtime.lock
 RUN --mount=type=cache,target=/root/.cache/pip \
