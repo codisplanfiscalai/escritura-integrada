@@ -46,6 +46,9 @@ Name: "{autodesktop}\Escritura Integrada"; Filename: "{app}\EscrituraIntegrada.e
 [Run]
 Filename: "{app}\EscrituraIntegrada.exe"; Description: "Abrir Escritura Integrada"; Flags: nowait postinstall skipifsilent
 [Code]
+function GetCurrentProcessId: LongWord;
+  external 'GetCurrentProcessId@kernel32.dll stdcall';
+
 var
   SourcePage: TInputDirWizardPage;
   Prepared, Completed: Boolean;
@@ -63,7 +66,7 @@ begin
   Helper := ExpandConstant('{tmp}\EscrituraMaintenance.exe');
   MessageFile := ExpandConstant('{tmp}\escritura-maintenance-message.txt');
   DeleteFile(MessageFile);
-  Arguments := Action + ' --profile "' + ProfileDir + '" --version "{#AppVersion}" --message "' + MessageFile + '" ' + Extra;
+  Arguments := Action + ' --owner-pid ' + IntToStr(GetCurrentProcessId) + ' --profile "' + ProfileDir + '" --version "{#AppVersion}" --message "' + MessageFile + '" ' + Extra;
   Result := Exec(Helper, Arguments, '', SW_HIDE, ewWaitUntilTerminated, ExitCode) and (ExitCode = 0);
   if LoadStringFromFile(MessageFile, TextAnsi) then MessageText := UTF8Decode(TextAnsi)
   else MessageText := 'Não foi possível concluir a manutenção. A instalação foi interrompida antes de substituir os dados.';

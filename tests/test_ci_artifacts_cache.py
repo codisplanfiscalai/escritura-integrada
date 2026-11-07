@@ -32,7 +32,7 @@ class ArtifactGatesTests(unittest.TestCase):
         browser_dir = self.reports / 'browser'
         browser_dir.mkdir()
         screenshots = ['desktop.png', 'tablet.png', 'mobile.png']
-        write_json(browser_dir / 'report.json', dict(common, checks=['fixture'] * 8, screenshots=screenshots, console_errors=[]))
+        write_json(browser_dir / 'report.json', dict(common, checks=['fixture'] * 12, screenshots=screenshots, console_errors=[]))
         for name in screenshots:
             (browser_dir / name).write_bytes(b'fixture-screenshot-for-gate-test')
         self.windows_zip = self.windows / (self.prefix + 'windows-x64.zip')
@@ -46,7 +46,7 @@ class ArtifactGatesTests(unittest.TestCase):
         installer=self.windows/(self.prefix+'windows-x64-setup.exe');installer.write_bytes(b'installer gate fixture only')
         write_json(self.windows/'windows-installer-build.json',dict(common,installer=installer.name,sha256=file_hash(installer)))
         write_json(self.windows/'windows-installer-smoke.json',dict(common,checks=['fixture']*7))
-        write_json(self.windows/'windows-installed-gui.json',common)
+        write_json(self.windows/'windows-installed-gui.json',dict(common,packaged=True,shutdown_complete=True,supervisor={'forced_cleanup':False,'remaining_processes':0,'root_exit_code':0}))
         (self.windows/'windows-installed-gui.png').write_bytes(b'fixture')
         for arch in ('arm64','x64'):
             folder=self.root/'macos'/arch;folder.mkdir(parents=True)
@@ -138,6 +138,18 @@ class ArtifactGatesTests(unittest.TestCase):
         self.offline.write_bytes(b'changed offline payload')
         with self.assertRaisesRegex(ReleaseError, 'bundle offline'):
             self.assemble('wrong-offline')
+
+    def test_native_installer_and_both_mac_architectures_are_required(self):
+        path=self.windows/'windows-installed-gui.json'
+        original=path.read_text()
+        self.mutate(path,supervisor={'forced_cleanup':True,'remaining_processes':0,'root_exit_code':0})
+        with self.assertRaisesRegex(ReleaseError,'instalado'):self.assemble('installed-orphan')
+        path.write_text(original)
+        for arch in ('arm64','x64'):
+            path=self.root/'macos'/arch/f'macos-{arch}-smoke.json'
+            original=path.read_text();self.mutate(path,updated=False)
+            with self.assertRaisesRegex(ReleaseError,'macOS'):self.assemble('mac-update-'+arch)
+            path.write_text(original)
 
     def test_source_zip_uses_committed_blobs_and_omits_untracked_files(self):
         committed_bytes = (self.source / 'business.txt').read_bytes()

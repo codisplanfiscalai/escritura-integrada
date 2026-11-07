@@ -31,7 +31,7 @@ class TaxAssessmentMixin:
             if not rule['valid_from']<=doc['posting_date'] or (rule['valid_to'] and doc['posting_date']>rule['valid_to']):
                 raise DomainError('Documento fora da vigência da regra.')
             if rule['direction'] not in {'both',doc['direction']}:raise DomainError('Regra incompatível com o sentido do documento.')
-            if rule['cfop'] and (any((i.get('cfop') or doc['cfop'])!=rule['cfop'] for i in selected) if indices else rule['cfop']!=doc['cfop']):raise DomainError('CFOP da base não corresponde à regra.')
+            if rule['cfop'] and (any((i.get('cfop') or doc['cfop'])!=rule['cfop'] for i in selected) if selected else rule['cfop']!=doc['cfop']):raise DomainError('CFOP da base não corresponde à regra.')
             if rule['ncm'] and (not selected or any(x.get('ncm')!=rule['ncm'] for x in selected)):
                 raise DomainError('Selecione somente os itens enquadrados no NCM da regra.')
             for field,target in [('regime','regime'),('state','state'),('municipality','ibge')]:

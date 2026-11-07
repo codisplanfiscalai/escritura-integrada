@@ -2,7 +2,7 @@
 from __future__ import annotations
 import argparse
 import configparser
-from contextlib import contextmanager
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -83,7 +83,7 @@ def refuse_running(profile,allow_pid=None):
 
 
 def integrity(path):
-    with sqlite3.connect('file:'+Path(path).as_posix()+'?mode=ro',uri=True) as conn:
+    with closing(sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True)) as conn:
         if conn.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise RuntimeError('O banco de origem não passou na verificação de integridade.')
         if conn.execute('PRAGMA foreign_key_check').fetchone():raise RuntimeError('O banco apresenta referências inválidas; a atualização foi cancelada.')
         tables={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -96,8 +96,8 @@ def integrity(path):
 
 def sqlite_backup(source,destination):
     destination=Path(destination);destination.parent.mkdir(parents=True,exist_ok=True)
-    with sqlite3.connect('file:'+Path(source).as_posix()+'?mode=ro',uri=True,timeout=10) as src:
-        with sqlite3.connect(destination) as dst:src.backup(dst)
+    with closing(sqlite3.connect(Path(source).resolve().as_uri()+'?mode=ro',uri=True,timeout=10)) as src:
+        with closing(sqlite3.connect(destination)) as dst:src.backup(dst)
     integrity(destination)
     if os.name!='nt':destination.chmod(0o600)
     return str(destination)
@@ -128,7 +128,7 @@ def inspect(profile,source=None):
             **(integrity(db) if db.is_file() else {'companies':0,'users':0,'schema_version':0})}
 
 
-def prepare(profile,version,source=None,allow_pid=None):
+def prepare(profile,version,source=None,allow_pid=None,owner_pid=None):
     """Valida em diretório temporário; troca diretórios no mesmo volume e retém o original."""
     profile=Path(profile).expanduser().resolve();profile.mkdir(parents=True,exist_ok=True)
     refuse_running(profile,allow_pid)
@@ -148,7 +148,7 @@ def prepare(profile,version,source=None,allow_pid=None):
     stage=Path(tempfile.mkdtemp(prefix='.escritura-atualizacao-',dir=target.parent))
     backup=target.parent/('.escritura-backup-'+stamp())
     state={'schema':1,'version':version,'target':str(target),'source':str(origin),'backup':str(backup),
-           'owner_pid':os.getppid() if getattr(sys,'frozen',False) and allow_pid is None else os.getpid(),'stage':str(stage),'had_target':target.exists(),'phase':'preparing','config_before':(profile/'config.ini').read_text(encoding='utf-8') if (profile/'config.ini').exists() else None}
+           'owner_pid':owner_pid or os.getpid(),'stage':str(stage),'had_target':target.exists(),'phase':'preparing','config_before':(profile/'config.ini').read_text(encoding='utf-8') if (profile/'config.ini').exists() else None}
     marker.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding='utf-8')
     try:
         if origin.exists():
@@ -219,14 +219,14 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=['inspect','prepare','finish','rollback','recover','version-check'])
     parser.add_argument('--profile',default=str(default_profile()));parser.add_argument('--source')
-    parser.add_argument('--version',default='');parser.add_argument('--previous-version',default='');parser.add_argument('--result');parser.add_argument('--message')
+    parser.add_argument('--owner-pid',type=int);parser.add_argument('--version',default='');parser.add_argument('--previous-version',default='');parser.add_argument('--result');parser.add_argument('--message')
     args=parser.parse_args()
     try:
         if args.action=='version-check':result=check_version(args.version,args.previous_version)
         elif args.action=='inspect':result={'ok':True,**inspect(args.profile,args.source)}
         elif args.action=='prepare':
             check_version(args.version,args.previous_version)
-            result=prepare(args.profile,args.version,args.source)
+            result=prepare(args.profile,args.version,args.source,owner_pid=args.owner_pid)
         elif args.action=='finish':result=finish(args.profile)
         elif args.action=='recover':result=recover(args.profile)
         else:result=rollback(args.profile)

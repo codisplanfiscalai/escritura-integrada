@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from contextlib import closing
 import sqlite3
 import subprocess
 import sys
@@ -16,7 +17,7 @@ KEY=r'Software\Microsoft\Windows\CurrentVersion\Uninstall\{D596DE8F-DC39-47A6-B3
 
 
 def db_digest(path):
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn:
         return hashlib.sha256('\n'.join(conn.iterdump()).encode()).hexdigest()
 
 

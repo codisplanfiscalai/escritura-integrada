@@ -132,3 +132,5 @@ python -m uvicorn app.api:app --host 127.0.0.1 --port 8765
 [Operação 0.5](docs/OPERACAO_0_5.md) · [Diagnóstico e histórico](docs/DIAGNOSTICO_EXPANSAO_0_5.md) · [Matriz de rastreabilidade](docs/MATRIZ_RASTREABILIDADE.md) · [Validação 0.5](docs/VALIDACAO_0_5.md) · [Contrato da API](docs/API.md)
 
 A [expansão 0.6](docs/EXPANSAO_0_6.md) documenta a precedência de permissões, a apuração revisada, a matriz de implementação/validação e as limitações concretas.
+
+Os cenários e os limites dos testes estão em [VALIDACAO_0_6.md](docs/VALIDACAO_0_6.md).

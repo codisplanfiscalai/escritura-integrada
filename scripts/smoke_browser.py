@@ -237,6 +237,8 @@ def main():
                             navigation.get_by_role('button',name='Escrituração e documentos',exact=True).click()
                             expect(viewer.get_by_role('heading',name='Documentos fiscais',exact=True)).to_be_visible()
                             expect(viewer.get_by_role('button',name='Novo documento',exact=True)).to_have_count(0)
+                            expect(viewer.locator('.loading-line')).to_have_count(0)
+                            expect(viewer.locator('tbody tr').filter(has_text='UI001')).to_be_visible()
                             viewer.screenshot(path=str(OUT/'usuario-consulta-1440.png'),full_page=True)
                             report['screenshots'].append('usuario-consulta-1440.png')
                         finally:restricted.close()

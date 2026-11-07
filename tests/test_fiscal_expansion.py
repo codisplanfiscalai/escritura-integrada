@@ -29,6 +29,15 @@ class FiscalExpansionTests(unittest.TestCase):
         scoped=self.rule(state='ZZ')
         self.post('/assessments',self.memory(idempotency_key='wrong-uf',entries=[entry|{'rule_id':scoped['id'],'item_indices':[0]}]),400)
 
+    def test_mixed_cfop_requires_selection_instead_of_header_only(self):
+        d=self.reviewed(extra={'items':[{'description':'A','cfop':'1102','total':'40.00'},{'description':'B','cfop':'1403','total':'60.00'}]})
+        self.post(f"/documents/{d['id']}/book",self.booking(d,generate_titles=False,lines=[]))
+        r=self.rule(cfop='1102')
+        entry={'document_id':d['id'],'rule_id':r['id'],'effect':'credit','base':'40.00','reason':'CFOP conferido'}
+        self.post('/assessments',self.memory(entries=[entry]),400)
+        a=self.post('/assessments',self.memory(entries=[entry|{'item_indices':[0]}]))
+        self.assertEqual(400,a['snapshot']['credit_cents'])
+
     def test_finalized_balance_carried_only_same_tax_and_reverse_order(self):
         self.post('/tax-adjustments',{'period':'2026-11','tax':'icms','kind':'credit','category':'credit','amount':'100.00','source':'Teste sintético','reason':'Crédito conferido','idempotency_key':'credit'})
         a=self.post('/assessments',self.memory());ledger=self.finalize(a)

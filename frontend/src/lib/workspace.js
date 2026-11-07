@@ -3,7 +3,7 @@ import { uid } from './format';
 
 export const state = reactive({ session: null, companies: [], companyId: null, module: 'fiscal', navigate: null, period: new Date().toISOString().slice(0,7), refresh: 0, contextBusy: false, loading: true, editor: null, confirm: null, toasts: [], locks: {}, tab: 'dashboard' });
 export const company = computed(() => state.companies.find(c => c.id === state.companyId));
-export function notify(message, type = 'success') { const id = uid(); state.toasts.push({ id, message, type }); setTimeout(() => { state.toasts = state.toasts.filter(t => t.id !== id); }, type === 'error' ? 9000 : 5000); }
+export function notify(message, type = 'success') { const id = uid(); state.toasts.push({ id, message, type }); state.toasts = state.toasts.slice(-3); setTimeout(() => { state.toasts = state.toasts.filter(t => t.id !== id); }, type === 'error' ? 9000 : 5000); }
 export async function api(path, options = {}) {
   const headers = { ...options.headers };
   if(options.method && options.method!=='GET' && state.companyId){headers['X-Company-Id']=String(state.companyId);headers['X-Period']=state.period;headers['X-Module']=state.module;}

@@ -82,7 +82,7 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
     browser_dir = reports_dir / 'browser'
     browser = require_report(browser_dir / 'report.json', plan)
     screenshots = browser.get('screenshots', [])
-    if len(browser.get('checks', [])) < 8 or len(screenshots) < 3 or browser.get('console_errors'):
+    if len(browser.get('checks', [])) < 12 or len(screenshots) < 3 or browser.get('console_errors'):
         raise ReleaseError('Gate do navegador não completou os fluxos e capturas.')
     for name in screenshots:
         if not isinstance(name, str) or Path(name).name != name or not name.endswith('.png') or not (browser_dir / name).is_file():
@@ -102,7 +102,10 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
     installer_name = prefix + 'windows-x64-setup.exe'
     if installer.get('installer') != installer_name or installer.get('sha256') != file_hash(windows_dir / installer_name) or len(installed.get('checks',[])) < 7:
         raise ReleaseError('Instalador Windows não corresponde aos testes de instalação/atualização.')
-    require_report(windows_dir / 'windows-installed-gui.json',plan,source=False)
+    installed_gui=require_report(windows_dir / 'windows-installed-gui.json',plan,source=False)
+    installed_processes=installed_gui.get('supervisor',{})
+    if not installed_gui.get('packaged') or not installed_gui.get('shutdown_complete') or installed_processes.get('forced_cleanup') is not False or installed_processes.get('remaining_processes')!=0 or installed_processes.get('root_exit_code')!=0:
+        raise ReleaseError('Aplicativo instalado não concluiu abertura/encerramento sem processos remanescentes.')
     macos_dir=Path(macos_dir) if macos_dir else reports_dir.parent/'macos'
     for arch in ('arm64','x64'):
         folder=macos_dir/arch

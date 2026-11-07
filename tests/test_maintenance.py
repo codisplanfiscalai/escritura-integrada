@@ -3,6 +3,7 @@ import configparser
 import json
 import os
 from pathlib import Path
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -37,9 +38,9 @@ class MaintenanceTests(unittest.TestCase):
 
     def test_failed_install_restores_original_database(self):
         result=prepare(self.profile,'0.6.0-dev.1')
-        with sqlite3.connect(self.data/'escritura.sqlite3') as conn:conn.execute("UPDATE companies SET name='Alteração temporária'")
+        with closing(sqlite3.connect(self.data/'escritura.sqlite3')) as conn, conn:conn.execute("UPDATE companies SET name='Alteração temporária'")
         rollback(self.profile)
-        with sqlite3.connect(self.data/'escritura.sqlite3') as conn:self.assertNotEqual('Alteração temporária',conn.execute('SELECT name FROM companies LIMIT 1').fetchone()[0])
+        with closing(sqlite3.connect(self.data/'escritura.sqlite3')) as conn, conn:self.assertNotEqual('Alteração temporária',conn.execute('SELECT name FROM companies LIMIT 1').fetchone()[0])
         self.assertFalse(Path(result['backup']).exists())
 
     def test_portable_migration_copies_without_deleting_source(self):
@@ -68,12 +69,12 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual([],list(self.profile.glob('.escritura-atualizacao-*')))
 
     def test_runtime_schema_upgrade_creates_consistent_backup(self):
-        with sqlite3.connect(self.data/'escritura.sqlite3') as conn:conn.execute("UPDATE meta SET value='2' WHERE key='schema_version'")
+        with closing(sqlite3.connect(self.data/'escritura.sqlite3')) as conn, conn:conn.execute("UPDATE meta SET value='2' WHERE key='schema_version'")
         backup=backup_before_schema(self.data/'escritura.sqlite3')
         self.assertTrue(Path(backup).is_file());self.assertEqual(2,integrity(backup)['schema_version'])
 
     def test_newer_database_refuses_downgrade(self):
-        with sqlite3.connect(self.data/'escritura.sqlite3') as conn:conn.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+        with closing(sqlite3.connect(self.data/'escritura.sqlite3')) as conn, conn:conn.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
         with self.assertRaisesRegex(RuntimeError,'mais nova'):Database(self.data)
         self.assertEqual(999,integrity(self.data/'escritura.sqlite3')['schema_version'])
 
@@ -81,3 +82,25 @@ class MaintenanceTests(unittest.TestCase):
         prepare(self.profile,'0.6.0-dev.1')
         with self.assertRaisesRegex(RuntimeError,'incompleta'):prepare(self.profile,'0.6.0-dev.1')
         rollback(self.profile);self.assertEqual(2,inspect(self.profile)['companies'])
+
+    def test_integrity_and_backup_release_every_sqlite_handle(self):
+        from app.maintenance import sqlite_backup
+        original=sqlite3.connect;connections=[]
+        def connect(*args,**kwargs):
+            conn=original(*args,**kwargs);connections.append(conn);return conn
+        with patch('app.maintenance.sqlite3.connect',side_effect=connect):
+            integrity(self.data/'escritura.sqlite3')
+            backup=self.root/'cópia #1.sqlite3'
+            sqlite_backup(self.data/'escritura.sqlite3',backup)
+        for conn in connections:
+            with self.assertRaises(sqlite3.ProgrammingError):conn.execute('SELECT 1')
+        backup.rename(self.root/'backup liberado.sqlite3')
+
+    def test_recovery_waits_for_installer_owner_then_restores(self):
+        from app.maintenance import recover
+        prepare(self.profile,'0.6.0-dev.1',owner_pid=os.getpid())
+        with self.assertRaisesRegex(RuntimeError,'ainda está em execução'):recover(self.profile)
+        marker=self.profile/'maintenance.json';state=json.loads(marker.read_text());state['owner_pid']=0
+        marker.write_text(json.dumps(state))
+        self.assertEqual('restored',recover(self.profile)['phase'])
+        self.assertEqual(2,inspect(self.profile)['companies'])

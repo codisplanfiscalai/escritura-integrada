@@ -1,5 +1,6 @@
 """Instala e atualiza o .pkg no runner macOS e exercita o aplicativo nativo."""
 from __future__ import annotations
+from contextlib import closing
 import argparse,hashlib,json,os,platform,plistlib,shutil,signal,sqlite3,subprocess,sys,tempfile,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
@@ -7,7 +8,7 @@ from app.maintenance import integrity
 from scripts.build_windows import source_revision
 
 def database_hash(path):
-    with sqlite3.connect(path) as conn:return hashlib.sha256('\n'.join(conn.iterdump()).encode()).hexdigest()
+    with closing(sqlite3.connect(path)) as conn:return hashlib.sha256('\n'.join(conn.iterdump()).encode()).hexdigest()
 
 def install(package):subprocess.run(['sudo','installer','-pkg',str(package),'-target','/'],check=True,timeout=180)
 
