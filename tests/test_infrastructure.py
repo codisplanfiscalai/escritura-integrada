@@ -23,6 +23,7 @@ from export_images import save_gzip, verify_load
 from image_tools import GHCR_PREFIX, IMAGE_NAMES, OPTIONAL_NAMES, image_plan, load_catalog, validate_manifest, validate_version
 from package_deploy import deployment_env, package
 from sync_deploy_templates import sync
+from smoke_images import container_url
 
 
 def published_fixture():
@@ -37,6 +38,46 @@ def published_fixture():
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_smoke_rediscover_port_and_reject_non_loopback_mapping(self):
+        responses = [subprocess.CompletedProcess([], 0, "127.0.0.1:49152\n", ""),
+                     subprocess.CompletedProcess([], 0, "127.0.0.1:49153\n", ""),
+                     subprocess.CompletedProcess([], 0, "0.0.0.0:49154\n", "")]
+        with mock.patch("smoke_images.run", side_effect=responses):
+            self.assertEqual(container_url("synthetic-app"), "http://127.0.0.1:49152")
+            self.assertEqual(container_url("synthetic-app"), "http://127.0.0.1:49153")
+            with self.assertRaisesRegex(RuntimeError, "loopback"):
+                container_url("synthetic-app")
+
+    @unittest.skipUnless(shutil.which("git"), "Teste de checkout requer Git.")
+    def test_git_checkout_preserves_build_bytes_even_with_autocrlf_enabled(self):
+        """Reproduz a configuração de checkout que divergiu no runner Windows."""
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source"
+            target = Path(temporary) / "checkout"
+            source.mkdir()
+            target.mkdir()
+            fixtures = {
+                ".gitattributes": (ROOT / ".gitattributes").read_bytes(),
+                "docker/base.Dockerfile": (ROOT / "docker/base.Dockerfile").read_bytes(),
+                "docker/runtime.lock": (ROOT / "docker/runtime.lock").read_bytes(),
+                "docker/mirrors/redis-entrypoint.sh": (ROOT / "docker/mirrors/redis-entrypoint.sh").read_bytes(),
+                "frontend/src/example.vue": b"<template>\n  <main>Teste</main>\n</template>\n",
+                "app/assets/synthetic.png": b"\x89PNG\r\n\x1a\n\x00synthetic\r\n",
+            }
+            for name, content in fixtures.items():
+                path = source / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+            commands = [["git", "init", "--quiet"],
+                        ["git", "-c", "core.autocrlf=true", "add", "."],
+                        ["git", "-c", "core.autocrlf=true", "checkout-index", "--all", "--force",
+                         "--prefix=" + target.as_posix() + "/"]]
+            for command in commands:
+                subprocess.run(command, cwd=source, check=True, capture_output=True)
+            for name, expected in fixtures.items():
+                with self.subTest(file=name):
+                    self.assertEqual((target / name).read_bytes(), expected)
+
     def test_upstream_catalog_has_verified_pins_and_only_expected_images(self):
         catalog = load_catalog()
         self.assertEqual(set(catalog["images"]), set(IMAGE_NAMES))

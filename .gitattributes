@@ -1,0 +1,22 @@
+# Os bytes de entrada dos builds/locks devem ser iguais em Windows e Linux.
+# eol=lf prevalece sobre core.autocrlf do runner, inclusive para scripts de shell.
+* text=auto eol=lf
+
+# Artefatos binários nunca passam por conversão de fim de linha.
+*.png -text
+*.ico -text
+*.jpg -text
+*.jpeg -text
+*.gif -text
+*.webp -text
+*.pdf -text
+*.woff -text
+*.woff2 -text
+*.zip -text
+*.gz -text
+*.7z -text
+*.rar -text
+*.exe -text
+*.dll -text
+*.db -text
+*.sqlite* -text

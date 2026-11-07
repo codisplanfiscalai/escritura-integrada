@@ -94,9 +94,9 @@ def image_plan(version, channel, revision, root=ROOT):
         elif name == "app":
             paths += [".dockerignore", "VERSION", "scripts/run_container.py", "frontend/package.json",
                       "frontend/package-lock.json", "frontend/index.html", "frontend/vite.config.js"]
-            paths += sorted(str(p.relative_to(root)) for p in (root / "app").glob("*.py"))
+            paths += sorted(p.relative_to(root).as_posix() for p in (root / "app").glob("*.py"))
             for directory in ("frontend/src", "frontend/public", "frontend/scripts"):
-                paths += sorted(str(p.relative_to(root)) for p in (root / directory).rglob("*") if p.is_file())
+                paths += sorted(p.relative_to(root).as_posix() for p in (root / directory).rglob("*") if p.is_file())
             values += [("source_sha", revision.encode()), ("version", version.encode()),
                        ("base", images["base"]["content_id"].encode()),
                        ("node", cat["upstreams"]["node"]["reference"].encode())]

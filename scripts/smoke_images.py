@@ -55,6 +55,14 @@ def http_json(opener, url, data=None):
         return json.load(response)
 
 
+def container_url(name):
+    """Uma porta host efêmera pode ser realocada quando o container reinicia."""
+    port = run(["docker", "port", name, "8000/tcp"], capture=True).stdout.strip()
+    if not re.fullmatch(r"127\.0\.0\.1:\d+", port):
+        raise RuntimeError("Porta do smoke não está restrita a loopback.")
+    return "http://" + port
+
+
 def assert_no_public_ports(name):
     result = run(["docker", "inspect", "--format", "{{json .NetworkSettings.Ports}}", name], capture=True)
     ports = json.loads(result.stdout) or {}
@@ -82,10 +90,7 @@ def smoke(manifest):
              "--mount", "type=volume,src=" + volume + ",dst=/data", "--publish", "127.0.0.1::8000",
              "--env", "ESCRITURA_DEMO=0", images["app"]["reference"]])
         wait_healthy(name)
-        port = run(["docker", "port", name, "8000/tcp"], capture=True).stdout.strip()
-        if not re.fullmatch(r"127\.0\.0\.1:\d+", port):
-            raise RuntimeError("Porta do smoke não está restrita a loopback.")
-        url = "http://" + port
+        url = container_url(name)
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         health = http_json(opener, url + "/api/health")
         if health != {"status": "ok", "version": manifest["version"], "demo": False}:
@@ -107,6 +112,9 @@ def smoke(manifest):
             raise RuntimeError("Configuração inicial falhou.")
         run(["docker", "restart", name])
         wait_healthy(name)
+        # A CookieJar mantém o cookie do mesmo IP; o endereço publicado é consultado
+        # novamente, em vez de reutilizar a porta efêmera anterior ao restart.
+        url = container_url(name)
         again = http_json(opener, url + "/api/session")
         if not again.get("authenticated") or again.get("setup_required"):
             raise RuntimeError("Sessão/SQLite não persistiram após reinício.")
