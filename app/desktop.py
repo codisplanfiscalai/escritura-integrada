@@ -738,7 +738,10 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                 audit_result=dom.get('exports',{}).get('auditor',{})
                 if audit_result.get('job_id') and not getattr(self,'_auditor_preview_requested',False):
                     self._auditor_preview_requested=True
-                    self.preview_pdf(QUrl(controller.snapshot()['url']+f"/api/companies/{dom['companyId']}/auditor/jobs/{audit_result['job_id']}/report?format=pdf&purpose=print"))
+                    href=f"/api/companies/{dom['companyId']}/auditor/jobs/{audit_result['job_id']}/report?format=pdf&purpose=print"
+                    # Exercita o mesmo link target=_blank usado pela interface,
+                    # incluindo a navegação da PrintPage e a sessão autenticada.
+                    self.page.runJavaScript("(() => { const a=document.createElement('a');a.href="+json.dumps(href)+";a.target='_blank';a.rel='noopener';document.body.append(a);a.click();a.remove(); })()")
                 dom['auditor_pdf_pages']=self._auditor_pdf_pages
                 if dom.get("exports",{}).get("error"):
                     self.finish_smoke(False,dom["exports"]["error"],dom)
