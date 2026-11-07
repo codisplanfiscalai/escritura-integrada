@@ -106,6 +106,25 @@ class EvolutionTests(unittest.TestCase):
             r=self.client.get(self.scope(f"/auditor/jobs/{job['id']}/report?format={fmt}"));self.assertEqual(200,r.status_code,r.text[:200] if fmt!='pdf' else r.content[:40]);self.assertGreater(len(r.content),1000)
         self.assertEqual(404,self.client.get(self.scope(f"/auditor/jobs/{job['id']}/files?file_id=99999")).status_code)
         self.assertEqual(404,self.client.get(self.scope(f"/auditor/jobs/{job['id']}",self.b['id'])).status_code)
+        r=self.client.get(self.scope(f"/auditor/jobs/{job['id']}/report?format=pdf&purpose=print"));self.assertTrue(r.headers['content-disposition'].startswith('inline'))
+
+    def test_cross_year_settlement_and_journal_links_survive_restore(self):
+        cid=self.a['id'];title=self.title();self.core.create_journal(cid,self.journal(key='prior-balance'),'teste')
+        for module in ('financial','accounting'):
+            self.core.create_exercise(cid,{'module':module,'year':2027},'teste')
+        self.client.post('/api/context',json={'company_id':cid,'module':'financial','period':'2027-01'})
+        r=self.client.post(self.scope(f"/titles/{title['id']}/settle"),json={'date':'2027-02-01','amount':'100.00','reason':'Liquidação no exercício seguinte','idempotency_key':'cross-year','lines':[{'account_id':self.aid['3'],'debit':'100.00','credit':'0'},{'account_id':self.aid['5'],'debit':'0','credit':'100.00'}]})
+        self.assertEqual(200,r.status_code,r.text);result=r.json();self.assertEqual(title['id'],result['settlement']['title_id']);self.assertEqual(0,result['title']['balance_cents'])
+        report=self.core.business_report(cid,'ledger','2027-01-01','2027-12-31',account_id=self.aid['3'])
+        self.assertEqual(12345,report['ledger_groups'][0]['opening_cents']);self.assertEqual(22345,report['rows'][-1]['balance_cents'])
+        from app.snapshots import create_snapshot,restore_snapshot
+        from app.db import Database
+        from app.business import BusinessCore
+        archive=Path(self.tmp.name)/'years.zip';target=Path(self.tmp.name)/'years-restored'
+        create_snapshot(self.core.db.path,archive);restore_snapshot(archive,target)
+        restored=BusinessCore(Database(target));saved=restored.titles(cid)[0]
+        self.assertEqual(0,saved['balance_cents']);self.assertEqual(result['journal']['id'],saved['settlements'][0]['journal_id'])
+        self.assertEqual(report,restored.business_report(cid,'ledger','2027-01-01','2027-12-31',account_id=self.aid['3']))
 
     def test_internal_closed_audit_snapshot_stale_and_treatment_has_no_side_effect(self):
         d=self.client.post(self.scope('/documents'),json=self.document()).json()

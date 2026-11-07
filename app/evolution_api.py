@@ -151,7 +151,8 @@ def register_evolution_routes(app,core,db,actor,check_period):
         result=core.auditor_job(cid,jid);year(request,result['year'])
         if result['status']!='completed':raise DomainError('Relatório disponível após conclusão.',409)
         content,mime=export_audit(result,format)
-        return Response(content,media_type=mime,headers={'Content-Disposition':f'attachment; filename="auditoria-{jid}.{format}"'})
+        disposition='inline' if request.query_params.get('purpose')=='print' and format=='pdf' else 'attachment'
+        return Response(content,media_type=mime,headers={'Content-Disposition':f'{disposition}; filename="auditoria-{jid}.{format}"'})
 
     @app.get('/api/storage/backup')
     def backup():

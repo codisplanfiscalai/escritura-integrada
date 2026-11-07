@@ -101,7 +101,8 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     nav('Auditorias, achados e relatórios')
     before={p:page.request.get(url+'/api'+scope(p)).json() for p in ('/documents?year=2026','/titles','/journals?year=2026')}
     page.get_by_role('button',name='Auditoria avulsa',exact=True).click()
-    raw=(root/'tests/fixtures/auditor_demo.xml').read_bytes().replace(b'99999999999901',company['tax_id'].encode())
+    raw=(root/'tests/fixtures/auditor_demo.xml').read_bytes().replace(b'99999999000191',company['tax_id'].encode())
+    assert company['tax_id'].encode() in raw
     page.get_by_label('XML, PDF auxiliar ou ZIP de XML/PDF',exact=True).set_input_files({'name':'auditoria.xml','mimeType':'text/xml','buffer':raw})
     page.get_by_role('button',name='Iniciar auditoria',exact=True).click()
     expect(page.get_by_role('heading',name=re.compile(r'Auditoria #\d+ · completed'))).to_be_visible(timeout=45000)

@@ -69,7 +69,7 @@ class AuditorMixin:
         mode=payload.get('mode');start=iso_date(payload.get('start'));end=iso_date(payload.get('end'));key=text(payload.get('idempotency_key'),'Chave de envio',True,200)
         if mode not in {'internal','standalone'} or start>end or start[:4]!=end[:4]:raise DomainError('Selecione origem e período dentro de um exercício.')
         files=payload.get('files',[])
-        if not isinstance(files,list) or len(files)>10:raise DomainError('Selecione até dez arquivos.')
+        if not isinstance(files,list) or len(files)>10 or any(not isinstance(f,dict) for f in files):raise DomainError('Selecione até dez arquivos válidos.')
         if mode=='standalone' and not files:raise DomainError('Selecione arquivos para auditoria avulsa.')
         if mode=='internal' and files:raise DomainError('Auditoria interna utiliza os documentos já armazenados.')
         with self.db.transaction() as conn:
@@ -293,6 +293,7 @@ class AuditorWorker:
                 current=select_one(conn,'auditor_jobs',cid,jid)
                 if current['cancelled']:raise Cancelled()
                 if current['user_id']:require(conn,current['user_id'],cid,'auditor.analyses','create')
+                if current['user_id'] and current['mode']=='standalone':require(conn,current['user_id'],cid,'auditor.analyses','import')
                 conn.execute('DELETE FROM auditor_findings WHERE company_id=? AND job_id=?',(cid,jid))
                 for f in findings:
                     # Decimal da confiança é serializado sem ponto flutuante.
