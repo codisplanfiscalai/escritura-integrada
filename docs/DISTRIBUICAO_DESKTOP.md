@@ -14,7 +14,7 @@ O instalador detecta a versão instalada e recusa retrocesso SemVer. A desinstal
 
 ### Migração do ZIP
 
-As distribuições portáteis anteriores já usavam dados fora da pasta do programa; nesses casos o instalador reutiliza o perfil. Se os dados estiverem em outro local, selecione no instalador a pasta que contém `escritura.sqlite3` (ou sua subpasta `data`). A origem permanece intacta. A aplicação também oferece **Configurações → Migrar dados de uma pasta portátil**, com o motor parado. Uma base de destino preenchida não é mesclada nem substituída por outra silenciosamente.
+As distribuições portáteis anteriores já usavam dados fora da pasta do programa; nesses casos escolha **Usar os dados atuais** no instalador. Se os dados estiverem em outro local, escolha **Migrar dados de uma pasta portátil diferente** e selecione a pasta que contém `escritura.sqlite3` (ou sua subpasta `data`). A seleção de pasta aparece somente na migração. A origem permanece intacta. A aplicação também oferece **Configurações → Migrar dados de uma pasta portátil**, com o motor parado. Uma base de destino preenchida não é mesclada nem substituída por outra silenciosamente.
 
 ## macOS
 

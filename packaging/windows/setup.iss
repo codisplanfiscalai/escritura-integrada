@@ -50,6 +50,7 @@ function GetCurrentProcessId: LongWord;
   external 'GetCurrentProcessId@kernel32.dll stdcall';
 
 var
+  DataChoicePage: TInputOptionWizardPage;
   SourcePage: TInputDirWizardPage;
   Prepared, Completed: Boolean;
   PreviousVersion: String;
@@ -76,13 +77,24 @@ procedure InitializeWizard;
 begin
   Prepared := False; Completed := False;
   RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{D596DE8F-DC39-47A6-B39C-41893D9184B5}_is1', 'DisplayVersion', PreviousVersion);
-  SourcePage := CreateInputDirPage(wpSelectDir, 'Dados da aplicação', 'Instalar ou migrar a distribuição portátil',
-    'A atualização preserva os dados e as configurações atuais. Para migrar uma pasta portátil diferente, selecione a pasta que contém escritura.sqlite3. Deixe vazio para usar a instalação atual ou iniciar uma base nova. Não é feita mesclagem de empresas.', False, '');
-  SourcePage.Add('Pasta de dados portátil (opcional):');
+  DataChoicePage := CreateInputOptionPage(wpSelectDir, 'Dados da aplicação', 'Instalação, atualização ou migração',
+    'O programa fica separado dos dados. A atualização preserva empresas, documentos, usuários e configurações. Selecione como deseja continuar.', True, False);
+  DataChoicePage.Add('Usar os dados atuais ou iniciar uma base nova, caso ainda não exista');
+  DataChoicePage.Add('Migrar dados de uma pasta portátil diferente');
+  SourcePage := CreateInputDirPage(DataChoicePage.ID, 'Migrar dados portáteis', 'Selecione a pasta de origem',
+    'Selecione a pasta que contém escritura.sqlite3 ou sua subpasta data. A origem será preservada. Não é feita mesclagem ou substituição de uma base existente.', False, '');
+  SourcePage.Add('Pasta de dados portátil:');
   SourcePage.Values[0] := ExpandConstant('{param:PORTABLEDATA|}');
+  if SourcePage.Values[0] <> '' then DataChoicePage.SelectedValueIndex := 1
+  else DataChoicePage.SelectedValueIndex := 0;
   if PreviousVersion <> '' then WizardForm.WelcomeLabel2.Caption :=
     'Versão instalada: ' + PreviousVersion + #13#10 + 'Nova versão: {#AppVersion}' + #13#10#13#10 +
     'Salve seu trabalho e encerre a aplicação pelo ícone da área de notificações. Os dados terão cópia de segurança e serão preservados.';
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = SourcePage.ID) and (DataChoicePage.SelectedValueIndex <> 1);
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -102,7 +114,7 @@ begin
     if not RunMaintenance('recover', '', MessageText) then begin Result := MessageText; Exit; end;
   end;
   Extra := '--previous-version "' + PreviousVersion + '"';
-  if SourcePage.Values[0] <> '' then Extra := Extra + ' --source "' + SourcePage.Values[0] + '"';
+  if DataChoicePage.SelectedValueIndex = 1 then Extra := Extra + ' --source "' + SourcePage.Values[0] + '"';
   if not RunMaintenance('prepare', Extra, MessageText) then Result := MessageText
   else Prepared := True;
 end;

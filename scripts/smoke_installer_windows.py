@@ -38,7 +38,7 @@ def main():
             def setup(extra=None,success=True):
                 command=[str(args.installer),'/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',f'/DIR={install}',f'/PROFILEDIR={profile}',f'/LOG={root / "setup.log"}']+(extra or [])
                 p=subprocess.run(command,timeout=180)
-                if success and p.returncode:raise RuntimeError(f'Instalador retornou {p.returncode}: '+(root/'setup.log').read_text(errors='replace')[-2500:])
+                if success and p.returncode:raise RuntimeError(f'Instalador retornou {p.returncode}: '+(root/'setup.log').read_text(encoding='utf-8-sig',errors='replace')[-2500:])
                 if not success and p.returncode==0:raise RuntimeError('Instalador aceitou atualização que deveria ser bloqueada.')
             setup();exe=install/'EscrituraIntegrada.exe'
             if not exe.is_file():raise RuntimeError('Entrada instalada ausente.')
