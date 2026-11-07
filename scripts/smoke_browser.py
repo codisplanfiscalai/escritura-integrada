@@ -40,7 +40,7 @@ def main():
                     page.on('pageerror',lambda e:report['console_errors'].append(str(e)))
                     page.set_default_timeout(15000)
                     def shot(name):
-                        page.screenshot(path=str(OUT/name),full_page=True);report['screenshots'].append(name)
+                        page.screenshot(path=str(OUT/name),full_page=True,animations='disabled');report['screenshots'].append(name)
                     def nav(label):
                         page.get_by_role('navigation',name='Navegação principal').get_by_role('button',name=label,exact=True).click()
                     def check(name):report['checks'].append(name)

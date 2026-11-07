@@ -10,3 +10,6 @@
 @media print{.sidebar,.topbar,.workspace-tabs,.demo-banner,.view-heading,.report-controls,.no-print,.toast-stack{display:none!important}.app-shell,.workspace,.main-content,.view{display:block!important;margin:0!important;padding:0!important;background:#fff!important}.report-output{border:0!important;box-shadow:none!important}.report-output .table-scroll{overflow:visible!important}.report-output tbody tr{display:table-row!important}.report-output table{font-size:8pt!important;width:100%!important}.report-output th,.report-output td{white-space:normal!important;padding:5px!important}.report-output .summary-strip{display:flex!important}thead{display:table-header-group}tr{break-inside:avoid}@page{size:A4 landscape;margin:12mm}}
 
 .origin-summary{display:grid;grid-template-columns:minmax(90px,1fr) minmax(0,3fr);gap:8px 16px}.origin-summary dt{color:var(--text-muted)}.origin-summary dd{margin:0;overflow-wrap:anywhere}
+
+/* Feedback de operações anteriores não cobre os controles do modal em edição. */
+.toast-stack{z-index:90;pointer-events:none}.toast .icon-button{pointer-events:auto}
