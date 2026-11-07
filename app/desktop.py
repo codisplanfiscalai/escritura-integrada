@@ -337,6 +337,10 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
             self._smoke_finished = False
             self._smoke_started = time.monotonic()
             self._smoke_deadline = max(20.0, float(os.environ.get("ESCRITURA_DESKTOP_SMOKE_TIMEOUT", "125")))
+            self._smoke_candidate = None
+            self._smoke_stable_polls = 0
+            self._smoke_capture_pending = False
+            self._smoke_paint_ready = False
             self._tearing_down = False
             self._started_at = 0.0
             self._ipc_clients = []
@@ -702,10 +706,40 @@ def run_desktop(smoke: DesktopSmokeReport | None = None) -> int:
                             and dom.get("brandLoaded") and dom.get("stylesheetApplied")
                             and not dom.get("errors"))
                 if verified:
-                    self.finish_smoke(True, "API, autenticação de demonstração e área de trabalho Vue renderizadas.", dom)
+                    candidate = (dom.get("companyId"), dom.get("company"), dom.get("period"),
+                                 dom.get("version"), dom.get("heading"), dom.get("mainTextLength"))
+                    if candidate != self._smoke_candidate:
+                        self._smoke_candidate = candidate
+                        self._smoke_stable_polls = 1
+                        self._smoke_paint_ready = False
+                    else:
+                        self._smoke_stable_polls += 1
+                    if self._smoke_stable_polls >= 3 and self._smoke_paint_ready:
+                        dom["stable_polls_before_capture"] = self._smoke_stable_polls
+                        dom["composition_wait_ms"] = 1200
+                        self.finish_smoke(True, "API, autenticação de demonstração e área de trabalho Vue renderizadas.", dom)
+                        return
+                    if self._smoke_stable_polls >= 3 and not self._smoke_capture_pending:
+                        # O callback JS pode preceder o frame do compositor. Não
+                        # capturar nele imediatamente: deixe o event loop pintar,
+                        # então valide novamente o mesmo contexto antes do grab.
+                        self._smoke_capture_pending = True
+                        expected_candidate = candidate
+                        def after_composition():
+                            self._smoke_capture_pending = False
+                            if self._smoke_finished or self._tearing_down:
+                                return
+                            self._smoke_paint_ready = self._smoke_candidate == expected_candidate
+                            self.inspect_smoke()
+                        QTimer.singleShot(1200, after_composition)
+                        return
+                    QTimer.singleShot(300, self.inspect_smoke)
                 elif time.monotonic() - self._smoke_started >= self._smoke_deadline:
                     self.finish_smoke(False, "A área de trabalho Vue não concluiu a renderização esperada.", dom)
                 else:
+                    self._smoke_candidate = None
+                    self._smoke_stable_polls = 0
+                    self._smoke_paint_ready = False
                     QTimer.singleShot(300, self.inspect_smoke)
             self.page.runJavaScript(script, inspected)
 
