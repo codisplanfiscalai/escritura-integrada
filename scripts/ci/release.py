@@ -251,10 +251,19 @@ Execução: https://github.com/{plan['repository']}/actions/runs/{plan['run_id']
 
 ### Entrega
 
-- Aplicativo gráfico Windows x64, fontes correspondentes ao commit, pacotes Compose/.env de produção e desenvolvimento e imagens Linux amd64 para instalação local.
-- Integridade e inventário: `{manifest_name}` e `{checksums_name}`.
-- Os gates Linux, Windows empacotado e imagem Docker precisam concluir antes desta publicação. Consulte os relatórios anexos para o alcance dos testes.
-- Dados de demonstração são fictícios. Apuração fiscal legal e integração Prosoft continuam condicionadas à homologação descrita no README.
+- Instalador Windows x64 `.exe` com atualização, backup, migração da distribuição portátil e preservação dos dados; ZIP portátil mantido.
+- Aplicativo e instaladores `.pkg` nativos para macOS 15 ou superior: Apple Silicon (`arm64`) e Intel (`x64`).
+- Exercícios com doze meses por empresa/módulo; fechamento e reabertura independentes; grupos, acessos individuais e permissões efetivas auditáveis.
+- Menus por área; finalização e transporte segregado de apurações; livros auxiliares e relatórios com PDF/Excel.
+- Auditor Fiscal nativo: auditorias interna/avulsa, catálogos revisáveis, documentos/itens, achados, conciliação e relatórios PDF/Excel persistidos. Cobertura e limitações descritas abaixo.
+- Experiência do Auditor: painel executivo, análise crítica, grade de documentos e inspeção por abas; PDF analítico/sintético e Excel com painel, componentes e diferenças recuperados do modelo original.
+- Fontes do commit testado, pacotes Compose/.env de produção/desenvolvimento e imagens Linux amd64 para uso offline.
+- Integridade e inventário: `{manifest_name}` e `{checksums_name}`. Relatórios anexos comprovam os gates Linux, interface, instalação/atualização Windows, macOS nas duas arquiteturas e imagens Docker.
+- Exportação preserva a área de trabalho e a janela maximizada; prévia PDF no Fiscal, Contábil, Financeiro, apurações e Auditor.
+- Consultas em lote e paginação reduzem trabalho repetido sem alterar totais ou permissões.
+- Consulte [as correções e medições](https://github.com/{plan['repository']}/blob/{plan['source_sha']}/docs/EXPORTACAO_DESEMPENHO_0_7_3.md) e [a instalação](https://github.com/{plan['repository']}/blob/{plan['source_sha']}/docs/DISTRIBUICAO_DESKTOP.md).
+- Assinatura Authenticode/Developer ID e notarização não estão configuradas. O teste no runner não homologa o download pelo SmartScreen/Gatekeeper.
+- Dados de demonstração são fictícios. Social cobre somente competências; apuração fiscal legal, livros oficiais e integração Prosoft dependem da homologação documentada.
 
 ### Imagens GHCR
 

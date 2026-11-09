@@ -1,4 +1,4 @@
-# Contrato HTTP — Escritura Integrada 0.4.0-dev.1
+# Contrato HTTP — Escritura Integrada
 
 API JSON no prefixo `/api`, mesma origem do aplicativo. Valores recebidos são strings decimais com ponto (`"123.45"`); respostas monetárias são inteiros em centavos (`*_cents`). Erros têm `{detail: "mensagem em português", code: "..."}`. Listagens são arrays, exceto painel, competência e relatórios. Datas ISO `YYYY-MM-DD`; competência `YYYY-MM`.
 
@@ -73,3 +73,29 @@ Para modelos 55/65/57, confira a classificação de escrituração: CFOP em cada
 - `GET .../audit?limit=100` → array `{id,company_id,actor,action,entity,entity_id,details,created_at}`.
 
 Relatórios internos refletem exclusivamente os lançamentos registrados, incluindo estornos como novas partidas. Filtro por centro atua por linha; contrapartidas sem esse centro ficam fora do recorte. Não se apresenta o recorte como balanço geral nem livro fiscal homologado. A instalação inicial não contém empresas, códigos fiscais ou taxas. Modo de demonstração utiliza exclusivamente dados explicitamente fictícios de novembro de 2026.
+
+## Extensões 0.5
+
+Os endpoints anteriores são preservados. `app/business_api.py` e `tests/test_business.py` contêm os contratos executáveis das extensões. Em todos os caminhos abaixo, `...` corresponde a `/api/companies/{id}`.
+
+| Operação | Endpoint e contrato |
+|---|---|
+| Consultas | `GET /api/lookups/{cnpj|cep}/{value}?provider=auto&refresh=false`; resposta com dados, provedor, data, cache e ressalvas. Nunca grava o cadastro automaticamente |
+| Perfil cadastral | Empresas recebem `profile` com natureza/situação, complemento, CNAEs secundários, `ie_status` e `state_registrations`. Estados de IE são explícitos; informação ausente não se transforma em isenção |
+| Cadastros | `GET/POST .../masters/{participant|establishment|product|service|history|accounting_model}`; `PUT .../masters/{kind}/{item_id}` com `version`. Corpo com `code,name,tax_id,active,data`; os campos de `data` são validados por tipo |
+| Escrituração integrada | `POST .../documents/{id}/book` aceita `model_id` ou partidas explícitas e `generate_titles,installments`. Documento, parcelas e lançamento são gravados na mesma transação; totais devem coincidir |
+| Rastreio/reversão | `GET .../documents/{id}/trace`; `POST .../documents/{id}/reverse {version,date,reason,idempotency_key}`. Baixas, vínculos e renegociações vinculadas precisam ser desfeitos antes |
+| Saldos iniciais | `POST .../opening-balances {date,document,history,lines}`; partidas balanceadas e auditadas, sem alterar saldos históricos silenciosamente |
+| Baixa | `POST .../titles/{id}/settle` acrescenta `version,interest,fine,discount`; `amount` é principal. Caixa = principal + juros + multa − desconto. Partidas opcionais devem representar todos os componentes |
+| Estorno de baixa | `POST .../settlements/{id}/reverse {date,reason,idempotency_key}`; estorna o lançamento vinculado e recompõe saldo atomicamente |
+| Renegociação | `POST .../titles/renegotiate {date,reason,idempotency_key,title_ids,versions,interest,discount,installments}`; `GET .../renegotiations`; `POST .../renegotiations/{id}/reverse {date,reason,idempotency_key}`. Reversão exige parcelas sem movimentos |
+| Rateio bancário | `POST .../banks/{id}/allocate {reason,idempotency_key,settle,allocations:[{title_id,amount}]}`; `settle:false` só vincula, `true` baixa o principal explicitamente. `POST .../allocations/{id}/reverse {reason}` desfaz vínculo sem estornar baixa |
+| Participantes | `GET .../partner-reconciliation`; títulos, pagamentos e saldos agrupados por identidade do participante |
+| Relatórios | `GET .../business-reports/{kind}?start=YYYY-MM-DD&end=YYYY-MM-DD&account_id=&cost_center_id=&query=&status=&direction=&format=json|csv`; filtros aplicáveis a cada relatório, valores JSON em centavos e CSV decimal sem ponto flutuante |
+| Pré-apuração | `GET/POST .../assessments`; consulta com `period`, criação com bases/documentos/regras revisados, efeito e justificativa. Resposta sempre explicita `legal_validation:false`, memória e fingerprint de origem |
+| Ajustes | `GET/POST .../tax-adjustments`; `POST .../tax-adjustments/{id}/reverse {period,reason}`; sem exclusão da evidência original |
+| Prosoft | `POST .../prosoft/preview`, `POST .../prosoft/confirm`: período, modo, mapeamentos e confirmações. Confirmação exige hash da prévia e aceite explícito de transliteração quando houver. `GET .../exports/{id}/download` retorna lote persistido |
+| Originais | `GET .../imports/{id}/original`; arquivo original preservado, com nome seguro no download |
+| Usuários | `GET/POST /api/users`, `PUT /api/users/{id}`; administrador gerencia papéis `admin/operator/viewer` e empresas autorizadas. Alterar acesso revoga sessões existentes |
+
+Relatórios disponíveis: `diary`, `consolidated-diary`, `ledger`, `trial-balance`, `cost-centers`, `balance-sheet`, `income-statement`, `fiscal-book`, `financial`, `cash-flow`, `partners`. Os nomes de campos e regras completas dos corpos são documentados pela interface e pelos testes de contrato; dados sem revisão não recebem confirmação implícita.

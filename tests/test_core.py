@@ -124,7 +124,7 @@ class CoreApiTests(unittest.TestCase):
         data = self.journal()
         data['lines'][0]['account_id'] = other_accounts[0]['id']
         self.assertEqual(404, self.client.post(self.scope('/journals'), json=data).status_code)
-        self.assertEqual(409, self.client.post(self.scope('/journals'), json=self.journal(day='2026-10-31')).status_code)
+        self.assertEqual(409, self.client.post(self.scope('/journals'), json=self.journal(day='2025-10-31')).status_code)
         center = self.core.save_cost_center(self.b['id'], {'code': 'B', 'name': 'CC outra empresa'}, 'teste')
         self.assertEqual(404, self.client.post(self.scope('/journals'), json=self.journal(center=center['id'])).status_code)
         self.assertEqual([], self.core.journals(self.a['id'], '2026-11'))
@@ -366,9 +366,9 @@ class CoreApiTests(unittest.TestCase):
         cid = target['id']
         self.activate(cid)
         close_payload = {'period': '2026-11', 'module': 'fiscal', 'reason': 'Competência encerrada antes de importar'}
-        self.assertEqual(200, self.client.post(self.scope('/periods/close', cid), json=close_payload).status_code)
         raw = (Path(__file__).parent / 'fixtures' / 'nfe_ficticia.xml').read_bytes()
         preview = self.client.post(self.scope('/imports/preview', cid), json={'filename': 'nfe.xml', 'content_base64': base64.b64encode(raw).decode(), 'period': '2026-11'}).json()
+        self.assertEqual(200, self.client.post(self.scope('/periods/close', cid), json=close_payload).status_code)
         confirm = self.client.post(self.scope(f"/imports/{preview['id']}/confirm", cid), json={'preview_hash': preview['preview_hash']})
         self.assertEqual(409, confirm.status_code, confirm.text)
         self.assertEqual('period_closed', confirm.json()['code'])

@@ -11,6 +11,8 @@ __pycache__/
 *.db
 .preview-data/
 data/
+!app/auditor_engine/data/
+!app/auditor_engine/data/**
 artifacts/
 build/
 *.zip

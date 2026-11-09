@@ -1,0 +1,171 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mdfeProc xmlns="http://www.portalfiscal.inf.br/mdfe" versao="3.00">
+    <MDFe xmlns="http://www.portalfiscal.inf.br/mdfe">
+        <infMDFe Id="MDFe99999999999999999999999999999999999999999999" versao="3.00">
+            <ide>
+                <cUF>42</cUF>
+                <tpAmb>2</tpAmb>
+                <tpEmit>2</tpEmit>
+                <mod>58</mod>
+                <serie>1</serie>
+                <nMDF>15</nMDF>
+                <cMDF>00000000</cMDF>
+                <cDV>8</cDV>
+                <modal>1</modal>
+                <dhEmi>2026-01-15T10:00:00-03:00</dhEmi>
+                <tpEmis>1</tpEmis>
+                <procEmi>0</procEmi>
+                <UFIni>SC</UFIni>
+                <UFFim>SC</UFFim>
+                <infMunCarrega>
+                    <cMunCarrega>0090001</cMunCarrega>
+                    <xMunCarrega>DADOS SINTETICOS SEM VALOR FISCAL</xMunCarrega>
+                </infMunCarrega>
+                <infPercurso>
+                    <UFPer>SC</UFPer>
+                </infPercurso>
+                <infPercurso>
+                    <UFPer>SC</UFPer>
+                </infPercurso>
+                <dhIniViagem>2026-01-15T10:00:00-03:00</dhIniViagem>
+            </ide>
+            <emit>
+                <CNPJ>99999999000191</CNPJ>
+                <IE>ISENTO</IE>
+                <xNome>DADOS SINTETICOS SEM VALOR FISCAL</xNome>
+                <xFant>DADOS SINTETICOS SEM VALOR FISCAL</xFant>
+                <enderEmit>
+                    <xLgr>DADOS SINTETICOS SEM VALOR FISCAL</xLgr>
+                    <nro>1</nro>
+                    <xCpl>DADOS SINTETICOS SEM VALOR FISCAL</xCpl>
+                    <xBairro>DADOS SINTETICOS SEM VALOR FISCAL</xBairro>
+                    <cMun>0099223</cMun>
+                    <xMun>DADOS SINTETICOS SEM VALOR FISCAL</xMun>
+                    <CEP>01000000</CEP>
+                    <UF>SC</UF>
+                    <fone>11999999999</fone>
+                    <email>teste@example.invalid</email>
+                </enderEmit>
+            </emit>
+            <seg>
+                <respSeg>1</respSeg>
+                <CNPJ>99999999000191</CNPJ>
+                <infSeg>
+                    <xSeg>DADOS SINTETICOS SEM VALOR FISCAL</xSeg>
+                    <CNPJ>99999999000191</CNPJ>
+                </infSeg>
+                <nApol>99999999999999999999</nApol>
+            </seg>
+            <seg>
+                <respSeg>1</respSeg>
+                <CNPJ>99999999000191</CNPJ>
+                <infSeg>
+                    <xSeg>DADOS SINTETICOS SEM VALOR FISCAL</xSeg>
+                    <CNPJ>99999999000191</CNPJ>
+                </infSeg>
+                <nApol>99999999999999999999</nApol>
+                <nAver>9999999999999999999999999999999999999999</nAver>
+                <nAver>9999999999999999999999999999999999999999</nAver>
+                <nAver>9999999999999999999999999999999999999999</nAver>
+                <nAver>9999999999999999999999999999999999999999</nAver>
+            </seg>
+            <infModal versaoModal="3.00">
+                <rodo>
+                    <infANTT>
+                        <RNTRC>99999999</RNTRC>
+                        <infCIOT>
+                            <CIOT>999999999999</CIOT>
+                            <CNPJ>99999999000191</CNPJ>
+                        </infCIOT>
+                        <infPag>
+                           <xNome>DADOS SINTETICOS SEM VALOR FISCAL</xNome>
+                           <CNPJ>99999999000191</CNPJ>
+                           <Comp>
+                              <tpComp>99</tpComp>
+                              <vComp>1000.00</vComp>
+                              <xComp>DADOS SINTETICOS SEM VALOR FISCAL</xComp>
+                           </Comp>
+                           <vContrato>1000.00</vContrato>
+                           <indPag>1</indPag>
+                           <infPrazo>
+                              <nParcela>001</nParcela>
+                              <dVenc>2026-01-15</dVenc>
+                              <vParcela>1000.00</vParcela>
+                           </infPrazo>
+                           <infBanc>
+                              <PIX>99999999999999</PIX>
+                           </infBanc>
+                        </infPag>
+                    </infANTT>
+                    <veicTracao>
+                        <placa>ABC1D23</placa>
+                        <RENAVAM>99999999999</RENAVAM>
+                        <tara>2100</tara>
+                        <capKG>16000</capKG>
+                        <capM3>37</capM3>
+                        <condutor>
+                            <xNome>DADOS SINTETICOS SEM VALOR FISCAL</xNome>
+                            <CPF>99999999999</CPF>
+                        </condutor>
+                        <condutor>
+                            <xNome>DADOS SINTETICOS SEM VALOR FISCAL</xNome>
+                            <CPF>99999999999</CPF>
+                        </condutor>
+                        <condutor>
+                            <xNome>DADOS SINTETICOS SEM VALOR FISCAL</xNome>
+                            <CPF>99999999999</CPF>
+                        </condutor>
+                        <tpRod>02</tpRod>
+                        <tpCar>02</tpCar>
+                        <UF>SC</UF>
+                    </veicTracao>
+                </rodo>
+            </infModal>
+            <infDoc>
+                <infMunDescarga>
+                    <cMunDescarga>0909233</cMunDescarga>
+                    <xMunDescarga>DADOS SINTETICOS SEM VALOR FISCAL</xMunDescarga>
+                    <infNFe>
+                        <chNFe>99999999999999999999999999999999999999999999</chNFe>
+                    </infNFe>
+                    <infNFe>
+                        <chNFe>99999999999999999999999999999999999999999999</chNFe>
+                    </infNFe>
+                    <infNFe>
+                        <chNFe>99999999999999999999999999999999999999999999</chNFe>
+                    </infNFe>
+                    <infNFe>
+                        <chNFe>99999999999999999999999999999999999999999999</chNFe>
+                    </infNFe>
+                </infMunDescarga>
+            </infDoc>
+            <tot>
+                <qNFe>2</qNFe>
+                <vCarga>41873.80</vCarga>
+                <cUnid>01</cUnid>
+                <qCarga>7033.1300</qCarga>
+            </tot>
+            <autXML>
+                <CNPJ>99999999000191</CNPJ>
+            </autXML>
+            <infAdic>
+                    <infAdFisco>DADOS SINTETICOS SEM VALOR FISCAL</infAdFisco>
+                <infCpl>DADOS SINTETICOS SEM VALOR FISCAL</infCpl>
+            </infAdic>
+        </infMDFe>
+        <infMDFeSupl>
+            <qrCodMDFe>https://example.invalid/consulta?p=99999999999999999999999999999999999999999999</qrCodMDFe>
+        </infMDFeSupl>
+    </MDFe>
+    <protMDFe xmlns="http://www.portalfiscal.inf.br/mdfe" versao="3.00">
+        <infProt Id="MDFe99999999999999999999999999999999999999999999">
+            <tpAmb>2</tpAmb>
+            <chMDFe>99999999999999999999999999999999999999999999</chMDFe>
+            <dhRecbto>2026-01-15T10:00:00-03:00</dhRecbto>
+            <nProt>999999999999999</nProt>
+            <digVal>KGdmh/XYMKRySFCfXZat4VFHo7g=</digVal>
+            <cStat>100</cStat>
+            <xMotivo>DADOS SINTETICOS SEM VALOR FISCAL</xMotivo>
+        </infProt>
+    </protMDFe>
+</mdfeProc>

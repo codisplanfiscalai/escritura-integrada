@@ -1,0 +1,114 @@
+{
+  "method": "Leitura estática dos bytes; sem execução de EXEs",
+  "zip_sha256": "fefd594930d9dc5fae924d51ef5e0e6c60152a00e4c030f11611418e42831872",
+  "verified": [
+    {
+      "binary": "CTB010100.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB010100/original/CTB010100.EXE",
+      "sha256": "3910b6d994f8d0e0e7e05a91871f047136f22ae1494c1bbd157ed2423a74d7b9",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB020100.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB020100/original/CTB020100.EXE",
+      "sha256": "7ba43c4fc458b5d4ece86905bcec0cf80fbae5110fc409e6961aaa9098e27360",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB020400.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB020400/original/CTB020400.EXE",
+      "sha256": "4f56fb3a166390f87ae09eb93d19813a7e6b2f3790c82f5d576e02b630044c63",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB020600.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB020600/original/CTB020600.EXE",
+      "sha256": "fd8b93d432935562fa20cf6df2146abe91ffa38d70ca27f0d8e2c1664de896e3",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB020700.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB020700/original/CTB020700.EXE",
+      "sha256": "c9dada086c63b303d929f438dfd0da911953a6a3d25b8db47bc5b33598f3af3c",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB020800.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB020800/original/CTB020800.EXE",
+      "sha256": "569558c5c86820d48379e330e9823d28c18cb3b0fb773adf2263a7d38b883ffb",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB020900.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB020900/original/CTB020900.EXE",
+      "sha256": "b98308b0d75199ec875fea2f3bb136f5e3299d3f6e34e61b85f9c59cf67b3d28",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB020900A.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB020900A/original/CTB020900A.EXE",
+      "sha256": "346710fee97ef182afe84fa85c25865769f53464fd75e29c8af248b36ab609b7",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB021300.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB021300/original/CTB021300.EXE",
+      "sha256": "be2da08111c48a059829001ddaa472124da91fc8cc323d04c046e6efe4d87bde",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB021400.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB021400/original/CTB021400.EXE",
+      "sha256": "d3670ed5b4233bb7f4345249d816fbe21b931eb480153a93b06f98af901546d2",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB021500.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB021500/original/CTB021500.EXE",
+      "sha256": "a092551cf86452210b679c6069fc4f329cffc3ea080f7b8776503bca711c6c64",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB021700.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB021700/original/CTB021700.EXE",
+      "sha256": "814f105bbec260c808b339e2546e521ee9f4322f293c1c7b44ce66f685451602",
+      "matches_inventory": true
+    },
+    {
+      "binary": "CTB030200.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/CTB030200/original/CTB030200.EXE",
+      "sha256": "27a85d2f5081cd8ed41906c5ab872a160f50b242e66caf011478ee0063263987",
+      "matches_inventory": true
+    },
+    {
+      "binary": "LFSCTAPAGREC.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/LFSCTAPAGREC/original/LFSCTAPAGREC.EXE",
+      "sha256": "b1659ef5322c11c88596c22b23a644cb825ce880b5328e3885dac22554795925",
+      "matches_inventory": true
+    },
+    {
+      "binary": "LFSDOCTOS.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/LFSDOCTOS/original/LFSDOCTOS.EXE",
+      "sha256": "59a2722ff5db300f6921960e3da88e2ccc8c79491d8a2613c7d673cd1b5f4e2c",
+      "matches_inventory": true
+    },
+    {
+      "binary": "LFSLIVROS.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/LFSLIVROS/original/LFSLIVROS.EXE",
+      "sha256": "c4efc82ef86642838b59103e2ae895ffac1ce1a3bf0b3f6475f54f57f51279ef",
+      "matches_inventory": true
+    },
+    {
+      "binary": "LFSLIVROSAPUR.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/LFSLIVROSAPUR/original/LFSLIVROSAPUR.EXE",
+      "sha256": "02a6e94b59e7b052ad4ef3c747e29d0b8b40468c77f9fbc601bd0fc51e79c365",
+      "matches_inventory": true
+    },
+    {
+      "binary": "PRG010100.EXE",
+      "member": "Projetos_Engenharia_Reversa/projetos/PRG010100/original/PRG010100.EXE",
+      "sha256": "fef87c13d6a10254791369051223d2dd2ae8e9f1c2743caa920df27a1b7e2815",
+      "matches_inventory": true
+    }
+  ]
+}

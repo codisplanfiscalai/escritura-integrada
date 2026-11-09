@@ -2,7 +2,7 @@
 """Pacote Windows portátil com uma entrada gráfica e runtime Qt compartilhado."""
 from importlib.metadata import PackageNotFoundError
 from pathlib import Path
-from PyInstaller.utils.hooks import copy_metadata
+from PyInstaller.utils.hooks import copy_metadata, collect_data_files
 
 root = Path(SPECPATH)
 frontend = root / "frontend" / "dist"
@@ -24,6 +24,11 @@ for package in ("PySide6", "PySide6_Essentials", "PySide6_Addons", "shiboken6"):
     except PackageNotFoundError:
         pass
 
+datas += [(str(root/'app/auditor_engine/data'), 'app/auditor_engine/data')]
+datas += collect_data_files('reportlab', includes=['fonts/*'])
+for package in ('BrazilFiscalReport','fpdf2','fonttools','python-barcode','phonenumbers','qrcode','lxml'):datas+=copy_metadata(package)
+datas += collect_data_files('brazilfiscalreport')
+datas += collect_data_files('fpdf')
 a = Analysis(
     [str(root / "app" / "desktop.py")],
     pathex=[str(root)],

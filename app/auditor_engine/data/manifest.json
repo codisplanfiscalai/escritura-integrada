@@ -1,0 +1,38 @@
+{
+  "version": "2025.10.03+classificacao-final",
+  "generated_at": "2026-07-31T01:31:23",
+  "sources": [
+    {
+      "name": "classificacao_trib_final.xlsx",
+      "sha256": "9c5b0660b318bf1137fb830fea543df9e4afc24bfa395f6eb67d3b625bd3d81a",
+      "rows": 15638,
+      "role": "ncm_class_trib"
+    },
+    {
+      "name": "CST_cClassTrib_2025-10-03_Public_verde.xlsx",
+      "sha256": "b5ed31f4cca7f21fb1deb68ddd0d9e5ce91318b7ab6459e186f014d52fff0a65",
+      "cst_rows": 19,
+      "cclass_rows": 142,
+      "role": "official_catalog"
+    }
+  ],
+  "statistics": {
+    "parameter_rows": 15638,
+    "full_ncm_rows": 11096,
+    "distinct_full_ncm": 10513,
+    "ex_rows": 583,
+    "valid_rows": 15630,
+    "warning_rows": 2,
+    "error_rows": 6,
+    "conflicting_keys": 0,
+    "validation_issue_counts": {
+      "MISSING_CLASSIFICATION": 2,
+      "INVALID_CST": 1,
+      "CST_CCLASS_MISMATCH": 1,
+      "MISSING_CCLASS": 4,
+      "REDUCTION_CONFLICT": 1
+    },
+    "cst_rows": 19,
+    "cclass_rows": 142
+  }
+}

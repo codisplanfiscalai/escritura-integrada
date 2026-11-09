@@ -2,3 +2,5 @@
 @import url('./styles/workspace.css');
 @import url('./styles/views.css');
 @import url('./styles/responsive.css');
+
+.entry-defaults{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}.entry-defaults label{display:inline-flex;flex-direction:row;align-items:center;gap:4px;margin:0;white-space:nowrap}.entry-defaults input{width:16px;height:16px;padding:0;flex:none}.operation-month{max-width:220px;margin-bottom:12px}.wrap-code{display:block;overflow-wrap:anywhere}.modal-footer{flex-wrap:wrap}.panel>.panel-body{padding:20px}.panel-body>.toolbar{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}

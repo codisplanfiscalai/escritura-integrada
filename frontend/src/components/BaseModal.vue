@@ -15,6 +15,8 @@ function keyboard(e){
   if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
   else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
  }
+ if(e.altKey&&e.key.toLowerCase()==='n'){e.preventDefault();el.value.querySelector('[data-save-new]')?.click();}
+ if(e.ctrlKey&&e.key==='Enter'){e.preventDefault();el.value.querySelector('[data-add-line]')?.click();}
  if(e.altKey&&e.key.toLowerCase()==='s'){e.preventDefault();el.value.querySelector('form')?.requestSubmit();}
 }
 onMounted(async()=>{before=document.activeElement;document.addEventListener('keydown',keyboard,true);await nextTick();(firstVisible('[autofocus]')||firstVisible('input,textarea')||firstVisible('select')||firstVisible('.modal-footer button')||firstVisible('.modal-body button')||firstVisible('button'))?.focus();});

@@ -10,11 +10,13 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import Body, FastAPI, Request
+from starlette.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from . import __version__
-from .core import Core, DomainError, digest, iso_date, period, select_one
+from .business import BusinessCore as Core
+from .core import DomainError, digest, iso_date, period, select_one
 from .db import ContextConflict, Database, request_context
 
 COOKIE = "escritura_session"
@@ -24,10 +26,22 @@ def create_app(data_dir=None, demo=False):
     demo = bool(demo or os.environ.get("ESCRITURA_DEMO") == "1")
     database = Database(data_dir)
     core = Core(database, demo)
-    application = FastAPI(title="Escritura Integrada", version=__version__, docs_url=None, redoc_url=None)
+    from .auditor import AuditorWorker
+    from contextlib import asynccontextmanager
+    import asyncio
+    worker=AuditorWorker(core)
+    @asynccontextmanager
+    async def lifespan(application):
+        worker.recover()
+        try:yield
+        finally:await asyncio.to_thread(worker.close)
+    application = FastAPI(lifespan=lifespan, title="Escritura Integrada", version=__version__, docs_url=None, redoc_url=None)
     application.state.core = core
     application.state.db = database
+    application.state.auditor = worker
     application.state.demo = demo
+    from .lookups import LookupService
+    application.state.lookups = LookupService(database)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
     @application.exception_handler(DomainError)
@@ -69,24 +83,53 @@ def create_app(data_dir=None, demo=False):
                 if request.headers.get("sec-fetch-site") == "cross-site":
                     return JSONResponse({"detail": "Origem da requisição não autorizada.", "code": "invalid_origin"}, 403)
             token = request.cookies.get(COOKIE, "")
-            session = core.session(token)
+            # A matriz completa pertence à apresentação da sessão. Cada rota
+            # continua autorizada no banco, inclusive depois de revogações.
+            session = await run_in_threadpool(core.session, token, include_permissions=path == '/api/session')
             request.state.session = session
             request.state.token = token
             if path not in public:
                 if not session["authenticated"]:
                     return JSONResponse({"detail": "Entre no aplicativo para acessar os dados.", "code": "unauthenticated"}, 401)
+                match_permission = re.match(r"^/api/companies/(\d+)(?:/|$)", path)
+                permission_cid = int(match_permission.group(1)) if match_permission else None
+                from .permissions import route_policy
+                payload = {}
+                if mutating and 'application/json' in request.headers.get('content-type', ''):
+                    try:
+                        parsed = await request.json()
+                        payload = parsed if isinstance(parsed, dict) else {}
+                    except ValueError:
+                        pass
+                if path=='/api/templates' and mutating and payload.get('source_company_id')!=session['active_company_id']:
+                    return JSONResponse({'detail':'Ative a empresa de origem antes de criar o modelo.','code':'stale_context'},409)
+                routine, action, privileged = route_policy(path, method, request.query_params, payload, session)
+                if permission_cid is None and routine:
+                    permission_cid = session['active_company_id']
+                if routine and permission_cid is None and not (routine=='lookup' and session['user']['role']=='admin'):
+                    return JSONResponse({'detail':'Ative uma empresa antes de acessar esta rotina.','code':'no_company'},409)
+                writing = mutating and path not in {'/api/context', '/api/logout'}
+                try:
+                    await run_in_threadpool(core.authorize, session['user'], permission_cid, writing, privileged, routine, action or 'read')
+                except DomainError as exc:
+                    return JSONResponse({'detail': exc.detail, 'code': exc.code}, exc.status)
                 if mutating:
                     csrf = request.headers.get("x-csrf-token", "")
                     if not csrf or not hmac.compare_digest(csrf, session["csrf_token"]):
                         return JSONResponse({"detail": "Confirmação de sessão inválida. Atualize a página.", "code": "invalid_csrf"}, 403)
-                    expected = {"token_hash": digest(token.encode())}
+                    expected = {"token_hash": digest(token.encode()), "user_id": session["user"]["id"], "write": writing, "admin": privileged, "permission_company_id": permission_cid, "routine": routine, "action": action or 'read'}
                     match = re.match(r"^/api/companies/(\d+)/", path)
                     if match:
                         cid = int(match.group(1))
                         if session["active_company_id"] != cid:
                             return JSONResponse({"detail": "A empresa ativa mudou. Reabra o lançamento no contexto correto.", "code": "stale_context"}, 409)
-                        expected.update(company_id=cid, period=session["period"])
+                        for header, value in [('x-company-id',str(cid)),('x-year',session['period'][:4]),('x-module',session.get('module','fiscal'))]:
+                            if request.headers.get(header) and request.headers[header] != value:
+                                return JSONResponse({'detail':'O contexto mudou. Reabra a operação na empresa, módulo e competência apresentados.','code':'stale_context'},409)
+                        expected.update(company_id=cid, period=session["period"], year=session["period"][:4], module=session.get('module','fiscal'))
                     ctx_token = request_context.set(expected)
+                else:
+                    ctx_token = request_context.set({"token_hash":digest(token.encode()),"user_id":session["user"]["id"],"write":False,"permission_company_id":permission_cid,"routine":routine,"action":action or "read"})
         try:
             response = await call_next(request)
         finally:
@@ -94,8 +137,15 @@ def create_app(data_dir=None, demo=False):
                 request_context.reset(ctx_token)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        # A prévia do Auditor pode ser enquadrada somente pela própria aplicação.
+        # Autorização, empresa e exercício já foram validados antes da resposta.
+        audit_pdf = (response.status_code == 200
+            and bool(re.fullmatch(r'/api/companies/\d+/auditor/jobs/\d+/(report|files)', path))
+            and response.headers.get('content-type', '').startswith('application/pdf')
+            and response.headers.get('content-disposition', '').startswith('inline;'))
+        response.headers["X-Frame-Options"] = "SAMEORIGIN" if audit_pdf else "DENY"
+        ancestors = "'self'" if audit_pdf else "'none'"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors " + ancestors
         if path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -104,12 +154,12 @@ def create_app(data_dir=None, demo=False):
         return request.state.session["user"]["username"]
 
     def active_period(request, supplied=None):
-        return period(supplied or request.state.session["period"])
+        return check_period(request, supplied or request.state.session["period"])
 
     def check_period(request, competence):
         competence = period(competence)
-        if competence != request.state.session["period"]:
-            raise DomainError("A data pertence a outra competência. Ative a competência correta e reabra o lançamento.", 409, "stale_context")
+        if competence[:4] != request.state.session["period"][:4]:
+            raise DomainError("A data de escrituração pertence a outro exercício. Selecione o ano correto e reabra a operação.", 409, "stale_context")
         return competence
 
     def check_date(request, value, label="Data"):
@@ -158,11 +208,18 @@ def create_app(data_dir=None, demo=False):
 
     @application.post("/api/context")
     def context(request: Request, payload: dict[str, Any] = Body(...)):
+        core.authorize(request.state.session["user"], payload.get("company_id"))
         return core.context(request.state.token, payload)
 
     @application.get("/api/companies")
-    def companies():
-        return core.companies()
+    def companies(request: Request):
+        all_companies = core.companies()
+        if request.state.session['user']['role'] == 'admin':
+            return all_companies
+        allowed = set(core.allowed_companies(request.state.session['user']['id']))
+        from .permissions import decision
+        with database.read() as conn:
+            return [c|{'can_edit':decision(conn,request.state.session['user']['id'],c['id'],'system.companies','edit')['allowed']} for c in all_companies if c['id'] in allowed]
 
     @application.post("/api/companies", status_code=201)
     def create_company(request: Request, payload: dict[str, Any] = Body(...)):
@@ -197,7 +254,10 @@ def create_app(data_dir=None, demo=False):
         return core.save_cost_center(cid, payload, actor(request), item_id)
 
     @application.get("/api/companies/{cid}/journals")
-    def journals(cid: int, request: Request, period: str | None = None):
+    def journals(cid: int, request: Request, period: str | None = None, year: int | None = None):
+        if year:
+            check_period(request,f'{year:04d}-01')
+            return [r for r in core.journals(cid) if r['period'][:4]==str(year)]
         return core.journals(cid, active_period(request, period))
 
     @application.post("/api/companies/{cid}/journals", status_code=201)
@@ -211,7 +271,10 @@ def create_app(data_dir=None, demo=False):
         return core.reverse_journal(cid, item_id, payload, actor(request))
 
     @application.get("/api/companies/{cid}/documents")
-    def documents(cid: int, request: Request, period: str | None = None):
+    def documents(cid: int, request: Request, period: str | None = None, year: int | None = None):
+        if year:
+            check_period(request,f'{year:04d}-01')
+            return core.documents(cid, year=year)
         return core.documents(cid, active_period(request, period))
 
     @application.post("/api/companies/{cid}/documents", status_code=201)
@@ -243,12 +306,12 @@ def create_app(data_dir=None, demo=False):
 
     @application.post("/api/companies/{cid}/titles", status_code=201)
     def create_title(cid: int, request: Request, payload: dict[str, Any] = Body(...)):
+        check_date(request,payload.get("issue_date"),"Emissão do título")
         return core.create_title(cid, payload, actor(request))
 
     @application.post("/api/companies/{cid}/titles/{item_id}/settle")
     def settle_title(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
-        if payload.get("lines"):
-            check_date(request, payload.get("date"), "Baixa contábil")
+        check_date(request, payload.get("date"), "Baixa financeira")
         return core.settle_title(cid, item_id, payload, actor(request))
 
     @application.get("/api/companies/{cid}/banks")
@@ -261,10 +324,12 @@ def create_app(data_dir=None, demo=False):
 
     @application.post("/api/companies/{cid}/banks/{item_id}/reconcile")
     def reconcile(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
+        with database.read() as conn:check_date(request,select_one(conn,"bank_transactions",cid,item_id)["date"])
         return core.reconcile(cid, item_id, payload, actor(request))
 
     @application.post("/api/companies/{cid}/banks/{item_id}/unreconcile")
     def unreconcile(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
+        with database.read() as conn:check_date(request,select_one(conn,"bank_transactions",cid,item_id)["date"])
         return core.unreconcile(cid, item_id, payload, actor(request))
 
     @application.get("/api/companies/{cid}/catalogs")
@@ -308,8 +373,9 @@ def create_app(data_dir=None, demo=False):
         return core.simulate_rule(cid, item_id, payload, actor(request))
 
     @application.get("/api/templates")
-    def templates():
-        return core.templates()
+    def templates(request: Request):
+        allowed = {c['id'] for c in companies(request)}
+        return [t for t in core.templates() if t['source_company_id'] in allowed]
 
     @application.post("/api/templates", status_code=201)
     def create_template(request: Request, payload: dict[str, Any] = Body(...)):
@@ -319,6 +385,9 @@ def create_app(data_dir=None, demo=False):
 
     @application.post("/api/companies/{cid}/templates/{item_id}/apply")
     def apply_template(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
+        visible = {t['id'] for t in templates(request)}
+        if item_id not in visible:
+            raise DomainError('Modelo não disponível para este usuário.', 403, 'forbidden')
         return core.apply_template(cid, item_id, payload, actor(request))
 
     @application.get("/api/companies/{cid}/imports")
@@ -347,12 +416,10 @@ def create_app(data_dir=None, demo=False):
 
     @application.post("/api/companies/{cid}/periods/close")
     def close_period(cid: int, request: Request, payload: dict[str, Any] = Body(...)):
-        check_period(request, payload.get("period"))
         return core.set_period(cid, payload, actor(request), True)
 
     @application.post("/api/companies/{cid}/periods/reopen")
     def reopen_period(cid: int, request: Request, payload: dict[str, Any] = Body(...)):
-        check_period(request, payload.get("period"))
         return core.set_period(cid, payload, actor(request), False)
 
     @application.get("/api/companies/{cid}/reports/{kind}")
@@ -361,11 +428,25 @@ def create_app(data_dir=None, demo=False):
 
     @application.get("/api/companies/{cid}/dashboard")
     def dashboard(cid: int, request: Request, period: str | None = None):
-        return core.dashboard(cid, active_period(request, period))
+        result = core.dashboard(cid, active_period(request, period))
+        from .permissions import decision
+        with database.read() as conn:
+            for key,routine in [('documents','fiscal.documents'),('accounting','accounting.journals'),('financial','financial.titles'),('reconciliation','financial.reconciliation')]:
+                if not decision(conn,request.state.session['user']['id'],cid,routine,'read')['allowed']:
+                    result[key] = {k:0 for k in result[key]} | {'restricted':True}
+        return result
 
     @application.get("/api/companies/{cid}/audit")
     def audit_entries(cid: int, limit: int = 100):
         return core.audit(cid, limit)
+
+    from .business_api import register_business_routes
+    register_business_routes(application, core, database, actor, check_date, check_period)
+    from .management_api import register_management_routes
+    register_management_routes(application, core, database, actor)
+
+    from .evolution_api import register_evolution_routes
+    register_evolution_routes(application,core,database,actor,check_period)
 
     @application.get("/{resource_path:path}")
     def frontend_asset(resource_path: str):

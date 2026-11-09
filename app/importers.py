@@ -39,7 +39,7 @@ IMPORTER_SCOPE = {
     "ofc": "OFC 1.0.6: ACCTSTMT/ACCTFROM, TRNTYPE numérico, CHKNUM, data YYYYMMDD, valor com sinal. Leitor separado do OFX; sujeito a homologação por banco.",
     "qif": "Seções Bank/Cash/CCard/Oth A/Oth L, campos D/T/P/M/N e terminador ^. Datas locais exigem formato explícito; contas múltiplas e investimentos são recusados.",
     "zip": "Leitura em memória, limites de tamanho/quantidade/expansão/profundidade, sem extração de caminhos e sem seguir links.",
-    "rar_7z": "Não suportados nesta versão. Devolvem diagnóstico explícito; nenhum descompactador externo é executado.",
+    "rar_7z": "7z via py7zr; RAR via rarfile com libarchive (bsdtar no contêiner/macOS ou tar.exe no Windows) para entradas comprimidas. Sem leitor compatível, retorna diagnóstico e orienta ZIP/7z. Pacotes com senha, multipartes e codecs não suportados são recusados; limites e proteção de caminhos aplicados.",
 }
 
 SOURCE_DOCUMENTATION = [
@@ -860,8 +860,17 @@ def _parse(filename, data, company, result, state, depth):
     suffix = PurePosixPath(filename.lower()).suffix
     try:
         if suffix in (".rar", ".7z") or data.startswith((b"Rar!", b"7z\xbc\xaf\x27\x1c")):
-            raise ImportProblem("ARCHIVE_FORMAT_UNSUPPORTED", "RAR/7z não são suportados nesta versão. Converta para ZIP sem senha; nenhuma extração parcial foi realizada.")
-        if suffix == ".zip" or data.startswith(b"PK\x03\x04"):
+            if depth >= MAX_ARCHIVE_DEPTH:
+                raise ImportProblem("ARCHIVE_DEPTH", "Pacote excede dois níveis de contêiner.")
+            from .archives import read_archive
+            fmt = "7z" if suffix == ".7z" or data.startswith(b"7z") else "rar"
+            children=read_archive(fmt,data,state,(MAX_FILE_BYTES,MAX_EXPANDED_BYTES,MAX_ARCHIVE_MEMBERS,MAX_COMPRESSION_RATIO))
+            for name,child in children:
+                if state["expanded"]+len(child)>MAX_EXPANDED_BYTES:
+                    raise ImportProblem("ARCHIVE_EXPANSION", "Lote excede limite total de descompressão.")
+                state["expanded"]+=len(child)
+                _parse(filename+"!/"+name.replace("\\","/"),child,company,result,state,depth+1)
+        elif suffix == ".zip" or data.startswith(b"PK\x03\x04"):
             fmt = _zip(filename, data, company, result, state, depth)
         elif suffix in (".ofx", ".qfx"):
             fmt = _bank_markup(filename, data, company, result, digest)
