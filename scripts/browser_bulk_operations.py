@@ -16,6 +16,7 @@ import time
 import traceback
 import urllib.request
 
+from openpyxl import load_workbook
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,7 +100,7 @@ def main():
                     def open_bulk(action='delete'):
                         page.get_by_role('button', name='Operar selecionados', exact=True).click()
                         dialog.get_by_label(re.compile(r'^Operação')).select_option(action)
-                        expect(dialog.get_by_role('button', name='Excluir definitivamente' if action == 'delete' else 'Confirmar operação', exact=True)).to_be_disabled()
+                        expect(dialog).to_be_visible()
 
                     def prepare():
                         with page.expect_response(lambda r: '/bulk-operations/preview' in r.url and r.request.method == 'POST') as result:
@@ -111,27 +112,33 @@ def main():
 
                     def confirm(delete=False):
                         with page.expect_response(lambda r: '/bulk-operations/confirm' in r.url and r.request.method == 'POST') as result:
-                            dialog.get_by_role('button', name='Excluir definitivamente' if delete else 'Confirmar operação', exact=True).click()
+                            dialog.get_by_role('button', name=re.compile(r'^Excluir definitivamente') if delete else 'Confirmar operação', exact=not delete).click()
                         assert result.value.ok, result.value.text()
                         assert result.value.json()['completed']
                         expect(dialog).to_have_count(0)
                         expect(page.get_by_role('button', name='Operar selecionados', exact=True)).to_be_disabled()
 
+                    def export_search(expected_count):
+                        for size in ('1000', '5000'):
+                            page.get_by_label('Registros por página', exact=True).select_option(size)
+                        link = page.get_by_role('link', name=f'Exportar Excel ({expected_count})', exact=True)
+                        with page.expect_download() as downloaded:
+                            link.click()
+                        saved = Path(data) / downloaded.value.suggested_filename
+                        downloaded.value.save_as(saved)
+                        workbook = load_workbook(saved)
+                        assert workbook['Dados'].max_row == expected_count + 1
+                        report['checks'].append(f'Excel downloaded with all {expected_count} filtered records; pages 1000 and 5000 available')
+
                     def fill_reason():
-                        dialog.get_by_label('Motivo da operação *', exact=True).fill('Aceitação Chromium exclusivamente sintética')
+                        dialog.get_by_label('Observação (opcional)', exact=True).fill('Aceitação Chromium exclusivamente sintética')
 
                     def gates(payload):
-                        button = dialog.get_by_role('button', name='Excluir definitivamente', exact=True)
-                        expect(button).to_be_disabled()
-                        fill_reason()
-                        expect(button).to_be_disabled()
-                        dialog.get_by_label('Entendo que a exclusão física', exact=False).check()
-                        expect(button).to_be_disabled()
-                        phrase = dialog.get_by_label(re.compile(r'^Digite exatamente:'))
-                        phrase.fill('FRASE INCORRETA')
-                        expect(button).to_be_disabled()
-                        phrase.fill(payload['confirmation_phrase'])
+                        button = dialog.get_by_role('button', name=re.compile(r'^Excluir definitivamente'))
                         expect(button).to_be_enabled()
+                        expect(dialog.get_by_label('Observação (opcional)', exact=True)).to_have_value('')
+                        assert dialog.get_by_label(re.compile(r'^Digite exatamente:')).count() == 0
+                        expect(preview).to_contain_text(str(payload['selected_count']))
 
                     try:
                         page.goto(url)
@@ -163,6 +170,7 @@ def main():
                         navigate('Escrituração e documentos')
                         search = page.get_by_role('textbox', name='Pesquisar documentos', exact=True)
                         search.fill('BULK-UI-')
+                        export_search(4)
                         select_documents([docs[0]])
                         open_bulk()
                         payload = prepare()
@@ -177,7 +185,7 @@ def main():
                         dialog.get_by_role('button', name='Cancelar', exact=True).click()
                         assert snapshot(cid) == before
                         open_bulk()
-                        expect(preview).to_have_count(0)
+                        expect(preview).to_be_visible()
                         dialog.get_by_role('button', name='Cancelar', exact=True).click()
                         page.get_by_role('button', name='Limpar seleção', exact=True).click()
                         expect(page.get_by_role('button', name='Operar selecionados', exact=True)).to_be_disabled()
@@ -196,7 +204,20 @@ def main():
                         page.locator('#active-company').select_option(str(cid))
                         search.fill('BULK-UI-')
                         assert snapshot(cid) == before and snapshot(other) == other_before
-                        report['checks'].append('Individual selection, mandatory preview/reason/ack/exact phrase; cancel, clear, filter, navigation and company change have zero business effects')
+                        report['checks'].append('Individual selection, automatic preview and single clear confirmation without mandatory reason or phrase; cancel, clear, filter, navigation and company change have zero business effects')
+                        # Company-wide scope ignores the current query and selection, but cancel never mutates data.
+                        with page.expect_response(lambda r: '/bulk-operations/preview' in r.url and r.request.method == 'POST') as cleanup:
+                            page.get_by_role('button', name='Limpar tudo neste módulo', exact=True).click()
+                        assert cleanup.value.ok, cleanup.value.text()
+                        cleanup_payload = cleanup.value.json()
+                        assert cleanup_payload['scope'] == 'company'
+                        cleanup_dialog = page.get_by_role('dialog', name='Limpar todos os movimentos do módulo', exact=True)
+                        expect(cleanup_dialog).to_contain_text('todos os exercícios')
+                        expect(cleanup_dialog).to_contain_text('Ignora filtros, página e seleção')
+                        cleanup_dialog.get_by_role('button', name='Cancelar', exact=True).click()
+                        assert snapshot(cid) == before and snapshot(other) == other_before
+                        report['checks'].append('Company-wide cleanup auto-previews all exercises with a clear scope; cancel preserves every movement')
+
 
                         # Single safe header edit, then two-record review/book via UI only.
                         select_documents([docs[0]])
@@ -237,6 +258,7 @@ def main():
                         navigate('Lançamentos contábeis')
                         journal_search = page.get_by_role('textbox', name='Pesquisar contabilidade', exact=True)
                         journal_search.fill('BULK-UI-J-')
+                        export_search(3)
 
                         def select_journals(items):
                             for journal in items:
@@ -280,13 +302,11 @@ def main():
                         assert not payload['can_confirm'] and payload['blockers']
                         expect(preview.get_by_role('alert')).to_contain_text('Operação bloqueada')
                         fill_reason()
-                        dialog.get_by_label('Entendo que a exclusão física', exact=False).check()
-                        dialog.get_by_label(re.compile(r'^Digite exatamente:')).fill(payload['confirmation_phrase'])
-                        expect(dialog.get_by_role('button', name='Excluir definitivamente', exact=True)).to_be_disabled()
+                        expect(dialog.get_by_role('button', name=re.compile(r'^Excluir definitivamente'))).to_be_disabled()
                         assert snapshot(cid) == closed_before
                         shot('closed-period-desktop.png')
                         dialog.get_by_role('button', name='Cancelar', exact=True).click()
-                        report['checks'].append('Closed accounting period blocks deletion even with all confirmation fields; preview leaves all business rows unchanged')
+                        report['checks'].append('Closed accounting period blocks deletion without bypass through the simplified confirmation; preview leaves all business rows unchanged')
                         navigate('Competências contábeis')
                         january = page.locator('article.month-card').filter(has=page.get_by_role('heading', name='Janeiro', exact=True))
                         january.get_by_role('button', name='Reabrir', exact=True).click()

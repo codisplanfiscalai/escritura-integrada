@@ -179,6 +179,10 @@ def route_policy(path, method, query, payload, session):
     if root == 'report-models':
         module = query.get('module') or session.get('module', 'accounting')
         return (module + '.reports' if module in {'fiscal', 'accounting', 'financial'} else 'invalid'), 'read', False
+    if root == 'movement-exports':
+        kind = tail.split('/')[2] if len(tail.split('/')) > 2 else ''
+        routine = {'documents.xlsx': 'fiscal.documents', 'journals.xlsx': 'accounting.journals'}.get(kind, 'invalid')
+        return routine, 'export', False
     if root == 'storage': return 'system.storage', 'export' if tail.endswith('/download') else 'read', False
     if root in {'exercises', 'periods'}:
         module = payload.get('module') or query.get('module') or session.get('module', 'fiscal')

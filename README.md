@@ -81,6 +81,7 @@ Na linha 0.8 em desenvolvimento, Fiscal → **CFOP e associações** oferece a r
 | Auditor Fiscal | Python integrado: auditoria interna/avulsa, snapshots, XML/eventos, recálculos delimitados, catálogos XLSX/JSON revisados, achados/tratamento, reprocessamento e PDF/Excel; DANFE 55 em Python |
 | Digitação contínua | Salvar e novo, padrões opcionais, Alt+N/Alt+S, Ctrl+Enter para partida, Tab/Shift+Tab e Esc; preservação de erro e idempotência |
 | Arquivos e backup | Originais por empresa/ano/hash, backup consistente integral, restauração assistida em pasta nova e verificação de registros, valores e vínculos |
+| Operações em massa | Limpar movimentos de todos os exercícios do módulo com uma confirmação; preservação dos protegidos, páginas até 5.000 e Excel da pesquisa completa |
 | Contabilidade | Plano por empresa, centros de custo, saldos iniciais, múltiplas partidas balanceadas, modelos com vigência e estornos rastreáveis |
 | Financeiro | Pagar/receber, parcelas, baixas parciais/totais com juros, multa e desconto; estorno de baixa e renegociação reversível |
 | Conciliação | Vínculos individuais ou rateados; baixa somente mediante escolha explícita; consulta de títulos e pagamentos por participante |

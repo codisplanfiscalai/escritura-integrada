@@ -64,6 +64,9 @@ jobs:
           python scripts/smoke_browser.py
           python scripts/browser_account_plans.py
           python scripts/browser_bulk_operations.py
+      - name: Validar modelos e prévia PDF no Chromium
+        if: success() || failure()
+        run: |
           python scripts/browser_reports.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()

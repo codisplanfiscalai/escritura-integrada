@@ -4,6 +4,8 @@ from .bulk_operations import BulkOperations
 
 
 def register_bulk_routes(app, core, actor):
+    from .movement_exports import register_movement_export_routes
+    register_movement_export_routes(app, core)
     service = BulkOperations(core)
 
     @app.post('/api/companies/{cid}/bulk-operations/preview')

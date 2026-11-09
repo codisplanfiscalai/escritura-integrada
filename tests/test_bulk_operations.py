@@ -46,7 +46,6 @@ class BulkOperationsTests(fixtures.CoreApiTests):
         d = self.doc()
         p = self.preview([d['id']])
         with self.assertRaises(DomainError): self.confirm(p, irreversible_acknowledged=False)
-        with self.assertRaises(DomainError): self.confirm(p, confirmation_phrase='sim')
         with self.assertRaises(DomainError): self.confirm(p, preview_hash='wrong')
         with self.core.db.transaction() as conn:
             conn.execute('UPDATE documents SET version=version+1 WHERE id=?', (d['id'],))
@@ -66,7 +65,7 @@ class BulkOperationsTests(fixtures.CoreApiTests):
         j = self.core.create_journal(self.a['id'], self.journal(day='2026-10-06'), 'teste')
         self.assertFalse(self.preview([j['id']], kind='journals')['can_confirm'])
         self.assertFalse(self.preview([d['id'], 999999])['can_confirm'])
-        for ids in ([], [d['id'], d['id']], [True], list(range(1, 502))):
+        for ids in ([], [d['id'], d['id']], [True], list(range(1, 5002))):
             with self.assertRaises(DomainError): self.preview(ids)
         self.integrity()
 
@@ -297,6 +296,91 @@ class BulkOperationsTests(fixtures.CoreApiTests):
         with self.assertRaises(DomainError): self.confirm(p, reason=chr(0xd800))
         with self.assertRaises(DomainError): self.confirm(p, confirmation_phrase=chr(0xd800))
         self.assertEqual(1, len(self.core.journals(self.a['id'])))
+        self.integrity()
+
+    def test_company_cleanup_preserves_closed_and_dependent_movements(self):
+        open_doc = self.doc('eligible')
+        dependent = self.doc('dependent')
+        old = self.core.create_document(self.a['id'], self.document('closed') | {'posting_date': '2026-10-06'}, 'teste')
+        self.core.create_title(self.a['id'], {'kind': 'payable', 'description': 'Teste', 'partner_name': 'Teste', 'document': 'Teste', 'issue_date': '2026-11-01', 'due_date': '2026-11-05', 'amount': '10.00', 'document_id': dependent['id']}, 'teste')
+        self.confirm(self.preview([old['id']], action='review', period='2026-10'))
+        self.confirm(self.preview([old['id']], action='book', period='2026-10'))
+        self.core.set_period(self.a['id'], {'period': '2026-10', 'module': 'fiscal', 'reason': 'Teste'}, 'teste', True)
+        p = self.preview([], scope='company')
+        self.assertTrue(p['can_confirm'], p)
+        self.assertEqual(3, p['total_count'])
+        self.assertEqual(1, p['selected_count'])
+        self.assertEqual(2, p['preserved_count'])
+        self.assertEqual({old['id'], dependent['id']}, {r['id'] for r in p['preserved_rows']})
+        confirmation = {'preview_id': p['id'], 'preview_hash': p['preview_hash'], 'irreversible_acknowledged': True}
+        result = self.service.confirm(self.a['id'], confirmation, self.uid, 'teste')
+        self.assertTrue(self.service.confirm(self.a['id'], confirmation, self.uid, 'teste')['duplicate'])
+        self.assertEqual(2, result['preserved_count'])
+        with self.core.db.read() as conn:
+            self.assertIsNone(conn.execute('SELECT id FROM documents WHERE id=?', (open_doc['id'],)).fetchone())
+            self.assertEqual(2, conn.execute('SELECT count(*) FROM documents WHERE company_id=?', (self.a['id'],)).fetchone()[0])
+        self.integrity()
+
+    def test_company_cleanup_new_record_invalidates_preview(self):
+        self.doc('first')
+        p = self.preview([], scope='company')
+        self.doc('new-after-preview')
+        with self.assertRaises(DomainError) as raised:
+            self.confirm(p)
+        self.assertEqual('stale_preview', raised.exception.code)
+        self.assertEqual(2, len(self.core.documents(self.a['id'])))
+
+    def test_company_cleanup_preserves_complete_closed_reversal_chain(self):
+        original, reversal = self.reversal_pair('2026-06-05', '2026-07-05', 'closed-chain')
+        independent = self.core.create_journal(self.a['id'], self.journal('independent'), 'teste')
+        self.core.set_period(self.a['id'], {'period': '2026-07', 'module': 'accounting', 'reason': 'Teste'}, 'teste', True)
+        p = self.preview([], kind='journals', scope='company', include_reversal_pairs=True)
+        self.assertTrue(p['can_confirm'], p)
+        self.assertEqual([independent['id']], p['effective_ids'])
+        self.assertEqual(2, p['preserved_count'])
+        self.confirm(p)
+        with self.core.db.read() as conn:
+            self.assertEqual({original['id'], reversal['id']}, {r[0] for r in conn.execute('SELECT id FROM journals WHERE company_id=?', (self.a['id'],))})
+        self.integrity()
+
+    def test_company_cleanup_linked_components_preserve_only_blocked_chain(self):
+        eligible, protected = self.doc('linked-eligible'), self.doc('linked-protected')
+        good = self.core.create_journal(self.a['id'], self.journal('linked-good'), 'teste')
+        bad = self.core.create_journal(self.a['id'], self.journal('linked-bad', day='2026-10-06'), 'teste')
+        with self.core.db.transaction() as conn:
+            conn.execute('UPDATE documents SET journal_id=? WHERE id=?', (good['id'], eligible['id']))
+            conn.execute('UPDATE documents SET journal_id=? WHERE id=?', (bad['id'], protected['id']))
+        self.core.set_period(self.a['id'], {'period': '2026-10', 'module': 'accounting', 'reason': 'Teste'}, 'teste', True)
+        p = self.preview([], scope='company', include_linked_journals=True, include_reversal_pairs=True)
+        self.assertTrue(p['can_confirm'], p)
+        self.assertEqual([eligible['id']], p['effective_ids'])
+        self.assertEqual(1, p['preserved_count'])
+        self.confirm(p)
+        with self.core.db.read() as conn:
+            self.assertEqual([protected['id']], [r[0] for r in conn.execute('SELECT id FROM documents WHERE company_id=?', (self.a['id'],))])
+            self.assertEqual([bad['id']], [r[0] for r in conn.execute('SELECT id FROM journals WHERE company_id=?', (self.a['id'],))])
+        self.integrity()
+
+    def test_company_cleanup_changed_protected_state_invalidates_preview(self):
+        eligible, protected = self.doc('eligible'), self.doc('protected')
+        self.core.create_title(self.a['id'], {'kind': 'payable', 'description': 'Teste', 'partner_name': 'Teste', 'document': 'Teste', 'issue_date': '2026-11-01', 'due_date': '2026-11-05', 'amount': '10.00', 'document_id': protected['id']}, 'teste')
+        p = self.preview([], scope='company')
+        with self.core.db.transaction() as conn:
+            conn.execute('UPDATE documents SET version=version+1 WHERE id=?', (protected['id'],))
+        with self.assertRaises(DomainError) as raised:
+            self.confirm(p)
+        self.assertEqual('stale_preview', raised.exception.code)
+        self.assertEqual(2, len(self.core.documents(self.a['id'])))
+
+    def test_company_cleanup_more_than_5000_and_no_sql_variable_limit(self):
+        with self.core.db.transaction() as conn:
+            for n in range(5001):
+                self.core._create_journal(conn, self.a['id'], self.journal(f'all-{n}'), 'teste')
+        p = self.preview([], kind='journals', scope='company')
+        self.assertTrue(p['can_confirm'], p)
+        self.assertEqual(5001, p['selected_count'])
+        self.confirm(p)
+        self.assertEqual([], self.core.journals(self.a['id']))
         self.integrity()
 
 # Do not inherit duplicate test methods; keep only the synthetic fixture/helpers.
