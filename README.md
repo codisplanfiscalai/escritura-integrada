@@ -67,6 +67,8 @@ Versionamento, concorrência, recuperação de falhas, caches e comandos de manu
 
 ## Recursos do aplicativo
 
+Na linha 0.8 em desenvolvimento, Fiscal → **CFOP e associações** oferece a referência completa do Anexo II consultado no CONFAZ, com 619 códigos e notas. A importação pode escriturar os documentos diretamente, com associações revisadas por empresa; a escrituração permite correções posteriores rastreáveis enquanto os períodos e efeitos vinculados permitirem. O fluxo de conferência individual continua disponível. Consulte [cobertura, origem, operação e limites](docs/ESCRITURACAO_FISCAL_0_8.md).
+
 | Área | Disponível |
 |---|---|
 | Empresas e cadastros | Empresas, estabelecimentos, participantes, produtos, serviços e históricos; consultas CNPJ/CEP revisáveis, múltiplas IEs e versões |

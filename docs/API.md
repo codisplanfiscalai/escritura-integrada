@@ -4,6 +4,18 @@ API JSON no prefixo `/api`, mesma origem do aplicativo. Valores recebidos são s
 
 ## Sessão e contexto
 
+### Incremento fiscal 0.8
+
+`GET /companies/{id}/cfop-reference?search=&direction=&date=YYYY-MM-DD&page=1` retorna metadados da referência e até 50 códigos com título, nota, vigência da redação e cadastro local. `POST .../cfop-reference/apply` recebe `{edition,date,reason}` e copia os códigos sem substituir os existentes; exige inclusão em cadastros fiscais.
+
+`GET/POST /companies/{id}/fiscal-import-mappings` e `PUT .../{mapping_id}` consultam/criam/editam associações. Campos: `direction`, `model` (vazio = todos), `source_cfop`, `target_cfop`, `valid_from`, `valid_to`, `responsible`, `reason`, `active`; a edição exige `version`. Vigências ativas sobrepostas são recusadas. Não há alteração retroativa dos documentos.
+
+`POST /companies/{id}/imports/{batch_id}/posting-preview` recebe `{cfop_mappings:{"incoming:55:5102":"1102"}}` (objeto opcional de escolhas somente do lote). Retorna documentos preparados, `import_posting` com elegibilidade/diagnóstico e `posting_hash`.
+
+A confirmação existente aceita `posting_mode:"book"`, `posting_hash`, as mesmas `cfop_mappings`, `preview_hash` e `selected`. Exige importar e escriturar. Revalida empresa, exercício, CFOP, parâmetros, bloqueios e apuração finalizada dentro da transação. A resposta acrescenta `documents_booked`. Não cria efeitos contábeis/financeiros implícitos. O modo `pending` e clientes sem `posting_mode` preservam a conferência individual anterior.
+
+O `PUT` existente de documentos permite corrigir escrituração sem efeitos vinculados, com `version` e `reason`, mantendo o estado escriturado. O original permanece imutável. O `POST .../review` registra a conferência posterior de uma importação direta. Períodos fechados, apurações finalizadas e vínculos continuam protegidos.
+
 - `GET /health` → `{status:"ok",version:"0.4.0-dev.1",demo:boolean}`.
 - `GET /session` → `{authenticated,setup_required,demo,user:{id,username}|null,csrf_token,active_company_id,period}`.
 - `POST /setup {username,password}` cria o primeiro administrador (senha mínima 12 caracteres), inicia sessão; disponível uma vez.

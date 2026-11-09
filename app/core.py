@@ -551,7 +551,7 @@ class Core:
         ensure_open(conn, cid, values["posting_date"][:7], "fiscal")
         from .tax_ledger import ensure_unfinalized
         ensure_unfinalized(conn, cid, values["posting_date"][:7])
-        extras = {k: payload[k] for k in ("source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "analytics", "raw_fields", "posting_date_proposed", "declared_new_total", "participant_id", "establishment_id", "document_category") if k in payload}
+        extras = {k: payload[k] for k in ("source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "analytics", "raw_fields", "posting_date_proposed", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting") if k in payload}
         values.update(company_id=cid, period=values["posting_date"][:7], taxes_json=taxes, items_json=items, source_json=source, extra_json=pack(extras), source_hash=source_hash, business_key=business_key, payload_hash=hashed, status="pending", created_at=now())
         did = conn.execute(f"INSERT INTO documents({','.join(values)}) VALUES({','.join('?' for _ in values)})", tuple(values.values())).lastrowid
         conn.execute("INSERT INTO document_sources(company_id,document_id,source_hash,source_json,created_at) VALUES(?,?,?,?,?)", (cid, did, source_hash, source, now()))
@@ -570,7 +570,9 @@ class Core:
             if hasattr(self, "_validate_document_links"):
                 self._validate_document_links(conn, cid, {**self._document(conn,cid,item_id),**payload})
             if old["status"] == "booked":
-                raise DomainError("Documento escriturado não pode ser editado por esta rotina.", 409, "document_booked")
+                if not hasattr(self, '_validate_booked_edit'):
+                    raise DomainError("Documento escriturado não pode ser editado por esta rotina.", 409, "document_booked")
+                self._validate_booked_edit(conn, cid, old, payload)
             values = {k: text(payload.get(k, old[k]), k, k in {"number", "model", "partner_name"}, 250) for k in ("direction", "number", "series", "model", "partner_name", "partner_tax_id", "key", "cfop")}
             if values["direction"] not in {"incoming", "outgoing"}:
                 raise DomainError("Informe entrada ou saída.")
@@ -585,6 +587,8 @@ class Core:
             ensure_unfinalized(conn, cid, values["posting_date"][:7])
             taxes = json_value(payload.get("taxes", json.loads(old["taxes_json"])), dict, "Tributos declarados")
             items = json_value(payload.get("items", json.loads(old["items_json"])), list, "Itens")
+            if old['source_hash'] and hasattr(self, '_preserve_import_item_origins'):
+                items = pack(self._preserve_import_item_origins(json.loads(old['items_json']), json.loads(items)))
             identity = "key:" + values["key"] if values["key"] else digest({k: values[k] for k in ("direction", "model", "series", "number", "partner_tax_id", "partner_name", "issue_date")})
             other = conn.execute("SELECT id FROM documents WHERE company_id=? AND business_key=? AND id<>?", (cid, identity, item_id)).fetchone()
             if other:
@@ -594,8 +598,14 @@ class Core:
                 if key in payload:
                     extras[key] = payload[key]
             values.update(payload_hash=digest(values | {"taxes": json.loads(taxes), "items": semantic_value(json.loads(items))}), business_key=identity, period=values["posting_date"][:7], taxes_json=taxes, items_json=items)
+            if old['status'] == 'booked':
+                self._validate_posted_classification(conn, cid, {**extras, **values, 'items': json.loads(items)})
+                if 'import_posting' in extras:
+                    extras['import_posting']['review_pending'] = True
+                    extras['import_posting']['last_edit_reason'] = reason
             values["extra_json"] = pack(extras)
-            conn.execute(f"UPDATE documents SET {','.join(k+'=?' for k in values)},status='pending',reviewed_by=NULL,review_reason=NULL,version=version+1 WHERE id=? AND company_id=?", (*values.values(), item_id, cid))
+            new_status = 'booked' if old['status'] == 'booked' else 'pending'
+            conn.execute(f"UPDATE documents SET {','.join(k+'=?' for k in values)},status=?,reviewed_by=NULL,review_reason=NULL,version=version+1 WHERE id=? AND company_id=?", (*values.values(), new_status, item_id, cid))
             audit(conn, cid, actor, "update", "document", item_id, {"reason": reason, "previous_version": old["version"], "before": {k: old[k] for k in values}, "after": values, "review_invalidated": True})
             return self._document(conn, cid, item_id)
 
@@ -607,6 +617,13 @@ class Core:
             ensure_open(conn, cid, doc["period"], "fiscal")
             from .tax_ledger import ensure_unfinalized
             ensure_unfinalized(conn, cid, doc["period"])
+            if doc['status'] == 'booked':
+                extra = json.loads(doc['extra_json'])
+                if extra.get('import_posting', {}).get('review_pending'):
+                    extra['import_posting']['review_pending'] = False
+                    conn.execute('UPDATE documents SET extra_json=?,reviewed_by=?,review_reason=?,version=version+1 WHERE id=? AND company_id=?', (pack(extra), actor, reason, item_id, cid))
+                    audit(conn, cid, actor, 'review-import-booking', 'document', item_id, {'reason': reason, 'previous_version': doc['version']})
+                    return self._document(conn, cid, item_id)
             if doc["status"] != "pending":
                 raise DomainError("Somente documento pendente pode ser conferido.", 409, "invalid_status")
             conn.execute("UPDATE documents SET status='reviewed',reviewed_by=?,review_reason=?,version=version+1 WHERE id=? AND company_id=?", (actor, reason, item_id, cid))
@@ -1081,11 +1098,16 @@ class Core:
             if batch["company_tax_id"] != company["tax_id"]:
                 raise DomainError("O CNPJ da empresa foi alterado. Gere uma nova prévia.", 409, "stale_company")
             parsed = json.loads(batch["parsed_json"])
+            posting_mode = payload.get('posting_mode', 'pending')
+            if not isinstance(posting_mode, str) or posting_mode not in {'pending', 'book'}:
+                raise DomainError('Modo de importação fiscal inválido.')
             from .permissions import import_access
             import_access(conn,cid,parsed,"import")
             bank_account = text(payload.get("bank_account", batch["bank_account"]), "Conta bancária", bool(parsed.get("transactions")), 200)
             if batch["status"] == "confirmed":
                 previous = json.loads(batch["confirmation_json"])
+                if previous.get('posting_mode', 'pending') != posting_mode:
+                    raise DomainError('Lote já confirmado com outro modo de escrituração.', 409, 'idempotency_conflict')
                 if bank_account != batch["bank_account"]:
                     raise DomainError("Importação já confirmada em outra identificação de conta bancária.", 409, "idempotency_conflict")
                 if payload.get('selected') is not None and sorted(payload['selected']) != previous.get('selected'):
@@ -1095,11 +1117,31 @@ class Core:
                 raise DomainError("A prévia possui erros que impedem a confirmação. Corrija a origem ou as opções e importe novamente.", 409, "import_blocked")
             from .import_scope import classify, selected_rows
             classify(conn,cid,parsed,batch['period'][:4])
+            posting_reason = ''
+            if posting_mode == 'book':
+                if not parsed['documents'] or not hasattr(self, '_prepare_fiscal_import'):
+                    raise DomainError('Escrituração direta disponível somente para documentos fiscais.')
+                from .permissions import effect
+                effect(conn, cid, 'fiscal.documents', 'book')
+                parsed = self._prepare_fiscal_import(conn, cid, batch, payload)
+                if payload.get('posting_hash') != parsed['posting_hash']:
+                    raise DomainError('A preparação da escrituração mudou. Confira novamente os CFOPs e as competências.', 409, 'stale_posting_preview')
+                posting_reason = text(payload.get('posting_reason', 'Escrituração fiscal direta autorizada na confirmação da importação.'), 'Motivo da escrituração', True, 1000)
             selected = selected_rows(parsed,payload)
-            result = {"import_id": item_id, "status": "confirmed", "documents_created": 0, "documents_duplicate": 0, "transactions_created": 0, "transactions_duplicate": 0, "document_ids": [], "transaction_ids": []}
+            if posting_mode == 'book':
+                for doc in parsed['documents']:
+                    if doc['_selection'] in selected and not doc['import_posting']['eligible']:
+                        raise DomainError(doc['import_posting']['reason'], 409, 'fiscal_posting_blocked')
+            result = {"import_id": item_id, "status": "confirmed", "posting_mode": posting_mode, "documents_booked": 0, "documents_created": 0, "documents_duplicate": 0, "transactions_created": 0, "transactions_duplicate": 0, "document_ids": [], "transaction_ids": []}
+            existing_imports = self._fiscal_import_index(conn, cid, parsed['documents']) if posting_mode == 'book' else {}
             for source_doc in parsed.get("documents", []):
                 if source_doc['_selection'] not in selected: continue
-                doc = self._create_document(conn, cid, {k:v for k,v in source_doc.items() if not k.startswith('_')}, actor)
+                doc = self._existing_fiscal_import(conn, cid, source_doc, existing_imports) if posting_mode == 'book' else None
+                if doc is None:
+                    doc = self._create_document(conn, cid, {k:v for k,v in source_doc.items() if not k.startswith('_')}, actor)
+                if posting_mode == 'book' and not doc.get('duplicate'):
+                    doc = self._post_fiscal_import(conn, cid, doc, actor, posting_reason)
+                    result['documents_booked'] += 1
                 result["documents_duplicate" if doc.get("duplicate") else "documents_created"] += 1
                 result["document_ids"].append(doc["id"])
             for source_tx in parsed.get("transactions", []):

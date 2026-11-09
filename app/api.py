@@ -40,6 +40,8 @@ def create_app(data_dir=None, demo=False):
     application.state.db = database
     application.state.auditor = worker
     application.state.demo = demo
+    from .fiscal_api import register_fiscal_routes
+    register_fiscal_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .lookups import LookupService
     application.state.lookups = LookupService(database)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"

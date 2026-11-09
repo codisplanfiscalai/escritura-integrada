@@ -16,8 +16,10 @@ from .fiscal_reports import FiscalReportsMixin
 
 from .auditor import AuditorMixin
 from .module_imports import ModuleImportsMixin
+from .cfop import CfopMixin
+from .fiscal_import import FiscalImportMixin
 
-class BusinessCore(AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
+class BusinessCore(FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
     def _validate_document_links(self,conn,cid,payload):
         for k,kind in [('participant_id','participant'),('establishment_id','establishment')]:
             if payload.get(k):
@@ -33,6 +35,8 @@ class BusinessCore(AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalRepor
                 if m['kind'] not in {'product','service'}:raise DomainError('Item deve referenciar um produto ou serviço.')
 
     def create_document(self,cid,payload,actor):
+        payload = dict(payload)
+        payload.pop('import_posting', None)  # Only the immutable import flow may set this provenance.
         with self.db.transaction() as conn:
             if payload.get('idempotency_key'):
                 key,hashed,previous=self._operation(conn,cid,'manual-document',payload)

@@ -25,6 +25,7 @@ for package in ("PySide6", "PySide6_Essentials", "PySide6_Addons", "shiboken6"):
         pass
 
 datas += [(str(root/'app/auditor_engine/data'), 'app/auditor_engine/data')]
+datas += [(str(root/'app/data'), 'app/data')]
 datas += collect_data_files('reportlab', includes=['fonts/*'])
 for package in ('BrazilFiscalReport','fpdf2','fonttools','python-barcode','phonenumbers','qrcode','lxml'):datas+=copy_metadata(package)
 datas += collect_data_files('brazilfiscalreport')
