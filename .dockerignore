@@ -12,6 +12,8 @@
 !docker/mirrors/*-entrypoint.sh
 !app/
 !app/*.py
+!app/data/
+!app/data/*.json
 !app/auditor_engine/
 !app/auditor_engine/**
 !scripts/

@@ -4,6 +4,7 @@ import {version as applicationVersion} from '../package.json';
 import Icon from './components/Icon.vue';import BaseModal from './components/BaseModal.vue';import EmptyState from './components/EmptyState.vue';
 import AssessmentsView from './views/AssessmentsView.vue';import ProsoftView from './views/ProsoftView.vue';import UsersView from './views/UsersView.vue';
 import StorageView from './views/StorageView.vue';
+import CfopView from './views/CfopView.vue';
 import AuditorView from './views/AuditorView.vue';
 import ModuleImportView from './views/ModuleImportView.vue';
 import GroupsView from './views/GroupsView.vue';
@@ -17,6 +18,7 @@ const menus=[
 {id:'imports',label:'Importações fiscais',icon:'import',component:ImportView,module:'fiscal',routine:'fiscal.imports'},
 {id:'masters',label:'Participantes, produtos e serviços',icon:'building',component:MastersView,module:'fiscal',routine:'fiscal.masters',props:{area:'fiscal'}},
 {id:'catalogs',label:'Classificações fiscais',icon:'book',component:SettingsView,module:'fiscal',routine:'fiscal.masters',props:{initialSection:'catalogs'}},
+{id:'cfop',label:'CFOP e associações',icon:'book',component:CfopView,module:'fiscal',routine:'fiscal.masters'},
 {id:'settings',label:'Parametrizações fiscais',icon:'settings',component:SettingsView,module:'fiscal',routine:'fiscal.parameters',props:{initialSection:'rules'}},
 {id:'assessments',label:'Apurações e ajustes',icon:'reports',component:AssessmentsView,module:'fiscal',routine:'fiscal.assessments'},
 {id:'fiscal-reports',label:'Livros e relatórios fiscais',icon:'reports',component:ReportsView,module:'fiscal',routine:'fiscal.reports',props:{area:'fiscal'}},

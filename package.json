@@ -1,6 +1,6 @@
 {
   "name": "escritura-integrada-preview",
-  "version": "0.7.4-dev.13",
+  "version": "0.8.0-dev.0",
   "private": true,
   "scripts": {
     "dev": "python3 scripts/run_preview.py"

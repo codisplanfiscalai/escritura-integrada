@@ -279,6 +279,11 @@ def main():
                         exports(page,url,cid,nav,check,shot)
                         from browser_evolution import run as evolution
                         evolution(page,browser,url,cid,csrf,nav,check,shot)
+                        from browser_fiscal import run as fiscal
+                        fiscal(page,url,cid,nav,check,shot)
+                        nav('Livros e relatórios fiscais')
+                        page.get_by_role('button',name='Gerar relatório',exact=True).click()
+                        expect(page.locator('.report-output')).to_be_visible()
                         for width,height in [(1024,768),(390,844)]:
                             page.set_viewport_size({'width':width,'height':height})
                             assert page.evaluate('document.documentElement.scrollWidth')<=width+1,'Overflow da página'
