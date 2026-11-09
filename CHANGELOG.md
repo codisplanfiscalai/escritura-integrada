@@ -4,6 +4,8 @@ As releases e pré-releases publicadas possuem versão, commit de origem, manife
 
 ## 0.8.0 — em desenvolvimento
 
+- Relatórios: 17 modelos contábeis/fiscais específicos, catálogo de evidências, prévia PDF maximizável, folha inicial e exportações vinculadas aos filtros gerados. Saldos do Razão pesquisado preservados e filtros de apuração incompatíveis rejeitados. Os modelos não certificados são identificados sem alegar identidade Prosoft. [Cobertura e validação](docs/RELATORIOS_E_MODELOS.md).
+
 - Operações individuais/em lote fiscais e contábeis, com exclusão física transacional, prévia/consentimento, períodos e dependências, conferência/escrituração fiscal e alterações restritas. [Operação e limites](docs/OPERACOES_EM_LOTE.md).
 
 - Plano contábil genérico de 73 contas; importação/exportação JSON nativo e Prosoft (exportação 204 e importação P/C), com prévia, originais preservados, conflitos e referência sem ativação. [Operação e limites](docs/PLANO_CONTAS_INTERCAMBIO.md).
