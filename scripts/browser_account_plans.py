@@ -1,6 +1,6 @@
 """Real Chromium acceptance of account plans; isolated synthetic demo data only."""
 from pathlib import Path
-import json, os, socket, subprocess, sys, tempfile, time, traceback, urllib.request
+import json, os, re, socket, subprocess, sys, tempfile, time, traceback, urllib.request
 from playwright.sync_api import sync_playwright, expect
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'artifacts'/'browser-account-plans'
@@ -41,7 +41,9 @@ def main():
               button.click()
               panel=page.get_by_role('region',name='Intercâmbio de plano de contas')
               panel.get_by_role('button',name='Abrir ferramentas').click()
-              panel.get_by_label('Operação',exact=True).select_option('default')
+              # Wrapped select labels include option text in Playwright's label lookup.
+              # Anchor the field prefix, allowing options without matching other fields.
+              panel.get_by_label(re.compile(r'^Operação')).select_option('default')
               panel.get_by_role('button',name='Gerar prévia',exact=True).click()
               preview=page.get_by_role('region',name='Prévia do plano de contas')
               expect(preview.get_by_text('73 registros no total',exact=True)).to_be_visible()
@@ -60,7 +62,7 @@ def main():
               panel.get_by_label('Revisei as propriedades',exact=False).check();confirm.click()
               expect(panel.get_by_role('status')).to_be_visible();assert accounts()==after
               check('Repetição do template não duplica nem altera contas')
-              panel.get_by_label('Operação',exact=True).select_option('export')
+              panel.get_by_label(re.compile(r'^Operação')).select_option('export')
               panel.get_by_role('button',name='Gerar prévia',exact=True).click()
               export=panel.get_by_role('button',name='Confirmar e baixar arquivo',exact=True)
               expect(export).to_be_disabled();panel.get_by_label('Conferi o formato',exact=False).check()
@@ -72,10 +74,10 @@ def main():
               duplicate=dict(fixture['accounts'][0],access_code='99000',prosoft_code='99000',name='Duplicada sintética de referência')
               fixture['accounts'].append(duplicate)
               raw=json.dumps(fixture,ensure_ascii=False).encode();source=Path(data)/'reference-synthetic.json';source.write_bytes(raw)
-              panel.get_by_label('Operação',exact=True).select_option('import');panel.get_by_label('Arquivo de origem',exact=False).set_input_files(source)
+              panel.get_by_label(re.compile(r'^Operação')).select_option('import');panel.get_by_label('Arquivo de origem',exact=False).set_input_files(source)
               panel.get_by_role('button',name='Gerar prévia',exact=True).click()
               expect(preview.get_by_text('Ativação de contas bloqueada',exact=False)).to_be_visible();expect(confirm).to_be_disabled()
-              panel.get_by_label('Destino do lote',exact=True).select_option('reference')
+              panel.get_by_label(re.compile(r'^Destino do lote')).select_option('reference')
               panel.get_by_label('Motivo da importação *',exact=True).fill('Preservar lote sintético integral sem ativação')
               refconfirm=panel.get_by_role('button',name='Guardar referência sem ativar contas',exact=True)
               expect(refconfirm).to_be_disabled();panel.get_by_label('Revisei as propriedades',exact=False).check()
@@ -102,7 +104,7 @@ def main():
               expect(panel.get_by_role('button',name='Gerar prévia',exact=True)).to_be_disabled()
               check('Cancelar limpa arquivo, prévia e confirmação; reabertura exige nova seleção')
               # Delay a real preview response until after company context changes.
-              panel.get_by_label('Operação',exact=True).select_option('default')
+              panel.get_by_label(re.compile(r'^Operação')).select_option('default')
               held=[]
               def hold(route):held.append((route,route.fetch()))
               page.route('**/account-plans/preview',hold)
