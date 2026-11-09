@@ -88,7 +88,8 @@ class FiscalImportTests(unittest.TestCase):
         result = self.confirm(again, self.prepared(again))
         self.assertEqual(1, result['documents_duplicate']); self.assertEqual(0, result['documents_booked'])
         self.assertEqual('Contraparte corrigida no teste', self.core.documents(self.a['id'])[0]['partner_name'])
-        self.assertEqual(self.xml(), self.app.state.db.connect().execute('SELECT original FROM imports WHERE id=?', (batch['id'],)).fetchone()[0])
+        with self.app.state.db.read() as conn:
+            self.assertEqual(self.xml(), conn.execute('SELECT original FROM imports WHERE id=?', (batch['id'],)).fetchone()[0])
         stale = self.client.put(self.scope(f"/documents/{doc['id']}"), json=doc | {'reason': 'Versão antiga'})
         self.assertEqual(409, stale.status_code)
 
