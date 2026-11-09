@@ -19,8 +19,9 @@ from .module_imports import ModuleImportsMixin
 from .cfop import CfopMixin
 from .fiscal_import import FiscalImportMixin
 from .cfop_source import CfopSourceMixin
+from .account_plans import AccountPlansMixin
 
-class BusinessCore(CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
+class BusinessCore(AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
     def _validate_document_links(self,conn,cid,payload):
         for k,kind in [('participant_id','participant'),('establishment_id','establishment')]:
             if payload.get(k):
@@ -141,8 +142,15 @@ class BusinessCore(CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, 
                 if e['action']=='reverse-booking':
                     journal_ids.update(x for x in [e['details'].get('reversal_journal_id'),e['details'].get('before',{}).get('journal_id')] if x)
             from .permissions import readable
+            journals=[]
+            if readable(conn,cid,'accounting.journals'):
+                for journal_id in sorted(journal_ids):
+                    try:journals.append(self._journal(conn,cid,journal_id))
+                    except DomainError as exc:
+                        if exc.status!=404:raise
+                        journals.append({'id':journal_id,'deleted':True,'status':'deleted'})
             return {'document':doc,'titles':titles if readable(conn,cid,'financial.titles') else [],
-                'journals':[self._journal(conn,cid,i) for i in sorted(journal_ids)] if readable(conn,cid,'accounting.journals') else [],
+                'journals':journals,
                 'events':events if readable(conn,cid,'system.audit') else [],
                 'renegotiations':agreements if readable(conn,cid,'financial.titles') else []}
 

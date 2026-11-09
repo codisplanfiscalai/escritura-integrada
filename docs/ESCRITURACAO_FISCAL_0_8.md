@@ -1,6 +1,6 @@
 # Escrituração fiscal — incremento 0.8
 
-Escopo desta etapa: CFOP, associações por empresa, importação com escrituração fiscal direta e edição posterior. O pedido de plano de contas foi suspenso por orientação expressa; nenhum importador ou plano contábil novo integra esta entrega.
+Escopo desta etapa: CFOP, associações por empresa, importação com escrituração fiscal direta e edição posterior. O plano de contas não integrou a etapa fiscal inicial. Sua implementação posterior, em trilha contábil separada, está documentada em [Plano de contas e intercâmbio](PLANO_CONTAS_INTERCAMBIO.md).
 
 A carga dos novos anexos `tabcfop.pdf` e `tabcfop.txt`, com 779 registros, está detalhada em [Carga CFOP](CFOP_CARGA_REFERENCIA.md). Os parâmetros declarados são preservados sem ativação automática.
 

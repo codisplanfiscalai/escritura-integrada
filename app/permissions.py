@@ -8,13 +8,13 @@ ACTIONS = {'read': 'Consultar', 'create': 'Incluir', 'edit': 'Editar', 'delete':
            'import': 'Importar', 'export': 'Exportar', 'print': 'Imprimir', 'book': 'Escriturar',
            'settle': 'Realizar baixas', 'reverse': 'Estornar', 'close': 'Fechar', 'reopen': 'Reabrir'}
 ROUTINES = {
-    'fiscal.documents': ('Escrituração e documentos', 'read create edit book reverse export print'),
+    'fiscal.documents': ('Escrituração e documentos', 'read create edit delete book reverse export print'),
     'fiscal.imports': ('Importações fiscais', 'read import export'),
     'fiscal.masters': ('Cadastros fiscais', 'read create edit delete'),
     'fiscal.parameters': ('Parametrizações fiscais', 'read create edit delete'),
     'fiscal.assessments': ('Apurações e ajustes', 'read create edit reverse book export print'),
     'fiscal.reports': ('Livros e relatórios fiscais', 'read export print'),
-    'accounting.journals': ('Lançamentos e saldos iniciais', 'read create book reverse export print'),
+    'accounting.journals': ('Lançamentos e saldos iniciais', 'read create edit delete book reverse export print'),
     'accounting.accounts': ('Plano de contas', 'read create edit delete'),
     'accounting.histories': ('Históricos e modelos contábeis', 'read create edit delete'),
     'accounting.cost_centers': ('Centros de custo', 'read create edit delete'),
@@ -138,6 +138,17 @@ def route_policy(path, method, query, payload, session):
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
+    if root == 'bulk-operations':
+        # The stored preview owns the action. The service checks its permission
+        # again inside the committing transaction; middleware still guards read,
+        # session, CSRF, active company, module and exercise on both POSTs.
+        routine = {'fiscal':'fiscal.documents','accounting':'accounting.journals'}.get(session.get('module'),'invalid')
+        return routine, 'read', False
+    if root == 'account-plans':
+        if tail.endswith(('/export-preview','/export-confirm','/original','/native')):
+            return 'accounting.imports', 'export', False
+        if write:return 'accounting.imports', 'import', False
+        return 'accounting.accounts', 'read', False
     if root == 'cfop-reference':
         return 'fiscal.masters', 'create' if write else 'read', False
     if root == 'cfop-source-loads':
