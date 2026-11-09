@@ -138,6 +138,11 @@ def route_policy(path, method, query, payload, session):
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
+    if root == 'account-plans':
+        if tail.endswith(('/export-preview','/export-confirm','/original','/native')):
+            return 'accounting.imports', 'export', False
+        if write:return 'accounting.imports', 'import', False
+        return 'accounting.accounts', 'read', False
     if root == 'cfop-reference':
         return 'fiscal.masters', 'create' if write else 'read', False
     if root == 'cfop-source-loads':

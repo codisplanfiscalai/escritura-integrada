@@ -67,6 +67,8 @@ Versionamento, concorrência, recuperação de falhas, caches e comandos de manu
 
 ## Recursos do aplicativo
 
+Contabilidade → **Plano de contas** oferece um modelo independente de 73 contas e intercâmbio JSON/Prosoft, com prévia, conservação do original e confirmação sem substituir cadastros. Cargas incompatíveis com o plano ativo podem ser guardadas integralmente como referência. Consulte [formatos, revisão das propriedades e limites](docs/PLANO_CONTAS_INTERCAMBIO.md).
+
 Na linha 0.8 em desenvolvimento, Fiscal → **CFOP e associações** oferece a referência completa do Anexo II consultado no CONFAZ, com 619 códigos e notas. A importação pode escriturar os documentos diretamente, com associações revisadas por empresa; a escrituração permite correções posteriores rastreáveis enquanto os períodos e efeitos vinculados permitirem. O fluxo de conferência individual continua disponível. Consulte [cobertura, origem, operação e limites](docs/ESCRITURACAO_FISCAL_0_8.md).
 
 | Área | Disponível |

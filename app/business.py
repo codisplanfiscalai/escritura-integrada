@@ -19,8 +19,9 @@ from .module_imports import ModuleImportsMixin
 from .cfop import CfopMixin
 from .fiscal_import import FiscalImportMixin
 from .cfop_source import CfopSourceMixin
+from .account_plans import AccountPlansMixin
 
-class BusinessCore(CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
+class BusinessCore(AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
     def _validate_document_links(self,conn,cid,payload):
         for k,kind in [('participant_id','participant'),('establishment_id','establishment')]:
             if payload.get(k):
