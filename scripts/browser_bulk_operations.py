@@ -97,14 +97,23 @@ def main():
                         for doc in docs:
                             page.get_by_role('checkbox', name=f'Selecionar documento {doc["number"]} (#{doc["id"]})', exact=True).check()
 
+                    auto_preview = {}
+
                     def open_bulk(action='delete'):
-                        page.get_by_role('button', name='Operar selecionados', exact=True).click()
+                        with page.expect_response(lambda r: '/bulk-operations/preview' in r.url and r.request.method == 'POST') as result:
+                            page.get_by_role('button', name='Operar selecionados', exact=True).click()
+                        assert result.value.ok, result.value.text()
+                        auto_preview.clear()
+                        auto_preview.update(result.value.json())
                         dialog.get_by_label(re.compile(r'^Operação')).select_option(action)
                         expect(dialog).to_be_visible()
 
                     def prepare():
-                        button = dialog.get_by_role('button', name='Gerar prévia', exact=True)
-                        # Opening prepares automatically; wait before observing a refresh.
+                        if preview.is_visible():
+                            # The initial preview is sufficient; no second preview step.
+                            expect(dialog.get_by_role('button', name='Atualizar prévia', exact=True)).to_have_count(0)
+                            return dict(auto_preview)
+                        button = dialog.get_by_role('button', name=re.compile(r'^(Atualizar prévia|Conferir alteração)$'))
                         expect(button).to_be_enabled()
                         with page.expect_response(lambda r: '/bulk-operations/preview' in r.url and r.request.method == 'POST') as result:
                             button.click()
@@ -134,11 +143,19 @@ def main():
                         report['checks'].append(f'Excel downloaded with all {expected_count} filtered records; pages 1000 and 5000 available')
 
                     def fill_reason():
+                        details = dialog.locator('details.operation-details')
+                        if details.get_attribute('open') is None:
+                            details.locator('summary').first.click()
                         dialog.get_by_label('Observação (opcional)', exact=True).fill('Aceitação Chromium exclusivamente sintética')
+                        details.locator('summary').first.click()
 
                     def gates(payload):
                         button = dialog.get_by_role('button', name=re.compile(r'^Excluir definitivamente'))
                         expect(button).to_be_enabled()
+                        details = dialog.locator('details.operation-details')
+                        assert details.get_attribute('open') is None
+                        expect(dialog.get_by_text('Permissões:', exact=False)).not_to_be_visible()
+                        expect(dialog.get_by_role('button', name='Atualizar prévia', exact=True)).to_have_count(0)
                         expect(dialog.get_by_label('Observação (opcional)', exact=True)).to_have_value('')
                         assert dialog.get_by_label(re.compile(r'^Digite exatamente:')).count() == 0
                         expect(preview).to_contain_text(str(payload['selected_count']))
@@ -217,6 +234,12 @@ def main():
                         cleanup_dialog = page.get_by_role('dialog', name='Limpar todos os movimentos do módulo', exact=True)
                         expect(cleanup_dialog).to_contain_text('todos os exercícios')
                         expect(cleanup_dialog).to_contain_text('Ignora filtros, página e seleção')
+                        assert cleanup_dialog.locator('details.operation-details').get_attribute('open') is None
+                        shot('company-cleanup-desktop.png')
+                        page.set_viewport_size({'width': 390, 'height': 844})
+                        shot('company-cleanup-mobile.png')
+                        assert page.evaluate('document.documentElement.scrollWidth') <= 391
+                        page.set_viewport_size({'width': 1440, 'height': 1000})
                         cleanup_dialog.get_by_role('button', name='Cancelar', exact=True).click()
                         assert snapshot(cid) == before and snapshot(other) == other_before
                         report['checks'].append('Company-wide cleanup auto-previews all exercises with a clear scope; cancel preserves every movement')

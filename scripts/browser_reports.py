@@ -159,6 +159,39 @@ def main():
                             expect(controls).to_be_visible()
                             expect(kind).to_have_value({'accounting': 'trial-balance', 'fiscal': 'fiscal-documents', 'financial': 'financial'}[area])
                             expect(controls.get_by_role('button', name='Gerar relatório', exact=True)).to_be_enabled()
+                            if area == 'accounting':
+                                # Fixture preparation only in this process's isolated demo directory.
+                                # First prove the domain rejects incomplete classifications unchanged.
+                                assert Path(data).is_dir() and Path(data).name.startswith('escritura-reports-ui-')
+                                companies = read('/api/companies')
+                                assert next(c for c in companies if c['id'] == cid)['code'] == 'DEMO001'
+                                other_accounts = read(f'/api/companies/{other}/accounts')
+                                precondition = page.request.get(
+                                    url + f'/api/companies/{cid}/business-reports/balance-sheet'
+                                    '?start=2026-01-01&end=2026-12-31')
+                                assert precondition.status == 409, precondition.text()
+                                assert precondition.json().get('code') == 'unmapped_accounts', precondition.text()
+                                report['checks'].append('Unclassified disposable demo balance sheet returns 409/unmapped_accounts before fixture setup')
+                                groups = {'1': 'asset', '2': 'asset', '3': 'asset',
+                                          '4': 'liability', '5': 'revenue', '6': 'expense'}
+                                accounts = read(f'/api/companies/{cid}/accounts')
+                                assert {a['access_code'] for a in accounts} == set(groups)
+                                csrf = read('/api/session')['csrf_token']
+                                for account in accounts:
+                                    response = page.request.put(
+                                        url + f'/api/companies/{cid}/accounts/{account["id"]}',
+                                        data={'version': account['version'],
+                                              'report_group': groups[account['access_code']]},
+                                        headers={'X-CSRF-Token': csrf})
+                                    assert response.ok, response.text()
+                                    saved = response.json()
+                                    assert saved['report_group'] == groups[account['access_code']]
+                                    assert saved['version'] == account['version'] + 1
+                                    for field in ('access_code', 'classifier', 'name', 'nature',
+                                                  'analytical', 'requires_cost_center', 'active'):
+                                        assert saved[field] == account[field], (field, saved, account)
+                                assert read(f'/api/companies/{other}/accounts') == other_accounts
+                                report['checks'].append('Explicit versioned/CSRF account-group fixture for DEMO001 only; account identity, nature, flags and other company unchanged')
                             options = kind.locator('option').evaluate_all('(xs)=>xs.map(x=>x.value)')
                             for value in options:
                                 kind.select_option(value)
