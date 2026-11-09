@@ -4,6 +4,8 @@ As releases e pré-releases publicadas possuem versão, commit de origem, manife
 
 ## 0.8.0 — em desenvolvimento
 
+- Operações individuais/em lote fiscais e contábeis, com exclusão física transacional, prévia/consentimento, períodos e dependências, conferência/escrituração fiscal e alterações restritas. [Operação e limites](docs/OPERACOES_EM_LOTE.md).
+
 - Plano contábil genérico de 73 contas; importação/exportação JSON nativo e Prosoft (exportação 204 e importação P/C), com prévia, originais preservados, conflitos e referência sem ativação. [Operação e limites](docs/PLANO_CONTAS_INTERCAMBIO.md).
 
 - Carga padrão dos relatórios CFOP enviados: 779 registros, textos e parâmetros preservados, comparação com o CONFAZ e importação por empresa sem ativação tributária. Detalhes e limites em [Carga CFOP](docs/CFOP_CARGA_REFERENCIA.md).

@@ -39,6 +39,16 @@ def digest(value):
     return hashlib.sha256((value if isinstance(value, bytes) else pack(value).encode())).hexdigest()
 
 
+def next_movement_id(conn, kind):
+    """Never recycle movement IDs referenced by retained historical snapshots."""
+    if kind not in {'documents', 'journals'}: raise ValueError('Unsupported movement kind')
+    live = conn.execute(f'SELECT COALESCE(MAX(id),0) FROM {kind}').fetchone()[0]
+    removed = conn.execute('SELECT COALESCE(MAX(record_id),0) FROM bulk_deleted_movements WHERE kind=?',(kind,)).fetchone()[0]
+    value = max(live, removed) + 1
+    if value > 9223372036854775807: raise DomainError('Limite de identificadores atingido.',409,'identifier_limit')
+    return value
+
+
 def semantic_value(value):
     """Exclude origin locators from equality; renaming a file is not a new invoice."""
     if isinstance(value, dict):
@@ -464,9 +474,12 @@ class Core:
             if existing["request_hash"] != hashed:
                 raise DomainError("Chave de idempotência já utilizada com conteúdo diferente.", 409, "idempotency_conflict")
             return self._journal(conn, cid, existing["id"]) | {"duplicate": True}
+        if conn.execute("SELECT 1 FROM bulk_deleted_movements WHERE company_id=? AND kind='journals' AND idempotency_key=?",(cid,key)).fetchone():
+            raise DomainError('Este pedido originou lançamento excluído fisicamente. Inicie uma nova operação com outra chave.',409,'movement_deleted')
         ensure_open(conn, cid, day[:7], "accounting")
         number = conn.execute("SELECT COALESCE(MAX(number),0)+1 FROM journals WHERE company_id=?", (cid,)).fetchone()[0]
-        jid = conn.execute("INSERT INTO journals(company_id,number,date,period,document,history,total_cents,idempotency_key,request_hash,reversal_of,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (cid, number, day, day[:7], document, history, total, key, hashed, reversal_of, now(), actor)).lastrowid
+        jid = next_movement_id(conn,'journals')
+        conn.execute("INSERT INTO journals(id,company_id,number,date,period,document,history,total_cents,idempotency_key,request_hash,reversal_of,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (jid, cid, number, day, day[:7], document, history, total, key, hashed, reversal_of, now(), actor))
         for index, line in enumerate(lines, 1):
             conn.execute("INSERT INTO journal_lines(company_id,journal_id,position,account_id,debit_cents,credit_cents,cost_center_id) VALUES(?,?,?,?,?,?,?)", (cid, jid, index, line["account_id"], line["debit_cents"], line["credit_cents"], line["cost_center_id"]))
         if reversal_of:
@@ -552,7 +565,7 @@ class Core:
         from .tax_ledger import ensure_unfinalized
         ensure_unfinalized(conn, cid, values["posting_date"][:7])
         extras = {k: payload[k] for k in ("source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "analytics", "raw_fields", "posting_date_proposed", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting") if k in payload}
-        values.update(company_id=cid, period=values["posting_date"][:7], taxes_json=taxes, items_json=items, source_json=source, extra_json=pack(extras), source_hash=source_hash, business_key=business_key, payload_hash=hashed, status="pending", created_at=now())
+        values.update(id=next_movement_id(conn,'documents'), company_id=cid, period=values["posting_date"][:7], taxes_json=taxes, items_json=items, source_json=source, extra_json=pack(extras), source_hash=source_hash, business_key=business_key, payload_hash=hashed, status="pending", created_at=now())
         did = conn.execute(f"INSERT INTO documents({','.join(values)}) VALUES({','.join('?' for _ in values)})", tuple(values.values())).lastrowid
         conn.execute("INSERT INTO document_sources(company_id,document_id,source_hash,source_json,created_at) VALUES(?,?,?,?,?)", (cid, did, source_hash, source, now()))
         audit(conn, cid, actor, "create", "document", did, {"status": "pending", "source_hash": source_hash, "period": values["period"]})
@@ -1106,6 +1119,8 @@ class Core:
             bank_account = text(payload.get("bank_account", batch["bank_account"]), "Conta bancária", bool(parsed.get("transactions")), 200)
             if batch["status"] == "confirmed":
                 previous = json.loads(batch["confirmation_json"])
+                if previous.get('movement_deleted'):
+                    raise DomainError('Movimentos deste lote foram excluídos fisicamente. O resultado anterior não pode ser repetido; prepare uma nova intenção de importação.',409,'movement_deleted')
                 if previous.get('posting_mode', 'pending') != posting_mode:
                     raise DomainError('Lote já confirmado com outro modo de escrituração.', 409, 'idempotency_conflict')
                 if bank_account != batch["bank_account"]:

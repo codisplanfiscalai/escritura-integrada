@@ -142,8 +142,15 @@ class BusinessCore(AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMi
                 if e['action']=='reverse-booking':
                     journal_ids.update(x for x in [e['details'].get('reversal_journal_id'),e['details'].get('before',{}).get('journal_id')] if x)
             from .permissions import readable
+            journals=[]
+            if readable(conn,cid,'accounting.journals'):
+                for journal_id in sorted(journal_ids):
+                    try:journals.append(self._journal(conn,cid,journal_id))
+                    except DomainError as exc:
+                        if exc.status!=404:raise
+                        journals.append({'id':journal_id,'deleted':True,'status':'deleted'})
             return {'document':doc,'titles':titles if readable(conn,cid,'financial.titles') else [],
-                'journals':[self._journal(conn,cid,i) for i in sorted(journal_ids)] if readable(conn,cid,'accounting.journals') else [],
+                'journals':journals,
                 'events':events if readable(conn,cid,'system.audit') else [],
                 'renegotiations':agreements if readable(conn,cid,'financial.titles') else []}
 

@@ -44,6 +44,8 @@ def create_app(data_dir=None, demo=False):
     register_fiscal_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .account_plan_api import register_account_plan_routes
     register_account_plan_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .bulk_api import register_bulk_routes
+    register_bulk_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .lookups import LookupService
     application.state.lookups = LookupService(database)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"

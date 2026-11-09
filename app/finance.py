@@ -11,6 +11,8 @@ class FinanceMixin:
         old=conn.execute('SELECT * FROM operations WHERE company_id=? AND scope=? AND key=?',(cid,scope,key)).fetchone()
         if old and old['request_hash']!=hashed:
             raise DomainError('Chave já utilizada com conteúdo diferente.',409,'idempotency_conflict')
+        if old and json.loads(old['result_json']).get('movement_deleted'):
+            raise DomainError('Esta operação possui movimentos excluídos fisicamente. Inicie uma nova intenção com outra chave.',409,'movement_deleted')
         return key,hashed,(json.loads(old['result_json'])|{'duplicate':True}) if old else None
 
     def _record_operation(self,conn,cid,scope,key,hashed,result):

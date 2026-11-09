@@ -91,6 +91,8 @@ def migrate(conn):
         migrate_v4(conn)
         from .migration_v5 import migrate_v5
         migrate_v5(conn)
+        from .bulk_operations import initialize_bulk_schema
+        initialize_bulk_schema(conn)
         conn.commit()
     except BaseException:
         conn.rollback()

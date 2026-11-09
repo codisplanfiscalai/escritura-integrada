@@ -129,6 +129,8 @@ class ModuleImportsMixin:
             result=self._module_preview(conn,cid,batch)
             if batch['result_json']:
                 previous=json.loads(batch['result_json'])
+                if previous.get('movement_deleted'):
+                    raise DomainError('Movimentos deste lote foram excluídos fisicamente. O resultado anterior não pode ser repetido; prepare uma nova intenção de importação.',409,'movement_deleted')
                 if sorted(payload.get('selected',[]))!=previous['selected']:raise DomainError('Lote já confirmado com outra seleção.',409,'idempotency_conflict')
                 return previous|{'duplicate':True}
             selected=selected_rows(result,payload);written=[]
