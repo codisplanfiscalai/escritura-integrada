@@ -1,6 +1,6 @@
 {
   "name": "escritura-integrada",
-  "version": "0.7.3-dev.11",
+  "version": "0.7.3",
   "private": true,
   "type": "module",
   "scripts": {
