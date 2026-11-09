@@ -103,8 +103,11 @@ def main():
                         expect(dialog).to_be_visible()
 
                     def prepare():
+                        button = dialog.get_by_role('button', name='Gerar prévia', exact=True)
+                        # Opening prepares automatically; wait before observing a refresh.
+                        expect(button).to_be_enabled()
                         with page.expect_response(lambda r: '/bulk-operations/preview' in r.url and r.request.method == 'POST') as result:
-                            dialog.get_by_role('button', name='Gerar prévia', exact=True).click()
+                            button.click()
                         assert result.value.ok, result.value.text()
                         payload = result.value.json()
                         expect(preview).to_be_visible()

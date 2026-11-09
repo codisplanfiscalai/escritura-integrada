@@ -57,9 +57,11 @@ def main():
                     page.on('pageerror', lambda e: report['console_errors'].append(str(e)))
                     page.on('console', lambda m: report['console_errors'].append(m.text) if m.type == 'error' else None)
                     output = page.locator('.report-output')
-                    controls = page.locator('.report-controls')
-                    kind = controls.get_by_label('Relatório', exact=True)
-                    model = controls.get_by_label('Modelo de impressão', exact=True)
+                    # get_by_label(exact=True) includes option text for wrapping <label><select>.
+                    # Role accessible names correctly exclude the nested control's option text.
+                    controls = page.locator('form.report-controls')
+                    kind = controls.get_by_role('combobox', name='Relatório', exact=True)
+                    model = controls.get_by_role('combobox', name='Modelo de impressão', exact=True)
 
                     def shot(name):
                         page.screenshot(path=str(OUT / name), full_page=True)
@@ -152,6 +154,9 @@ def main():
                         areas = [('accounting', 'Livros e demonstrações'), ('fiscal', 'Livros e relatórios fiscais'), ('financial', 'Consultas e relatórios financeiros')]
                         for area, name in areas:
                             navigate(name)
+                            expect(page.get_by_role('tab', name=name, exact=True)).to_have_attribute('aria-selected', 'true')
+                            expect(controls).to_have_count(1)
+                            expect(controls).to_be_visible()
                             expect(kind).to_have_value({'accounting': 'trial-balance', 'fiscal': 'fiscal-documents', 'financial': 'financial'}[area])
                             expect(controls.get_by_role('button', name='Gerar relatório', exact=True)).to_be_enabled()
                             options = kind.locator('option').evaluate_all('(xs)=>xs.map(x=>x.value)')
@@ -164,10 +169,10 @@ def main():
                                 choices = model.locator('option').evaluate_all('(xs)=>xs.map(x=>x.value)')
                                 chosen = choices[-1]
                                 model.select_option('internal')
-                                expect(controls.get_by_label('Folha inicial')).to_be_disabled()
+                                expect(controls.get_by_role('spinbutton', name='Folha inicial', exact=True)).to_be_disabled()
                                 model.select_option(chosen)
                                 if chosen != 'internal':
-                                    expect(controls.get_by_label('Folha inicial')).to_be_enabled()
+                                    expect(controls.get_by_role('spinbutton', name='Folha inicial', exact=True)).to_be_enabled()
                                 payload, report_url = run()
                                 assert payload['kind'] == value and payload['company_id'] == cid
                                 export('PDF', 'pdf')
@@ -179,29 +184,29 @@ def main():
                                 preview_cycle()
                                 # Export and preview must keep the generated snapshot when filters change.
                                 old_href = output.get_by_role('link', name='PDF', exact=True).get_attribute('href')
-                                controls.get_by_label('Folha inicial').fill('8')
+                                controls.get_by_role('spinbutton', name='Folha inicial', exact=True).fill('8')
                                 expect(output.get_by_role('status')).to_contain_text('Filtros alterados')
                                 assert output.get_by_role('link', name='PDF', exact=True).get_attribute('href') == old_href
                                 report['checks'].append('Changing unsubmitted filters preserves export snapshot and shows stale-filter warning')
 
                         navigate('Livros e relatórios fiscais')
                         kind.select_option('fiscal-documents')
-                        controls.get_by_label('Situação', exact=True).select_option('pending')
-                        controls.get_by_label('Operação', exact=True).select_option('outgoing')
-                        controls.get_by_label('CFOP', exact=True).fill('5102')
-                        controls.get_by_label('NCM', exact=True).fill('12345678')
-                        controls.get_by_label('Documento, participante ou histórico').fill('synthetic-query')
+                        controls.get_by_role('combobox', name='Situação', exact=True).select_option('pending')
+                        controls.get_by_role('combobox', name='Operação', exact=True).select_option('outgoing')
+                        controls.get_by_role('textbox', name='CFOP', exact=True).fill('5102')
+                        controls.get_by_role('textbox', name='NCM', exact=True).fill('12345678')
+                        controls.get_by_role('textbox', name='Documento, participante ou histórico', exact=True).fill('synthetic-query')
                         kind.select_option('fiscal-entries')
-                        expect(controls.get_by_label('Situação', exact=True)).to_have_count(0)
-                        expect(controls.get_by_label('Operação', exact=True)).to_have_count(0)
-                        expect(controls.get_by_label('CFOP', exact=True)).to_have_value('')
+                        expect(controls.get_by_role('combobox', name='Situação', exact=True)).to_have_count(0)
+                        expect(controls.get_by_role('combobox', name='Operação', exact=True)).to_have_count(0)
+                        expect(controls.get_by_role('textbox', name='CFOP', exact=True)).to_have_value('')
                         payload, requested = run()
                         q = parse_qs(urlparse(requested).query)
                         assert not q.get('status') and not q.get('direction')
                         assert all(r.get('direction') in (None, 'incoming') for r in payload['rows'])
                         kind.select_option('fiscal-assessments')
-                        for label in ('Situação','Operação','CFOP','NCM','Documento, participante ou histórico'):
-                            expect(controls.get_by_label(label, exact=True)).to_have_count(0)
+                        for label, role in [('Situação', 'combobox'), ('Operação', 'combobox'), ('CFOP', 'textbox'), ('NCM', 'textbox'), ('Documento, participante ou histórico', 'textbox')]:
+                            expect(controls.get_by_role(role, name=label, exact=True)).to_have_count(0)
                         _, requested = run()
                         q = parse_qs(urlparse(requested).query)
                         assert not any(q.get(k) for k in ('status','direction','cfop','ncm','query'))
@@ -254,6 +259,11 @@ def main():
                     except Exception:
                         shot('failure.png')
                         (OUT / 'failure-visible.txt').write_text(page.locator('body').inner_text())
+                        (OUT / 'failure-dom.html').write_text(page.content())
+                        (OUT / 'failure-aria.txt').write_text(page.locator('body').aria_snapshot())
+                        (OUT / 'failure-controls.json').write_text(json.dumps(page.locator('form').evaluate_all(
+                            '(forms) => forms.map(f => ({className:f.className, visible:!!f.getClientRects().length, labels:[...f.querySelectorAll("label")].map(l=>({text:l.textContent, html:l.outerHTML}))}))'
+                        ), ensure_ascii=False, indent=2))
                         raise
                     finally:
                         browser.close()
