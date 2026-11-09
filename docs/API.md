@@ -6,6 +6,10 @@ API JSON no prefixo `/api`, mesma origem do aplicativo. Valores recebidos são s
 
 ### Incremento fiscal 0.8
 
+`GET /companies/{id}/cfop-source-loads/default` baixa a carga padrão. `POST .../cfop-source-loads/preview` recebe `{date,bundle?}` (ausência de `bundle` seleciona a padrão) e apresenta comparação, cadastros a criar/preservar e `preview_hash`. `POST .../cfop-source-loads` recebe os mesmos dados mais `{preview_hash,reason}`; exige inclusão em cadastros fiscais, preserva todos os registros de origem e completa a tabela com a referência oficial, sem ativar os parâmetros declarados.
+
+`GET .../cfop-source-loads`, `GET .../cfop-source-loads/{load_id}/rows?search=&page=1` e `GET .../{load_id}/original` consultam cargas da empresa, registros paginados e JSON preservado. A mesma carga é idempotente. O formato e os limites estão em [Carga CFOP](CFOP_CARGA_REFERENCIA.md).
+
 `GET /companies/{id}/cfop-reference?search=&direction=&date=YYYY-MM-DD&page=1` retorna metadados da referência e até 50 códigos com título, nota, vigência da redação e cadastro local. `POST .../cfop-reference/apply` recebe `{edition,date,reason}` e copia os códigos sem substituir os existentes; exige inclusão em cadastros fiscais.
 
 `GET/POST /companies/{id}/fiscal-import-mappings` e `PUT .../{mapping_id}` consultam/criam/editam associações. Campos: `direction`, `model` (vazio = todos), `source_cfop`, `target_cfop`, `valid_from`, `valid_to`, `responsible`, `reason`, `active`; a edição exige `version`. Vigências ativas sobrepostas são recusadas. Não há alteração retroativa dos documentos.

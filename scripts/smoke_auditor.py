@@ -19,6 +19,8 @@ def run(opener,url,session):
     cid=company['id'];request('/context',{'company_id':cid,'module':'auditor','period':'2026-01'})
     cfop=request(f'/companies/{cid}/cfop-reference?date=2026-11-01')
     assert cfop['total']==619 and any(r['code']=='1102' for r in cfop['rows'])
+    source_cfop=request(f'/companies/{cid}/cfop-source-loads/default')
+    assert source_cfop['record_count']==779 and any(r['code']=='111' and r['review_status']=='unreviewed' for r in source_cfop['records'])
     base=f'/companies/{cid}/auditor'
     raw=xml_fixture(company['tax_id'],2026).encode()
     created=request(base+'/jobs',{'mode':'standalone','start':'2026-01-01','end':'2026-12-31','idempotency_key':'image-auditor-smoke','files':[{'filename':'smoke.xml','content_base64':base64.b64encode(raw).decode()}]})
@@ -41,4 +43,4 @@ def run(opener,url,session):
     catalog=request(base+'/catalogs/reference',{'name':'Histórico original','valid_from':'2026-01-01','valid_to':'2026-12-31'})
     assert catalog['entry_count']==15638 and len(catalog['reference']['cclass'])==142
     assert request(f'/companies/{cid}/documents')==[]
-    return {'job_id':job['id'],'documents':1,'total_cents':10000,'reports':reports,'catalog_rows':catalog['entry_count'],'cfop_codes':cfop['total'],'bookkeeping_unchanged':True}
+    return {'job_id':job['id'],'documents':1,'total_cents':10000,'reports':reports,'catalog_rows':catalog['entry_count'],'cfop_codes':cfop['total'],'cfop_source_records':source_cfop['record_count'],'bookkeeping_unchanged':True}

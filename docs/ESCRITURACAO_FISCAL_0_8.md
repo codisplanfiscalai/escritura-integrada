@@ -2,6 +2,8 @@
 
 Escopo desta etapa: CFOP, associações por empresa, importação com escrituração fiscal direta e edição posterior. O pedido de plano de contas foi suspenso por orientação expressa; nenhum importador ou plano contábil novo integra esta entrega.
 
+A carga dos novos anexos `tabcfop.pdf` e `tabcfop.txt`, com 779 registros, está detalhada em [Carga CFOP](CFOP_CARGA_REFERENCIA.md). Os parâmetros declarados são preservados sem ativação automática.
+
 ## Referência CFOP verificada
 
 A página [Anexo II do CONFAZ](https://www.confaz.fazenda.gov.br/legislacao/ajustes/sinief/cfop_cvsn_1-6.24) foi lida integralmente em 09/11/2026. Foram identificados **619 códigos de operação**, **76 grupos** e **620 redações**: o código 7.667 possui duas redações com períodos explícitos. A redação anterior vale de 01/06/2024 a 31/01/2026; a alteração pelo Ajuste SINIEF 39/25 tem efeitos a partir de 01/02/2026. Grupos como 1.000 e 1.100 não são códigos de operação selecionáveis.

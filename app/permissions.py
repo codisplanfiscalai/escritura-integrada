@@ -140,6 +140,8 @@ def route_policy(path, method, query, payload, session):
     root = tail.strip('/').split('/')[0]
     if root == 'cfop-reference':
         return 'fiscal.masters', 'create' if write else 'read', False
+    if root == 'cfop-source-loads':
+        return 'fiscal.masters', 'read' if tail.endswith('/preview') or not write else 'create', False
     if root == 'fiscal-import-mappings':
         return 'fiscal.parameters', action, False
     mapping = {'accounts': 'accounting.accounts', 'cost-centers': 'accounting.cost_centers',
