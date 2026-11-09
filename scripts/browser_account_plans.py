@@ -20,7 +20,7 @@ def main():
             except OSError:time.sleep(.2)
           else:raise RuntimeError('Preview server did not start')
           with sync_playwright() as p:
-            browser=p.chromium.launch(headless=True,executable_path=os.environ.get('ESCRITURA_TEST_BROWSER','/usr/bin/chromium'))
+            browser=p.chromium.launch(headless=True,**({'executable_path':os.environ['ESCRITURA_TEST_BROWSER']} if os.environ.get('ESCRITURA_TEST_BROWSER') else {}))
             page=browser.new_page(viewport={'width':1440,'height':1000});page.set_default_timeout(15000)
             page.on('pageerror',lambda e:report['console_errors'].append(str(e)))
             page.on('console',lambda m:report['console_errors'].append(m.text) if m.type=='error' else None)
