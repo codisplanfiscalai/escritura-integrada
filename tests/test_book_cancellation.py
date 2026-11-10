@@ -33,6 +33,8 @@ class BookCancellationTests(unittest.TestCase):
         self.assertTrue(self.post(f"/documents/{d['id']}/book",book)['duplicate'])
         url='/business-reports/fiscal-outputs?start=2026-11-01&end=2026-11-30&status=cancelled'
         report=self.client.get(self.scope(url)).json()
+        self.assertEqual('cancelled',report['filters']['status'])
+        self.assertEqual('booked',report['rows'][0]['status'])
         self.assertEqual(1,len(report['rows']));row=report['rows'][0]
         for field in ('total_cents','book_base_cents','book_icms_cents','book_other_cents','book_ipi_cents'):
             self.assertEqual(0,row[field],field)
