@@ -60,6 +60,10 @@ def run(page, url, cid, nav, check, shot):
     def upload(name):
         page.get_by_label('Selecionar arquivo de importação', exact=True).set_input_files({'name':name, 'mimeType':'text/xml', 'buffer':raw})
         page.get_by_role('button', name='Analisar e gerar prévia', exact=True).click()
+        # Issue-date fallback is only a proposal for purchases, not proof of receipt.
+        expect(page.get_by_label('Selecionar documento 84008', exact=True)).not_to_be_checked()
+        page.get_by_label('Confirmei a entrada/competência', exact=True).check()
+        page.get_by_role('button', name='Validar revisão e selecionar aptos', exact=True).click()
         expect(page.get_by_label('Selecionar documento 84008', exact=True)).to_be_checked()
         expect(page.get_by_role('combobox', name='Modo de escrituração da importação', exact=True)).to_have_value('book')
         expect(page.get_by_text('Pronto para escrituração fiscal direta', exact=False)).to_be_visible()

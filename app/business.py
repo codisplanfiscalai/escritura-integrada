@@ -22,7 +22,9 @@ from .cfop_source import CfopSourceMixin
 from .account_plans import AccountPlansMixin
 from .import_reprocessing import ImportReprocessingMixin
 
-class BusinessCore(ImportReprocessingMixin, AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
+from .import_payables import ImportPayablesMixin
+
+class BusinessCore(ImportPayablesMixin, ImportReprocessingMixin, AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
     def _validate_document_links(self,conn,cid,payload):
         for k,kind in [('participant_id','participant'),('establishment_id','establishment')]:
             if payload.get(k):

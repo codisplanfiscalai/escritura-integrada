@@ -582,7 +582,9 @@ class Core:
         if hasattr(self, '_import_document_masters'):
             payload = self._import_document_masters(conn, cid, payload, actor)
             items = pack(payload.get('items', []))
-        extras = {k: payload[k] for k in ("source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "analytics", "raw_fields", "posting_date_proposed", "movement_date", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting", "carrier_id", "master_import_warnings", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review") if k in payload}
+        extras = {k: payload[k] for k in ("source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "billing", "receipt_date", "analytics", "raw_fields", "posting_date_proposed", "movement_date", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting", "carrier_id", "master_import_warnings", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review") if k in payload}
+        if 'receipt_date' in extras:
+            extras['receipt_date'] = None if extras['receipt_date'] in (None, '') else iso_date(extras['receipt_date'], 'Chegada efetiva')
         from .fiscal_analytics import fiscal_posting_lines, validate_fiscal_treatment, validate_posting_group_review
         if 'fiscal_treatment' in extras:
             extras['fiscal_treatment'] = validate_fiscal_treatment(extras['fiscal_treatment'], values['posting_date'])
@@ -638,12 +640,14 @@ class Core:
             if other:
                 raise DomainError("Já existe outro documento com essa identidade.", 409, "document_conflict")
             extras = json.loads(old["extra_json"])
-            for key in ("participant_id", "establishment_id", "document_category", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review"):
+            for key in ("participant_id", "establishment_id", "document_category", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review", "receipt_date"):
                 if key in payload:
                     if key in {'fiscal_treatment', 'posting_group_review', 'total_review'} and payload[key] is None:
                         extras.pop(key, None)
                     else:
                         extras[key] = payload[key]
+            if 'receipt_date' in extras:
+                extras['receipt_date'] = None if extras['receipt_date'] in (None, '') else iso_date(extras['receipt_date'], 'Chegada efetiva')
             values.update(payload_hash=digest(values | {"taxes": json.loads(taxes), "items": document_item_semantics(json.loads(items), bool(old["source_hash"] and isinstance(extras.get("issuer"), dict)))}), business_key=identity, period=values["posting_date"][:7], taxes_json=taxes, items_json=items)
             if old['status'] == 'booked':
                 self._validate_posted_classification(conn, cid, {**extras, **values, 'items': json.loads(items)})
@@ -1108,7 +1112,7 @@ class Core:
         bank_account = text(payload.get("bank_account"), "Conta bancária", False, 200)
         with self.db.read() as conn:
             company = company_row(conn, cid)
-        identity = digest({"parser_revision": 2, "sha256": digest(raw), "filename": filename, "period": competence, "options": options, "company_tax_id": company["tax_id"]})
+        identity = digest({"parser_revision": 3, "sha256": digest(raw), "filename": filename, "period": competence, "options": options, "company_tax_id": company["tax_id"]})
         with self.db.read() as conn:
             from .import_package_cleanup import reject_removed_upload
             reject_removed_upload(conn, cid, digest(raw))
@@ -1164,6 +1168,9 @@ class Core:
             if batch["company_tax_id"] != company["tax_id"]:
                 raise DomainError("O CNPJ da empresa foi alterado. Gere uma nova prévia.", 409, "stale_company")
             parsed = json.loads(batch["parsed_json"])
+            from .import_payables import requested_payables
+            create_payables = requested_payables(payload)
+            generated_options = self._generated_payables_options(payload, {f'documents:{i}' for i in range(len(parsed['documents']))})
             posting_mode = payload.get('posting_mode', 'pending')
             if not isinstance(posting_mode, str) or posting_mode not in {'pending', 'book'}:
                 raise DomainError('Modo de importação fiscal inválido.')
@@ -1174,6 +1181,16 @@ class Core:
                 previous = json.loads(batch["confirmation_json"])
                 if previous.get('movement_deleted'):
                     raise DomainError('Movimentos deste lote foram excluídos fisicamente. O resultado anterior não pode ser repetido; prepare uma nova intenção de importação.',409,'movement_deleted')
+                if previous.get('generated_payables', {'enabled': False}) != generated_options:
+                    raise DomainError('Lote já confirmado com outra regra financeira; use reprocessamento.', 409, 'idempotency_conflict')
+                if generated_options['enabled']:
+                    from .permissions import effect
+                    effect(conn, cid, 'financial.titles', 'create')
+                if previous.get('create_payables', False) != create_payables:
+                    raise DomainError('Lote já confirmado com outra decisão financeira; use reprocessamento.', 409, 'idempotency_conflict')
+                if create_payables:
+                    from .permissions import effect
+                    effect(conn, cid, 'financial.titles', 'create')
                 if previous.get('posting_mode', 'pending') != posting_mode:
                     raise DomainError('Lote já confirmado com outro modo de escrituração.', 409, 'idempotency_conflict')
                 if payload.get('total_review', {}) != previous.get('total_review', {}):
@@ -1192,6 +1209,8 @@ class Core:
             from .import_scope import classify, selected_rows
             classify(conn,cid,parsed,batch['period'][:4])
             posting_reason = ''
+            if generated_options['enabled'] and posting_mode != 'book':
+                raise DomainError('Revise a escrituração e a prévia financeira antes de gerar títulos por regra.', 409, 'generated_payables_preview_required')
             if posting_mode == 'pending' and payload.get('document_overrides'):
                 raise DomainError('A revisão individual exige a preparação da escrituração. Para importar pendente, defina a data nas opções de leitura ou revise depois.')
             if posting_mode == 'book':
@@ -1209,6 +1228,7 @@ class Core:
                     if doc['_selection'] in selected and not doc['import_posting']['eligible']:
                         raise DomainError(doc['import_posting']['reason'], 409, 'fiscal_posting_blocked')
             result = {"import_id": item_id, "status": "confirmed", "posting_mode": posting_mode, "documents_booked": 0, "documents_created": 0, "documents_duplicate": 0, "transactions_created": 0, "transactions_duplicate": 0, "document_ids": [], "transaction_ids": [], "master_import_warnings": [], "source_version_warnings": []}
+            result.update(create_payables=create_payables, generated_payables=generated_options, titles_created=0, titles_duplicate=0, title_ids=[])
             existing_imports = self._fiscal_import_index(conn, cid, parsed['documents']) if posting_mode == 'book' else {}
             for source_doc in parsed.get("documents", []):
                 if source_doc['_selection'] not in selected: continue
@@ -1220,6 +1240,14 @@ class Core:
                     result['documents_booked'] += 1
                 result["documents_duplicate" if doc.get("duplicate") else "documents_created"] += 1
                 result["document_ids"].append(doc["id"])
+                if create_payables:
+                    for title in self._create_import_payables(conn, cid, doc, source_doc, actor):
+                        result['titles_duplicate' if title.get('duplicate') else 'titles_created'] += 1
+                        result['title_ids'].append(title['id'])
+                if generated_options['enabled']:
+                    for title in self._create_generated_payables(conn, cid, doc, source_doc, generated_options, actor):
+                        result['titles_duplicate' if title.get('duplicate') else 'titles_created'] += 1
+                        result['title_ids'].append(title['id'])
                 if doc.get('source_version_warning'):
                     result['source_version_warnings'].append(f"Documento {doc['number']}: {doc['source_version_warning']}")
                 result['master_import_warnings'].extend(

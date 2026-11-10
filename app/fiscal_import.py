@@ -56,17 +56,23 @@ class FiscalImportMixin:
         return items
 
     def _prepare_fiscal_import(self, conn, cid, batch, payload):
+        from .import_payables import requested_payables
+        create_payables = requested_payables(payload)
         parsed = json.loads(batch['parsed_json'])
         batch_total_review = validate_total_review(payload['total_review']) if 'total_review' in payload else None
         document_overrides = payload.get('document_overrides', {})
         valid_keys = {f'documents:{i}' for i in range(len(parsed['documents']))}
+        generated_options = self._generated_payables_options(payload, valid_keys)
         if not isinstance(document_overrides, dict) or any(key not in valid_keys for key in document_overrides):
             raise DomainError('Revisões devem identificar documentos desta prévia.')
         for key, values in document_overrides.items():
-            if not isinstance(values, dict) or set(values) - {'posting_date', 'cfop', 'purchase_destination', 'item_destinations', 'posting_date_confirmed', 'fiscal_treatment', 'posting_group_review', 'total_review'}:
+            if not isinstance(values, dict) or set(values) - {'posting_date', 'cfop', 'purchase_destination', 'item_destinations', 'posting_date_confirmed', 'fiscal_treatment', 'posting_group_review', 'total_review', 'receipt_date'}:
                 raise DomainError('Revise somente data de escrituração e CFOP; a origem permanece preservada.')
             doc = parsed['documents'][int(key.split(':')[1])]
             revision = {'original_posting_date': doc['posting_date'], 'original_cfop': doc.get('cfop', '')}
+            if 'receipt_date' in values:
+                doc['receipt_date'] = None if values['receipt_date'] in (None, '') else iso_date(values['receipt_date'], 'Chegada efetiva')
+                revision['receipt_date'] = doc['receipt_date']
             if 'posting_date' in values:
                 doc['posting_date'] = iso_date(values['posting_date'], 'Escrituração')
                 doc['posting_date_proposed'] = False
@@ -190,10 +196,12 @@ class FiscalImportMixin:
             doc['posting_lines'] = fiscal_posting_lines(doc)
             info['posting_line_count'] = len(doc['posting_lines'])
             info['posting_pending'] = sorted({reason for line in doc['posting_lines'] for reason in line.get('pending', [])})
+            doc['generated_financial_posting'] = self._generated_payables_plan(conn, cid, doc, generated_options)
+            doc['financial_posting'] = self._payables_plan(conn, cid, doc, create_payables)
             doc['import_posting'] = info
             prepared.append(doc)
         parsed['documents'] = prepared
-        parsed['posting_hash'] = digest({'preview_hash': batch['preview_hash'], 'documents': semantic_value(prepared), 'edition': reference()['edition'], 'mappings': overrides, 'document_overrides': document_overrides, 'purchase_destination': batch_destination, 'settings': settings, 'total_review': batch_total_review})
+        parsed['posting_hash'] = digest({'preview_hash': batch['preview_hash'], 'generated_payables': generated_options, 'documents': semantic_value(prepared), 'edition': reference()['edition'], 'mappings': overrides, 'document_overrides': document_overrides, 'purchase_destination': batch_destination, 'settings': settings, 'total_review': batch_total_review})
         return parsed
 
     def fiscal_posting_preview(self, cid, item_id, payload):
@@ -253,7 +261,12 @@ class FiscalImportMixin:
 
     def _validate_booked_edit(self, conn, cid, old, payload):
         effect(conn, cid, 'fiscal.documents', 'book')
-        if old['journal_id'] or conn.execute('SELECT 1 FROM titles WHERE company_id=? AND document_id=? AND (cancelled=0 OR renegotiation_id IS NOT NULL)', (cid, old['id'])).fetchone():
+        # Actual arrival is independent metadata. The normal version, date,
+        # period, assessment and audit guards still run in update_document.
+        if 'receipt_date' in payload and set(payload) <= {'receipt_date', 'version', 'reason'}:
+            return
+        linked = conn.execute('SELECT 1 FROM titles WHERE company_id=? AND document_id=?', (cid, old['id'])).fetchone()
+        if old['journal_id'] or (linked and not self._safe_payables_classification(conn, cid, old, payload)):
             raise DomainError('Há efeitos contábeis ou financeiros vinculados. Reverta a escrituração e seus efeitos antes de editar.', 409, 'document_linked_effects')
         if old['source_hash'] and any(payload.get(k, old[k]) != old[k] for k in ('key', 'direction', 'model')):
             raise DomainError('A identidade e o sentido do documento importado devem ser preservados. Corrija a origem ou reverta a escrituração.', 409, 'import_identity_preserved')

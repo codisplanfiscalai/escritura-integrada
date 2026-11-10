@@ -70,7 +70,9 @@ def _issue(result, code, message, source, severity="error"):
     # as XML_NO_PROTOCOL and RTC_TOTAL_REVIEW must remain individual: posting
     # checks match their source.file to the document.
     aggregate_codes = {"DOCUMENT_REVIEW_REQUIRED", "HOMOLOGATION_DOCUMENT", "CFOP_CLASSIFICATION_REQUIRED"}
-    if severity == "warning" and code in aggregate_codes:
+    # Billing details remain complete on each document; repeated financial
+    # warnings must not consume the fiscal error budget for large batches.
+    if severity == "warning" and (code in aggregate_codes or code.startswith("FINANCIAL_BILLING_")):
         existing = next((item for item in result["issues"] if item["code"] == code and item["severity"] == severity), None)
         if existing is not None:
             sources = existing.setdefault("sources", [existing["source"]])
@@ -243,6 +245,82 @@ def _node(element, path):
 def _text(element, path, default=""):
     value = _node(element, path)
     return (value.text or "").strip() if value is not None else default
+
+
+def _nfe_billing(info, filename, result):
+    """Preserve cobrança evidence separately from payments and fiscal validity.
+
+    Only malformed billing values become financial warnings. Structural XML
+    ambiguity (including repeated singleton fields) still raises ImportProblem.
+    Missing values are never synthesized from the fiscal total or issue date.
+    """
+    cobr = _node(info, "cobr")
+    billing = {"present": cobr is not None, "invoice": None, "installments": [],
+               "issues": [], "financial_rules_pending": False}
+    if cobr is None:
+        return billing
+
+    def warn(code, message, source):
+        code = "FINANCIAL_BILLING_" + code
+        billing["issues"].append({"code": code, "message": message,
+                                  "source": source, "severity": "warning"})
+        billing["financial_rules_pending"] = True
+        _issue(result, code, message, source, "warning")
+
+    def value(raw, tag, source, *, required=True, is_date=False):
+        text = raw[tag]
+        if not text:
+            if required:
+                warn("INCOMPLETE", f"Cobrança: {tag} ausente; confira o financeiro sem presumir valores ou vencimentos.", source)
+            return None
+        try:
+            return _date(text) if is_date else _decimal(text, money=True, allow_negative=False)
+        except ImportProblem as problem:
+            warn("INVALID_VALUE", f"Cobrança: {tag} inválido ({problem.code}); original preservado, financeiro pendente.", source)
+            return None
+
+    fat = _node(cobr, "fat")
+    if fat is not None:
+        source = _source(filename, "cobr/fat")
+        raw = {tag: _text(fat, tag) for tag in ("nFat", "vOrig", "vDesc", "vLiq")}
+        invoice = {"number": raw["nFat"], "original_amount": value(raw, "vOrig", source),
+                   "discount": value(raw, "vDesc", source, required=False),
+                   "net_amount": value(raw, "vLiq", source), "raw_fields": raw, "source": source}
+        billing["invoice"] = invoice
+        if not invoice["number"]:
+            warn("INCOMPLETE", "Cobrança: nFat ausente; identificação da fatura não foi inventada.", source)
+        # An omitted optional discount permits the arithmetic check, but remains
+        # null in the stored evidence, rather than becoming a declared zero.
+        if (invoice["original_amount"] is not None and invoice["net_amount"] is not None
+                and (invoice["discount"] is not None or not raw["vDesc"])):
+            discount = Decimal(invoice["discount"]) if invoice["discount"] is not None else Decimal("0")
+            if Decimal(invoice["original_amount"]) - discount != Decimal(invoice["net_amount"]):
+                warn("TOTAL_MISMATCH", "Cobrança: vOrig menos vDesc diverge de vLiq; confira a fatura.", source)
+    seen_numbers = set()
+    for sequence, dup in enumerate(_children(cobr, "dup"), 1):
+        source = _source(filename, f"cobr/dup[{sequence}]")
+        raw = {tag: _text(dup, tag) for tag in ("nDup", "dVenc", "vDup")}
+        installment = {"sequence": sequence, "number": raw["nDup"],
+                       "due_date": value(raw, "dVenc", source, is_date=True),
+                       "amount": value(raw, "vDup", source), "raw_fields": raw,
+                       "source": source, "financial_posting_created": False}
+        billing["installments"].append(installment)
+        if not installment["number"]:
+            warn("INCOMPLETE", "Cobrança: nDup ausente; sequência técnica não substitui a identificação declarada.", source)
+        elif installment["number"] in seen_numbers:
+            warn("DUPLICATE_INSTALLMENT", "Cobrança: nDup repetido; confira as parcelas antes de gerar títulos.", source)
+        seen_numbers.add(installment["number"])
+        if installment["amount"] is not None and Decimal(installment["amount"]) == 0:
+            warn("INVALID_VALUE", "Cobrança: vDup igual a zero; confira a parcela antes de gerar título.", source)
+    if not billing["installments"]:
+        warn("INCOMPLETE", "Cobrança sem duplicatas: nenhum vencimento ou parcelamento foi presumido.", _source(filename, "cobr"))
+    invoice = billing["invoice"]
+    if (invoice is not None and invoice["net_amount"] is not None and billing["installments"]
+            and all(part["amount"] is not None for part in billing["installments"])):
+        total = sum((Decimal(part["amount"]) for part in billing["installments"]), Decimal("0"))
+        if total != Decimal(invoice["net_amount"]):
+            warn("INSTALLMENT_TOTAL_MISMATCH", "Cobrança: soma de vDup diverge de vLiq; confira as parcelas.", _source(filename, "cobr"))
+    return billing
 
 
 class _BoundedTreeBuilder(ET.TreeBuilder):
@@ -427,8 +505,9 @@ def _xml_document(filename, data, company, result, digest):
             barcode = _text(product, "cEAN")
             if barcode and barcode.upper() != "SEM GTIN":
                 doc["items"][-1]["barcode"] = barcode
-        for index, dup in enumerate(_children(_node(info, "cobr"), "dup"), 1):
-            doc["invoices"].append({"number": _text(dup, "nDup") or str(index), "due_date": _date(_required(_text(dup, "dVenc"), "dup/dVenc")), "amount": _decimal(_required(_text(dup, "vDup"), "dup/vDup"), money=True, allow_negative=False), "source": _source(filename, f"cobr/dup[{index}]"), "financial_posting_created": False})
+        doc["billing"] = _nfe_billing(info, filename, result)
+        doc["invoices"] = doc["billing"]["installments"]
+        doc["financial_rules_pending"] = doc["billing"]["financial_rules_pending"]
         if not doc["items"]:
             raise ImportProblem("XML_ITEM_MISSING", "NF-e/NFC-e sem itens det; o leitor requer um documento completo.")
     declared_cfops = sorted(set(x for x in declared_cfops if x))

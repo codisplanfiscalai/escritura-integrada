@@ -10,11 +10,27 @@ from .tax_ledger import ensure_unfinalized
 
 class ImportReprocessingMixin:
     def _reprocess_plan(self, conn, cid, item_id, payload):
+        from .import_payables import requested_payables
+        create_payables = requested_payables(payload)
         effect(conn, cid, 'fiscal.imports', 'import')
         effect(conn, cid, 'fiscal.documents', 'edit')
         batch = select_one(conn, 'imports', cid, item_id)
         parsed = json.loads(batch['parsed_json'])
+        # Legacy batches are enriched from their exact retained original, never by
+        # replaying document insertion or replacing manually revised fiscal data.
+        enriched = {}
+        if any('billing' not in d for d in parsed['documents']) and batch['original']:
+            from .importers import parse_file
+            reread = parse_file(batch['filename'], batch['original'], company_row(conn, cid))
+            for source in reread.get('documents', []):
+                enriched[(original_business_key(source), source.get('source_hash'))] = source
+            for raw in parsed['documents']:
+                source = enriched.get((original_business_key(raw), raw.get('source_hash')))
+                if 'billing' not in raw and source and 'billing' in source:
+                    raw['billing'] = deepcopy(source['billing'])
+                    raw['invoices'] = deepcopy(source.get('invoices', []))
         valid = [f'documents:{i}' for i in range(len(parsed['documents']))]
+        generated_options = self._generated_payables_options(payload, set(valid))
         selected = payload.get('selected', valid)
         if (not isinstance(selected, list) or not selected or
                 any(not isinstance(x, str) or x not in valid for x in selected) or len(set(selected)) != len(selected)):
@@ -48,7 +64,8 @@ class ImportReprocessingMixin:
                 ensure_open(conn, cid, old['period'], 'fiscal')
                 ensure_unfinalized(conn, cid, old['period'])
                 self._validate_booked_edit(conn, cid, dict(row), {}) if old['status'] == 'booked' else None
-                if old['journal_id'] or conn.execute('SELECT 1 FROM titles WHERE company_id=? AND document_id=? AND (cancelled=0 OR renegotiation_id IS NOT NULL)', (cid, old['id'])).fetchone():
+                linked = conn.execute('SELECT 1 FROM titles WHERE company_id=? AND document_id=?', (cid, old['id'])).fetchone()
+                if old['journal_id'] or (linked and not self._safe_payables_classification(conn, cid, old, {})):
                     raise DomainError('Documento possui efeitos vinculados; reverta-os antes de reprocessar.')
                 revision = overrides.get(key, {})
                 if not isinstance(revision, dict): raise DomainError('Revisão inválida.')
@@ -56,6 +73,12 @@ class ImportReprocessingMixin:
                 if (old['status'] != 'booked' or (old.get('posting_date_proposed') and not confirmed)) and not (revision.get('posting_date_confirmed') is True or revision.get('posting_date')):
                     raise DomainError('Confirme explicitamente recebimento e competência antes de reprocessar.')
                 doc = deepcopy(old)
+                if 'billing' not in doc and 'billing' in raw:
+                    doc['billing'] = deepcopy(raw['billing'])
+                    doc['invoices'] = deepcopy(raw.get('invoices', []))
+                    doc['_billing_enriched'] = True
+                elif 'billing' not in doc and doc.get('invoices'):
+                    doc['billing'] = {'present': True, 'installments': [], 'financial_rules_pending': True, 'issues': [{'message': 'Original indisponível para recuperar cobrança legada.'}]}
                 if 'total_review' in revision and revision['total_review'] is None:
                     doc.pop('total_review', None)
                 elif 'total_review' not in revision and 'total_review' not in payload and old.get('total_review'):
@@ -93,9 +116,15 @@ class ImportReprocessingMixin:
                         validate_posting_group_review(proposed['posting_group_review'], proposed)
                 except DomainError as exc:
                     reason = exc.detail
+            finance = proposed.get('financial_posting', {})
+            if create_payables and finance.get('status') != 'not_applicable' and not finance.get('eligible'):
+                reason = reason or finance.get('reason', 'Cobrança financeira bloqueada.')
+            generated = proposed.get('generated_financial_posting', {})
+            if generated.get('requested') and generated.get('status') != 'not_applicable' and not generated.get('eligible'):
+                reason = reason or generated.get('reason', 'Regra financeira bloqueada.')
             update = {}
             if old and not reason:
-                update = {k: deepcopy(proposed[k]) for k in ('cfop', 'posting_date', 'items', 'fiscal_treatment', 'posting_group_review', 'total_review') if k in proposed}
+                update = {k: deepcopy(proposed[k]) for k in ('cfop', 'posting_date', 'items', 'fiscal_treatment', 'posting_group_review', 'total_review', 'receipt_date') if k in proposed}
                 # Eligibility above requires a confirmed existing date or an explicit new decision.
                 update['posting_date_confirmed'] = True
                 for field in ('fiscal_treatment', 'posting_group_review', 'total_review'):
@@ -121,7 +150,7 @@ class ImportReprocessingMixin:
             for row in duplicates:
                 if row is not representative:
                     row['duplicate_of'] = representative['_selection']
-            if len(chosen) > 1 and len({digest(row['_update']) for row in chosen}) > 1:
+            if len(chosen) > 1 and len({digest({'update': row['_update'], 'generated': row['document'].get('generated_financial_posting', {}).get('terms')}) for row in chosen}) > 1:
                 for row in duplicates:
                     row['eligible'] = False
                     row['reason'] = 'Cópias do mesmo documento possuem decisões conflitantes. Uniformize as revisões ou selecione apenas uma cópia.'
@@ -146,6 +175,9 @@ class ImportReprocessingMixin:
             select_one(conn, 'imports', cid, item_id)
             scope = 'reprocess-import:' + str(item_id)
             key, hashed, previous = self._operation(conn, cid, scope, payload)
+            generated_options = self._generated_payables_options(payload)
+            if payload.get('create_payables') or generated_options['enabled']:
+                effect(conn, cid, 'financial.titles', 'create')
             if previous:
                 for doc_id in previous['document_ids']:
                     doc = select_one(conn, 'documents', cid, doc_id)
@@ -156,17 +188,25 @@ class ImportReprocessingMixin:
                 raise DomainError('Prévia desatualizada. Revise novamente antes de confirmar.', 409, 'reprocess_stale')
             if not plan['can_confirm']:
                 raise DomainError('Há documentos selecionados bloqueados; nenhum foi alterado.', 409, 'reprocess_blocked')
-            ids = []
+            ids, titles = [], []
             for row in plan['documents']:
                 if not row['selected'] or row['id'] in ids: continue
                 self.update_document(cid, row['id'], dict(row['_update'], reason=reason), actor, _conn=conn)
                 saved = select_one(conn, 'documents', cid, row['id'])
                 extras = json.loads(saved['extra_json'])
+                if row['document'].get('_billing_enriched'):
+                    extras['billing'] = deepcopy(row['document']['billing'])
+                    extras['invoices'] = deepcopy(row['document'].get('invoices', []))
                 extras['import_posting'] = deepcopy(row['document']['import_posting'])
                 extras['import_posting'].update(review_pending=True, last_edit_reason=reason, reprocessed_from_import=item_id)
                 conn.execute('UPDATE documents SET extra_json=? WHERE id=? AND company_id=?', (pack(extras), row['id'], cid))
+                if payload.get('create_payables'):
+                    titles.extend(self._create_import_payables(conn, cid, self._document(conn, cid, row['id']), row['document'], actor))
+                if generated_options['enabled']:
+                    titles.extend(self._create_generated_payables(conn, cid, self._document(conn, cid, row['id']), row['document'], generated_options, actor))
                 ids.append(row['id'])
             result = {'import_id': item_id, 'document_ids': ids, 'documents_updated': len(ids), 'documents_created': 0}
+            result.update(create_payables=payload.get('create_payables', False), generated_payables=generated_options, title_ids=[t['id'] for t in titles], titles_created=sum(not t.get('duplicate', False) for t in titles), titles_duplicate=sum(bool(t.get('duplicate')) for t in titles))
             audit(conn, cid, actor, 'reprocess', 'import', item_id, {'reason': reason, 'reprocess_hash': plan['reprocess_hash'], 'document_ids': ids})
             self._record_operation(conn, cid, scope, key, hashed, result)
             return result
