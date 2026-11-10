@@ -47,7 +47,9 @@ onBeforeUnmount(dispose);
 </template>
 <style scoped>
 .report-pdf{margin:16px 0}.report-pdf-frame{width:100%;height:65vh;min-height:320px;border:1px solid #d7e0e5;background:#eee}.report-pdf .actions{margin-bottom:12px;flex-wrap:wrap}
-:global(.modal-dialog:has(.report-pdf-maximized)){width:calc(100vw - 32px);max-width:none;height:calc(100dvh - 32px)}
-:global(.modal-dialog:has(.report-pdf-maximized) .modal-body){flex:1;min-height:0;display:flex}
+/* More specific than .modal-dialog.wide, regardless of production CSS order. */
+:global(.modal-overlay:has(.report-pdf-maximized)){padding:16px}
+:global(.modal-overlay .modal-dialog:has(.report-pdf-maximized)){width:calc(100vw - 32px);max-width:none;height:calc(100dvh - 32px);max-height:none}
+:global(.modal-overlay .modal-dialog:has(.report-pdf-maximized) .modal-body){flex:1;min-height:0;display:flex}
 .report-pdf-maximized{width:100%;height:100%}.report-pdf-maximized .report-pdf-frame{height:100%;min-height:0}
 </style>

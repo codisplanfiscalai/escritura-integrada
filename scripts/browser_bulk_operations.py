@@ -56,7 +56,7 @@ def main():
                     page.on('console', lambda m: report['console_errors'].append(m.text) if m.type == 'error' else None)
 
                     def shot(name):
-                        page.screenshot(path=str(OUT / name), full_page=True)
+                        page.screenshot(path=str(OUT / name), full_page=True, animations='disabled')
                         report['screenshots'].append(name)
 
                     def read(path):

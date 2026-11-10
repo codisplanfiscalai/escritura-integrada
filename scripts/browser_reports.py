@@ -18,6 +18,7 @@ import urllib.request
 from urllib.parse import urlparse, parse_qs
 from zipfile import ZipFile
 from pypdf import PdfReader
+from PIL import Image
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +27,7 @@ OUT = ROOT / 'artifacts' / 'browser-reports'
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    report = {'ok': False, 'stage': 'setup', 'checks': [], 'console_errors': [], 'downloads': [], 'screenshots': []}
+    report = {'ok': False, 'stage': 'setup', 'checks': [], 'console_errors': [], 'downloads': [], 'screenshots': [], 'preview_boxes': [], 'preview_evidence': []}
     process = None
     try:
         with tempfile.TemporaryDirectory(prefix='escritura-reports-ui-') as data:
@@ -64,7 +65,7 @@ def main():
                     model = controls.get_by_role('combobox', name='Modelo de impressão', exact=True)
 
                     def shot(name):
-                        page.screenshot(path=str(OUT / name), full_page=True)
+                        page.screenshot(path=str(OUT / name), full_page=True, animations='disabled')
                         report['screenshots'].append(name)
 
                     def read(path):
@@ -108,6 +109,75 @@ def main():
                         download.save_as(target)
                         report['downloads'].append({'kind': kind.input_value(), 'format': fmt, 'bytes': len(payload), 'filename': download.suggested_filename})
 
+                    def wait_maximized(dialog):
+                        viewport = page.viewport_size
+                        deadline = time.monotonic() + 15
+                        box = previous = None
+                        while time.monotonic() < deadline:
+                            box = dialog.bounding_box()
+                            if box and box == previous and box['width'] > viewport['width'] * .94 and box['height'] > viewport['height'] * .90:
+                                break
+                            previous = box
+                            page.wait_for_timeout(100)
+                        report['preview_boxes'].append({'box': box, 'viewport': viewport})
+                        assert box and box['width'] > viewport['width'] * .94 and box['height'] > viewport['height'] * .90, report['preview_boxes'][-1]
+
+                    def wait_pdf_pixels(frame_locator, name):
+                        """Observe real compositor pixels, not merely iframe/load/PDF bytes.
+
+                        Plugin internals vary by Chromium version, so capture them as
+                        diagnostics; the rendering gate requires both paper and ink.
+                        Pillow is already a ReportLab runtime dependency.
+                        """
+                        expect(frame_locator).to_be_visible()
+                        expect(frame_locator).to_have_attribute('src', re.compile(r'^blob:'))
+                        frame_locator.scroll_into_view_if_needed()
+                        deadline = time.monotonic() + 25
+                        evidence = {'name': name, 'rendered': False}
+                        last_png = None
+                        stable = 0
+                        while time.monotonic() < deadline:
+                            last_png = frame_locator.screenshot(animations='disabled')
+                            with Image.open(BytesIO(last_png)) as image:
+                                # Exclude viewer toolbar, scrollbar and peripheral dark canvas.
+                                w, h = image.size
+                                sample = image.crop((int(w*.25), int(h*.14), int(w*.75), int(h*.80))).convert('L')
+                                sample.thumbnail((480, 480))
+                                width, height = sample.size
+                                pixels = sample.load()
+                                white = sum(v > 235 for v in sample.getdata()) / (width * height)
+                                # Ink must be surrounded by paper, not the dark viewer background.
+                                ink = sum(1 for y in range(3, height-3) for x in range(3, width-3)
+                                          if pixels[x,y] < 160 and
+                                          ((pixels[x-3,y] > 235 and pixels[x+3,y] > 235) or
+                                           (pixels[x,y-3] > 235 and pixels[x,y+3] > 235)))
+                            evidence.update(white_fraction=white, ink_pixels=ink)
+                            stable = stable + 1 if white > .20 and ink >= 20 else 0
+                            if stable >= 2:
+                                evidence['rendered'] = True
+                                break
+                            page.wait_for_timeout(250)
+                        frames = []
+                        for frame in page.frames:
+                            try:
+                                info = frame.evaluate("""() => ({url:location.href, ready:document.readyState,
+                                    pdfEmbed:!!document.querySelector('embed[type="application/pdf"], embed[type="application/x-google-chrome-pdf"]'),
+                                    viewer:!!document.querySelector('pdf-viewer'),
+                                    loading:document.querySelector('pdf-viewer')?.loadState ?? null})""")
+                                if info['pdfEmbed'] or info['viewer'] or info['url'].startswith(('blob:', 'chrome-extension:')):
+                                    frames.append(info)
+                            except Exception as error:
+                                frames.append({'url': frame.url, 'inspection_error': str(error)[:200]})
+                        evidence['frames'] = frames
+                        evidence['policy_violations'] = page.evaluate('window.reportPolicyViolations')
+                        report['preview_evidence'].append(evidence)
+                        if last_png:
+                            (OUT / (name + '-frame.png')).write_bytes(last_png)
+                            report['screenshots'].append(name + '-frame.png')
+                        assert evidence['rendered'], f'PDF page paper/ink did not render: {evidence}'
+                        assert not evidence['policy_violations'], evidence['policy_violations']
+                        shot(name + '.png')
+
                     def preview_cycle():
                         assert page.evaluate('navigator.pdfViewerEnabled'), 'Chromium has no real embedded PDF viewer'
                         with page.expect_response(lambda r: '/business-reports/' in r.url and 'format=pdf' in r.url) as response:
@@ -117,16 +187,15 @@ def main():
                         section = page.get_by_role('region', name='Prévia do relatório')
                         expect(section.locator('iframe')).to_be_visible()
                         expect(section.locator('iframe')).to_have_attribute('src', re.compile(r'^blob:'))
-                        assert not page.evaluate('window.reportPolicyViolations'), page.evaluate('window.reportPolicyViolations')
+                        wait_pdf_pixels(section.locator('iframe'), 'preview-inline')
                         section.get_by_role('button', name='Maximizar prévia').click()
                         dialog = page.get_by_role('dialog')
                         expect(dialog).to_be_visible()
-                        box = dialog.bounding_box()
-                        assert box['width'] > 1300 and box['height'] > 900
-                        shot('preview-maximized.png')
+                        wait_maximized(dialog)
+                        wait_pdf_pixels(dialog.locator('iframe'), 'preview-maximized')
                         dialog.get_by_role('button', name='Restaurar prévia').click()
                         expect(dialog).to_have_count(0)
-                        expect(section.locator('iframe')).to_be_visible()
+                        wait_pdf_pixels(section.locator('iframe'), 'preview-restored')
                         section.get_by_role('button', name='Maximizar prévia').click()
                         page.keyboard.press('Escape')
                         expect(dialog).to_have_count(0)
@@ -136,9 +205,9 @@ def main():
                         section.get_by_role('button', name='Fechar prévia', exact=True).click()
                         expect(section).to_have_count(0)
                         output.get_by_role('button', name='Visualizar PDF', exact=True).click()
-                        expect(section.locator('iframe')).to_be_visible()
+                        wait_pdf_pixels(section.locator('iframe'), 'preview-second-opening')
                         section.get_by_role('button', name='Fechar prévia', exact=True).click()
-                        report['checks'].append('Real PDF response/blob iframe; maximize, restore, Escape, close button and second opening')
+                        report['checks'].append('Real PDF response and observed paper/ink compositor pixels inline, maximized, restored and reopened; Escape and close controls')
 
                     try:
                         page.goto(url)

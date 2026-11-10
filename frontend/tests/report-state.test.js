@@ -81,3 +81,18 @@ test('componente: consultas interrompidas não substituem o contexto novo e expo
   pending[2].reject(new Error('old failure'));await third;assert.equal(view.error.value,'');
  }finally{app.unmount();delete globalThis.__reportTest;}
 });
+
+
+test('CSS compilado da prévia maximizada prevalece sobre wide e limites globais',async()=>{
+ const {parse,compileStyle}=await import('@vue/compiler-sfc');
+ const source=await readFile(new URL('../src/components/ReportPdfPreview.vue',import.meta.url),'utf8');
+ const {descriptor}=parse(source);
+ const compiled=compileStyle({source:descriptor.styles[0].content,id:'data-v-report-preview',scoped:true});
+ assert.deepEqual(compiled.errors,[]);
+ const rule=compiled.code.match(/\.modal-overlay \.modal-dialog:has\(\.report-pdf-maximized\)\s*\{([^}]+)\}/);
+ assert.ok(rule,'Seletor com três classes deve prevalecer sobre .modal-dialog.wide (duas classes).');
+ assert.match(rule[1],/width:calc\(100vw - 32px\)/);
+ assert.match(rule[1],/height:calc\(100dvh - 32px\)/);
+ assert.match(rule[1],/max-width:none/);assert.match(rule[1],/max-height:none/);
+ assert.match(compiled.code,/\.modal-overlay:has\(\.report-pdf-maximized\)\s*\{padding:16px/);
+});
