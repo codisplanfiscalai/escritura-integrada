@@ -1,4 +1,5 @@
 """Gates de empacotamento independentes de Qt; não simulam execução Windows."""
+import ast
 import json
 from pathlib import Path
 import struct
@@ -7,6 +8,7 @@ import unittest
 import zipfile
 
 from app.desktop import DesktopSmokeReport
+from app.maintenance import SCHEMA_VERSION
 from scripts.build_windows import frontend_assets, pe_details, version_resource, write_version_info
 from scripts.smoke_windows import extract_bundle
 
@@ -93,6 +95,30 @@ class WindowsPackagingTests(unittest.TestCase):
         self.assertTrue(json.loads(path.read_text())["shutdown_complete"])
         smoke = DesktopSmokeReport(path)
         self.assertEqual(smoke.complete(True, 0), 1, "Fechar sem renderização não aprova")
+
+    def test_native_smoke_migration_assertions_require_current_schema(self):
+        # Evaluate the actual platform-script comparisons without importing
+        # winreg or executing an installer on this test host.
+        root = Path(__file__).resolve().parents[1]
+        for script, variable, mismatch in (
+            ('smoke_macos.py', 'after', False),
+            ('smoke_installer_windows.py', 'new_counts', True),
+        ):
+            tree = ast.parse((root / 'scripts' / script).read_text())
+            comparisons = [node for node in ast.walk(tree) if isinstance(node, ast.Compare)
+                           and isinstance(node.left, ast.Subscript)
+                           and isinstance(node.left.value, ast.Name)
+                           and node.left.value.id == variable
+                           and isinstance(node.left.slice, ast.Constant)
+                           and node.left.slice.value == 'schema_version']
+            self.assertEqual(len(comparisons), 1, script)
+            expression = compile(ast.Expression(comparisons[0]), script, 'eval')
+            for schema, expected in ((SCHEMA_VERSION, not mismatch), (SCHEMA_VERSION - 1, mismatch)):
+                with self.subTest(script=script, schema=schema):
+                    self.assertEqual(eval(expression, {'SCHEMA_VERSION': SCHEMA_VERSION,
+                                                       variable: {'schema_version': schema}}), expected)
+        mac = (root / 'scripts/smoke_macos.py').read_text()
+        self.assertIn("glob(f'antes-schema-{SCHEMA_VERSION}-*.sqlite3')", mac)
 
 
 if __name__ == "__main__":

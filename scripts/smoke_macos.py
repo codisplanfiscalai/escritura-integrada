@@ -4,7 +4,7 @@ from contextlib import closing
 import argparse,hashlib,json,os,platform,plistlib,shutil,signal,sqlite3,subprocess,sys,tempfile,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
-from app.maintenance import integrity
+from app.maintenance import integrity, SCHEMA_VERSION
 from scripts.build_windows import source_revision
 
 def database_hash(path):
@@ -54,13 +54,13 @@ def main():
             assert smoke.get('ok') and smoke.get('packaged') and smoke.get('shutdown_complete'),smoke.get('detail')
             assert smoke.get('tray_available'),'Barra de menus indisponível.'
             assert smoke.get('version')==a.expected_version
-            after=integrity(data/'escritura.sqlite3');assert after['schema_version']==5
+            after=integrity(data/'escritura.sqlite3');assert after['schema_version']==SCHEMA_VERSION
             for key in ['companies','users']:assert after[key]>=before[key]
-            assert list((data/'backups').glob('antes-schema-5-*.sqlite3'))
+            assert list((data/'backups').glob(f'antes-schema-{SCHEMA_VERSION}-*.sqlite3'))
             assert 'preservar=sim' in (profile/'config.ini').read_text()
             assert raw.with_suffix('.png').stat().st_size>1000
             shutil.copy2(raw.with_suffix('.png'),a.result.with_suffix('.png'))
-            report['checks']+=['Bundle Mach-O nativo abriu API, autenticação e interface Vue','Ícone na barra de menus e controles gráficos disponíveis','Primeira abertura migrou schema 2 para 5 com backup e dados preservados','Encerramento completo do motor local']
+            report['checks']+=['Bundle Mach-O nativo abriu API, autenticação e interface Vue','Ícone na barra de menus e controles gráficos disponíveis',f'Primeira abertura migrou schema 2 para {SCHEMA_VERSION} com backup e dados preservados','Encerramento completo do motor local']
             # Não há processo da aplicação nem auxiliar WebEngine remanescente deste bundle.
             running=subprocess.run(['pgrep','-f',str(app)+'/Contents/'],capture_output=True,text=True)
             assert running.returncode==1,'Processos remanescentes: '+running.stdout

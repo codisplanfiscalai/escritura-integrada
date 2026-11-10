@@ -25,7 +25,13 @@ def migrate_global_accounts(conn):
             for column,kind in [('classifier','TEXT'),('name','TEXT'),('nature','TEXT'),('analytical','INTEGER'),('requires_cost_center','INTEGER'),('active','INTEGER'),('report_group','TEXT'),('prosoft_code','TEXT')]:
                 replacement=re.sub(rf'({column}\s+{kind})\s+NOT NULL',r'\1',replacement,flags=re.I)
             if 'shared_entry_id' not in replacement:
-                replacement=replacement.rstrip().removesuffix(')')+', shared_entry_id INTEGER REFERENCES global_account_entries(id))'
+                # SQLite requires column definitions before table constraints.
+                # Legacy CREATEs already end in UNIQUE(...), so appending a
+                # column after them is invalid. Named copying below preserves
+                # every old column regardless of this new column's position.
+                opening=replacement.index('(')
+                replacement=(replacement[:opening+1]+'\n shared_entry_id INTEGER REFERENCES global_account_entries(id),'
+                             +replacement[opening+1:])
             if 'account_definition_or_reference' not in replacement:
                 replacement=replacement.rstrip().removesuffix(')')+", CONSTRAINT account_definition_or_reference CHECK(shared_entry_id IS NOT NULL OR (classifier IS NOT NULL AND name IS NOT NULL AND nature IS NOT NULL AND analytical IS NOT NULL AND requires_cost_center IS NOT NULL AND active IS NOT NULL)))"
             replacement, renamed = re.subn(r'CREATE TABLE(?: IF NOT EXISTS)?\s+(?:"accounts"|`accounts`|\[accounts\]|accounts)', 'CREATE TABLE accounts_global_migration', replacement, count=1, flags=re.I)

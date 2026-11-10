@@ -27,7 +27,7 @@ def main():
     sys.path.insert(0,str(ROOT))
     from app.db import Database
     from app.business import BusinessCore
-    from app.maintenance import integrity
+    from app.maintenance import integrity, SCHEMA_VERSION
     report={'ok':False,'version':args.version,'checks':[],'upgrade_fixture':'Instalação real; versão anterior simulada no registro; migração de base portátil validada separadamente.'}
     try:
         try:
@@ -77,9 +77,9 @@ def main():
             old_counts=integrity(portable/'escritura.sqlite3');source_hash=db_digest(portable/'escritura.sqlite3')
             profile=root/'Perfil migrado';setup([f'/PORTABLEDATA={portable}'])
             new_counts=integrity(profile/'data/escritura.sqlite3')
-            if old_counts['schema_version']!=2 or new_counts['schema_version']!=5 or old_counts['companies']!=new_counts['companies'] or old_counts['users']!=new_counts['users']:raise RuntimeError('Migração portátil inconsistente.')
+            if old_counts['schema_version']!=2 or new_counts['schema_version']!=SCHEMA_VERSION or old_counts['companies']!=new_counts['companies'] or old_counts['users']!=new_counts['users']:raise RuntimeError('Migração portátil inconsistente.')
             if db_digest(portable/'escritura.sqlite3')!=source_hash:raise RuntimeError('A origem portátil foi alterada.')
-            report['checks'].append('Banco portátil 0.5/schema 2 migrado para schema 5 pela seleção do instalador; origem preservada')
+            report['checks'].append(f'Banco portátil 0.5/schema 2 migrado para schema {SCHEMA_VERSION} pela seleção do instalador; origem preservada')
             archive=ROOT/'artifacts'/f'EscrituraIntegrada-{args.version}-windows-x64.zip'
             gui=run_smoke(archive,args.result.with_name('windows-installed-gui.json'),args.version,installed_executable=exe,existing_profile=profile)
             if not gui.get('ok'):raise RuntimeError('Aplicativo instalado não aprovou abertura gráfica e encerramento.')
