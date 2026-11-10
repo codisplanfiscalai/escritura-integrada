@@ -86,16 +86,16 @@ class BulkSecurityTests(unittest.TestCase):
                 self.assertEqual(403, r.status_code, r.text)
         self.assertTrue(self.exists('journals', j['id']))
 
-    def test_confirmation_requires_hash_phrase_ack_and_reason(self):
+    def test_confirmation_requires_hash_and_ack(self):
         j = self.movement()
         p = self.ready([j['id']])
-        for changes in [{'preview_hash': 'forged'}, {'confirmation_phrase': ''},
-                        {'irreversible_acknowledged': False}, {'irreversible_acknowledged': 'true'}, {'reason': ''}]:
+        for changes in [{'preview_hash': 'forged'},
+                        {'irreversible_acknowledged': False}, {'irreversible_acknowledged': 'true'}]:
             with self.subTest(changes=changes):
                 r = self.confirm(p, **changes)
                 self.assertIn(r.status_code, (400, 409, 422), r.text)
                 self.assertTrue(self.exists('journals', j['id']))
-        for field in ('preview_hash', 'confirmation_phrase', 'irreversible_acknowledged'):
+        for field in ('preview_hash', 'irreversible_acknowledged'):
             body = self.confirmation(p)
             del body[field]
             r = self.client.post(self.scope('/bulk-operations/confirm'), json=body)
@@ -235,7 +235,7 @@ class BulkSecurityTests(unittest.TestCase):
                 for raw in ('{', 'null', '[]', '"text"', '42'):
                     r = client.post(self.scope('/bulk-operations/' + endpoint), content=raw, headers={'Content-Type': 'application/json'})
                     self.assertIn(r.status_code, (400, 422), (endpoint, raw, r.text))
-            for ids in ([], list(range(1, 502)), [True], ['1'], [1, 1], [-1]):
+            for ids in ([], list(range(1, 5002)), [True], ['1'], [1, 1], [-1]):
                 r = client.post(self.scope('/bulk-operations/preview'), json={'kind': 'journals', 'action': 'delete', 'period': '2026-11', 'ids': ids})
                 self.assertIn(r.status_code, (400, 422), r.text)
 

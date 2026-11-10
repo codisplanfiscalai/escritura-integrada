@@ -38,7 +38,7 @@ def utf8_text(value, label, required=True, maximum=1000):
 
 
 def normalize(payload):
-    if set(payload) - {'kind', 'action', 'period', 'ids', 'changes', 'include_linked_journals', 'include_reversal_pairs'}:
+    if set(payload) - {'kind', 'action', 'period', 'ids', 'scope', 'changes', 'include_linked_journals', 'include_reversal_pairs'}:
         raise DomainError('Campos não permitidos na operação em lote.')
     kind, action = payload.get('kind'), payload.get('action')
     if not isinstance(kind, str) or not isinstance(action, str) or kind not in {'documents', 'journals'} or action not in {'delete', 'review', 'book', 'update'}:
@@ -51,9 +51,15 @@ def normalize(payload):
     reversals = payload.get('include_reversal_pairs', False)
     if type(reversals) is not bool or (reversals and (action != 'delete' or (kind == 'documents' and not include))):
         raise DomainError('Inclua pares de estorno somente na exclusão contábil ou fiscal com inclusão contábil explícita.')
-    ids = payload.get('ids')
-    if not isinstance(ids, list) or not 1 <= len(ids) <= 500 or any(type(i) is not int or not 1 <= i <= 9223372036854775807 for i in ids) or len(set(ids)) != len(ids):
-        raise DomainError('Selecione de 1 a 500 identificadores inteiros distintos; todos implícitos não são permitidos.')
+    scope = payload.get('scope', 'selection')
+    if not isinstance(scope, str) or scope not in {'selection', 'company'} or (scope == 'company' and action != 'delete'):
+        raise DomainError('Escopo da empresa disponível somente para limpeza/exclusão.')
+    ids = payload.get('ids', [])
+    if scope == 'company':
+        if ids != []:
+            raise DomainError('Limpeza da empresa não aceita seleção de IDs.')
+    elif not isinstance(ids, list) or not 1 <= len(ids) <= 5000 or any(type(i) is not int or not 1 <= i <= 9223372036854775807 for i in ids) or len(set(ids)) != len(ids):
+        raise DomainError('Selecione de 1 a 5000 identificadores inteiros distintos ou escolha limpar a empresa.')
     changes = payload.get('changes', {})
     allowed = {'cfop'} if kind == 'documents' else {'history', 'document'}
     if not isinstance(changes, dict) or (action != 'update' and changes) or set(changes) - allowed or (action == 'update' and not changes):
@@ -61,7 +67,7 @@ def normalize(payload):
     changes = {k: utf8_text(v, k, True, 1000 if k == 'history' else 100 if k == 'document' else 250) for k, v in changes.items()}
     if 'cfop' in changes and not re.fullmatch(r'[0-9]{4}', changes['cfop']):
         raise DomainError('CFOP deve conter quatro dígitos.')
-    return {'kind': kind, 'action': action, 'period': period(payload.get('period')), 'ids': sorted(ids), 'changes': changes, 'include_linked_journals': include, 'include_reversal_pairs': reversals}
+    return {'kind': kind, 'action': action, 'scope': scope, 'period': period(payload.get('period')), 'ids': sorted(ids), 'changes': changes, 'include_linked_journals': include, 'include_reversal_pairs': reversals}
 
 
 class BulkOperations:
@@ -89,49 +95,94 @@ class BulkOperations:
         found = {row['id']: row for row in rows}
         frontier = set(found)
         while frontier:
-            marks = ','.join('?' for _ in frontier)
+            marks = 'SELECT value FROM json_each(?)'
             outgoing = {row[field] for rid, row in found.items() if rid in frontier
                         for field in ('reversal_of', 'reversed_by') if row[field]}
             candidates = [dict(r) for r in conn.execute(
                 f'SELECT * FROM journals WHERE company_id=? AND (reversal_of IN ({marks}) OR reversed_by IN ({marks}))',
-                (cid, *sorted(frontier), *sorted(frontier)))]
+                (cid, pack(sorted(frontier)), pack(sorted(frontier))))]
             if outgoing:
-                placeholders = ','.join('?' for _ in outgoing)
+                placeholders = 'SELECT value FROM json_each(?)'
                 candidates += [dict(r) for r in conn.execute(
-                    f'SELECT * FROM journals WHERE company_id=? AND id IN ({placeholders})', (cid, *sorted(outgoing)))]
+                    f'SELECT * FROM journals WHERE company_id=? AND id IN ({placeholders})', (cid, pack(sorted(outgoing))))]
             frontier = {row['id'] for row in candidates if row['id'] not in found}
             found.update({row['id']: row for row in candidates})
-            if len(found) > 500:
-                raise DomainError('A cadeia explícita excede 500 lançamentos efetivos. Divida a seleção preservando cada cadeia completa.', 409, 'effective_selection_limit')
         return [found[rid] for rid in sorted(found)]
 
+    def _inspect_company(self, conn, cid, req):
+        """Converge on a dependency-safe subset, without mutating any movement.
+
+        A blocked movement is preserved; its dependants are inspected again so
+        removing a candidate cannot leave an incomplete reversal/shared set.
+        """
+        all_rows = [dict(r) for r in conn.execute(
+            f"SELECT * FROM {req['kind']} WHERE company_id=? ORDER BY id", (cid,))]
+        candidates = {r['id'] for r in all_rows}
+        preserved = {}
+        inspections = []
+        while candidates:
+            selected = req | {'scope': 'company_selection', 'ids': sorted(candidates)}
+            result, rows = self._inspect(conn, cid, selected)
+            inspections.append(result['preview_hash'])
+            if not result['blockers']:
+                break
+            removed = set()
+            for blocker in result['blockers']:
+                affected = {blocker['id']} if blocker.get('id') in candidates else set(candidates)
+                for rid in affected:
+                    preserved.setdefault(rid, []).append(blocker['message'])
+                removed.update(affected)
+            candidates.difference_update(removed)
+        else:
+            result, rows = self._inspect(conn, cid, req | {'scope': 'company_selection', 'ids': []})
+        result['scope'] = 'company'
+        result['total_count'] = len(all_rows)
+        result['preserved_count'] = len(preserved)
+        result['preserved_rows'] = [{'id': r['id'], 'period': r['period'], 'reasons': preserved[r['id']]}
+                                    for r in all_rows if r['id'] in preserved]
+        # Include preserved state too: new movements and changed locks/dependencies
+        # always require a new preview, even if the eligible count is unchanged.
+        result['preview_hash'] = digest({'request': req, 'all_rows': all_rows,
+                                        'inspections': inspections, 'result': result})
+        if preserved:
+            result['warnings'].append(f"{len(preserved)} movimento(s) preservado(s) por períodos fechados ou dependências. Somente os elegíveis serão excluídos.")
+        return result, rows
+
     def _inspect(self, conn, cid, req, selected_documents=()):
+        if req.get('scope') == 'company':
+            return self._inspect_company(conn, cid, req)
         kind, action, ids = req['kind'], req['action'], req['ids']
         module = 'fiscal' if kind == 'documents' else 'accounting'
-        marks = ','.join('?' for _ in ids)
-        rows = [dict(r) for r in conn.execute(f'SELECT * FROM {kind} WHERE company_id=? AND id IN ({marks}) ORDER BY id', (cid, *ids))]
+        marks = 'SELECT value FROM json_each(?)'
+        rows = [dict(r) for r in conn.execute(f'SELECT * FROM {kind} WHERE company_id=? AND id IN ({marks}) ORDER BY id', (cid, pack(ids)))]
         original_ids = list(ids)
+        original_id_set = set(ids)
         selection_complete = len(rows) == len(ids)
-        if selection_complete and kind == 'journals' and req.get('include_reversal_pairs'):
+        if selection_complete and kind == 'journals' and req.get('include_reversal_pairs') and (req.get('scope') != 'company_selection' or selected_documents):
             rows = self._reversal_closure(conn, cid, rows)
             ids = [row['id'] for row in rows]
-            marks = ','.join('?' for _ in ids)
+            marks = 'SELECT value FROM json_each(?)'
+        effective_id_set = set(ids)
         blockers, children, linked_preview = [], {}, None
         def block(code, message, item_id=None):
             blockers.append({'code': code, 'message': message, 'id': item_id})
+        if not ids:
+            block('empty_selection', 'Não há movimentos para limpar neste módulo e empresa.')
         if not selection_complete:
             block('selection_missing', 'Há registros inexistentes ou fora da empresa; nenhuma linha será alterada.')
-        affected_periods = sorted({req['period'], *(row['period'] for row in rows)})
+        affected_periods = sorted({row['period'] for row in rows} | ({req['period']} if req.get('scope') != 'company_selection' else set()))
         for competence in affected_periods:
             try:
                 ensure_open(conn, cid, competence, module)
                 if kind == 'documents':
                     ensure_unfinalized(conn, cid, competence)
             except DomainError as exc:
-                block(exc.code, exc.detail + ' Reabra a competência ou reverta a finalização antes de continuar.')
+                for row in rows:
+                    if row['period'] == competence:
+                        block(exc.code, exc.detail + ' Reabra a competência ou reverta a finalização antes de continuar.', row['id'])
         for row in rows:
             rid = row['id']
-            if row['period'] != req['period'] and row['id'] in original_ids and not selected_documents:
+            if row['period'] != req['period'] and row['id'] in original_id_set and not selected_documents and req.get('scope') != 'company_selection':
                 block('period_mismatch', 'Registro fora da competência explicitamente selecionada.', rid)
             if kind == 'documents':
                 if row['journal_id'] and action != 'review' and not req.get('include_linked_journals'):
@@ -163,12 +214,12 @@ class BulkOperations:
                         block(exc.code, exc.detail, rid)
             elif action == 'delete':
                 for field in ('reversal_of', 'reversed_by'):
-                    if row[field] and row[field] not in ids:
+                    if row[field] and row[field] not in effective_id_set:
                         block('reversal_set_required', f"Selecione também o lançamento vinculado #{row[field]} ou marque a inclusão explícita da cadeia de estornos, conferindo todos os períodos.", rid)
         if action == 'delete' and selection_complete:
             # Enumerate actual FKs, including new migrations: unknown dependencies fail closed.
             owned = ('document_sources', 'document_id') if kind == 'documents' else ('journal_lines', 'journal_id')
-            children[owned[0]] = [dict(r) for r in conn.execute(f'SELECT * FROM {owned[0]} WHERE {owned[1]} IN ({marks}) ORDER BY id', ids)]
+            children[owned[0]] = [dict(r) for r in conn.execute(f'SELECT * FROM {owned[0]} WHERE {owned[1]} IN ({marks}) ORDER BY id', (pack(ids),))]
             for table_row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'"):
                 table = table_row[0]
                 safe_table = '"' + table.replace('"', '""') + '"'
@@ -176,18 +227,38 @@ class BulkOperations:
                     if fk['table'] != kind or fk['to'] != 'id' or table == owned[0]:
                         continue
                     field = '"' + fk['from'].replace('"', '""') + '"'
-                    references = list(conn.execute(f'SELECT rowid AS ref_id FROM {safe_table} WHERE {field} IN ({marks})', ids))
+                    references = list(conn.execute(f'SELECT rowid AS ref_id, {field} AS target_id FROM {safe_table} WHERE {field} IN ({marks})', (pack(ids),)))
                     if table == 'documents' and kind == 'journals' and selected_documents:
                         references = [r for r in references if r['ref_id'] not in selected_documents]
                     if table == 'journals' and kind == 'journals':
-                        references = [r for r in references if r['ref_id'] not in ids]
+                        references = [r for r in references if r['ref_id'] not in effective_id_set]
                     if references:
-                        block('dependent_records', f"{table}.{fk['from']}: {len(references)} dependência(s), IDs {', '.join(str(r['ref_id']) for r in references[:10])}. Resolva explicitamente; não serão apagadas implicitamente.")
+                        for target_id in sorted({r['target_id'] for r in references}):
+                            block('dependent_records', f"{table}.{fk['from']}: {len(references)} dependência(s), IDs {', '.join(str(r['ref_id']) for r in references[:10])}. Resolva explicitamente; não serão apagadas implicitamente.", target_id)
         linked_ids = sorted({r['journal_id'] for r in rows if kind == 'documents' and r['journal_id']}) if req.get('include_linked_journals') else []
         if linked_ids:
-            linked_req = {'kind': 'journals', 'action': 'delete', 'ids': linked_ids, 'period': req['period'], 'changes': {}, 'include_reversal_pairs': req.get('include_reversal_pairs', False)}
+            linked_req = {'scope': req.get('scope', 'selection'), 'kind': 'journals', 'action': 'delete', 'ids': linked_ids, 'period': req['period'], 'changes': {}, 'include_reversal_pairs': req.get('include_reversal_pairs', False)}
             linked_preview, linked_rows = self._inspect(conn, cid, linked_req, ids)
-            blockers.extend(linked_preview['blockers'])
+            # Map linked blockers to their complete reversal component, keeping
+            # unrelated, eligible linked documents available for cleanup.
+            parents = {row['id']: row['id'] for row in linked_rows}
+            def root(rid):
+                while parents[rid] != rid:
+                    parents[rid] = parents[parents[rid]]
+                    rid = parents[rid]
+                return rid
+            for row in linked_rows:
+                for field in ('reversal_of', 'reversed_by'):
+                    if row[field] in parents:
+                        parents[root(row['id'])] = root(row[field])
+            component_documents = {}
+            for row in rows:
+                if row['journal_id'] in parents:
+                    component_documents.setdefault(root(row['journal_id']), []).append(row['id'])
+            for blocker in linked_preview['blockers']:
+                affected = component_documents.get(root(blocker['id']), []) if blocker.get('id') in parents else [row['id'] for row in rows if row['journal_id']]
+                for rid in affected:
+                    block(blocker['code'], blocker['message'], rid)
             children['linked_journals'] = linked_rows
             linked_ids = [row['id'] for row in linked_rows]
             affected_periods = sorted(set(affected_periods) | set(linked_preview['affected_periods']))
@@ -214,7 +285,7 @@ class BulkOperations:
         if req.get('include_reversal_pairs'):
             phrase += f"; TOTAL CONTABIL {affected.get('journals', 0)} EM {', '.join(affected_periods)}"
             warnings.append('A inclusão explícita cobre a cadeia de estornos listada, inclusive competências e exercícios diferentes; todos devem estar abertos.')
-        return {'preview_hash': fingerprint, 'effective_ids': ids, 'affected_periods': affected_periods, 'linked_journal_ids': linked_ids, **{k: req[k] for k in ('kind', 'action', 'period')}, 'selected_count': len(original_ids), 'affected_counts': affected, 'retained_counts': retained, 'blockers': blockers, 'warnings': warnings, 'rows': [{k: r[k] for k in ('id', 'number', 'period') if k in r} for r in rows[:100]], 'can_confirm': not blockers, 'confirmation_phrase': phrase}, rows
+        return {'preview_hash': fingerprint, 'effective_ids': ids, 'affected_periods': affected_periods, 'linked_journal_ids': linked_ids, **{k: req[k] for k in ('kind', 'action', 'period')}, 'scope': req.get('scope', 'selection'), 'selected_count': len(original_ids), 'affected_counts': affected, 'retained_counts': retained, 'blockers': blockers, 'warnings': warnings, 'rows': [{k: r[k] for k in ('id', 'number', 'period') if k in r} for r in rows[:100]], 'can_confirm': not blockers, 'confirmation_phrase': phrase}, rows
 
     @staticmethod
     def _operation_mentions(op, kind, ids):
@@ -246,11 +317,13 @@ class BulkOperations:
     def confirm(self, cid, payload, uid, actor):
         if set(payload) - {'preview_id', 'preview_hash', 'reason', 'confirmation_phrase', 'irreversible_acknowledged'}:
             raise DomainError('A confirmação não pode alterar a seleção ou os campos da prévia.')
-        for field in ('preview_id', 'preview_hash', 'confirmation_phrase'):
+        for field in ('preview_id', 'preview_hash'):
             utf8_text(payload.get(field), field, True, 10000 if field == 'confirmation_phrase' else 300)
+        if 'confirmation_phrase' in payload:
+            utf8_text(payload['confirmation_phrase'], 'confirmation_phrase', False, 10000)
         if 'irreversible_acknowledged' in payload and type(payload['irreversible_acknowledged']) is not bool:
             raise DomainError('O reconhecimento de irreversibilidade deve ser booleano.')
-        reason = utf8_text(payload.get('reason'), 'Justificativa', True, 1000)
+        reason = utf8_text(payload.get('reason'), 'Justificativa', False, 1000) or 'Operação em lote confirmada pelo usuário.'
         with self.db.transaction() as conn:
             saved = conn.execute('SELECT * FROM bulk_previews WHERE id=? AND company_id=? AND user_id=?', (payload.get('preview_id'), cid, uid)).fetchone()
             if not saved:
@@ -273,8 +346,8 @@ class BulkOperations:
                 raise DomainError(result['blockers'][0]['message'], 409, result['blockers'][0]['code'])
             if result['preview_hash'] != saved['preview_hash']:
                 raise DomainError('Registros ou dependências mudaram. Gere e confira outra prévia.', 409, 'stale_preview')
-            if payload.get('confirmation_phrase') != result['confirmation_phrase'] or (req['action'] == 'delete' and payload.get('irreversible_acknowledged') is not True):
-                raise DomainError('Digite a frase exata e reconheça a irreversibilidade da exclusão.', 400, 'confirmation_required')
+            if req['action'] == 'delete' and payload.get('irreversible_acknowledged') is not True:
+                raise DomainError('Confirme a exclusão irreversível dos movimentos apresentados na prévia.', 400, 'confirmation_required')
             # All rows and dependencies validated under BEGIN IMMEDIATE before first mutation.
             effective_req = req | {'ids': result['effective_ids'], 'linked_journal_ids': result['linked_journal_ids']}
             if req['action'] == 'delete':
@@ -282,8 +355,8 @@ class BulkOperations:
             self._apply(conn, cid, effective_req, rows, actor, reason)
             if conn.execute('PRAGMA foreign_key_check').fetchone():
                 raise DomainError('Integridade referencial inválida; lote revertido.', 409, 'foreign_key_integrity')
-            outcome = {'id': saved['id'], 'kind': req['kind'], 'action': req['action'], 'period': req['period'], 'selected_count': len(req['ids']), 'affected_periods': result['affected_periods'], 'affected_counts': result['affected_counts'], 'warnings': result['warnings'], 'completed': True, 'duplicate': False}
-            audit(conn, cid, actor, 'bulk-' + req['action'], req['kind'], saved['id'], {'ids': req['ids'], 'effective_ids': result['effective_ids'], 'linked_journal_ids': result['linked_journal_ids'], 'affected_periods': result['affected_periods'], 'reason': reason, 'preview_hash': saved['preview_hash'], 'affected_counts': result['affected_counts'], 'changes': req['changes'], 'irreversible_acknowledged': req['action'] == 'delete'})
+            outcome = {'id': saved['id'], 'kind': req['kind'], 'action': req['action'], 'period': req['period'], 'scope': req.get('scope', 'selection'), 'selected_count': result['selected_count'], 'affected_periods': result['affected_periods'], 'affected_counts': result['affected_counts'], 'warnings': result['warnings'], 'preserved_count': result.get('preserved_count', 0), 'preserved_rows': result.get('preserved_rows', []), 'completed': True, 'duplicate': False}
+            audit(conn, cid, actor, 'bulk-' + req['action'], req['kind'], saved['id'], {'scope': req.get('scope', 'selection'), 'ids': result['effective_ids'], 'effective_ids': result['effective_ids'], 'linked_journal_ids': result['linked_journal_ids'], 'affected_periods': result['affected_periods'], 'reason': reason, 'preview_hash': saved['preview_hash'], 'affected_counts': result['affected_counts'], 'changes': req['changes'], 'irreversible_acknowledged': req['action'] == 'delete'})
             conn.execute('UPDATE bulk_previews SET result_json=?,confirmation_hash=? WHERE id=?', (pack(outcome), confirmation_hash, saved['id']))
             return outcome
 
@@ -313,13 +386,13 @@ class BulkOperations:
 
     def _apply(self, conn, cid, req, rows, actor, reason):
         kind, action, ids = req['kind'], req['action'], req['ids']
-        marks = ','.join('?' for _ in ids)
+        marks = 'SELECT value FROM json_each(?)'
         if action == 'delete':
             table, fk = ('document_sources', 'document_id') if kind == 'documents' else ('journal_lines', 'journal_id')
-            conn.execute(f'DELETE FROM {table} WHERE {fk} IN ({marks})', ids)
+            conn.execute(f'DELETE FROM {table} WHERE {fk} IN ({marks})', (pack(ids),))
             if kind == 'journals':
-                conn.execute(f'UPDATE journals SET reversal_of=NULL,reversed_by=NULL WHERE company_id=? AND id IN ({marks})', (cid, *ids))
-            conn.execute(f'DELETE FROM {kind} WHERE company_id=? AND id IN ({marks})', (cid, *ids))
+                conn.execute(f'UPDATE journals SET reversal_of=NULL,reversed_by=NULL WHERE company_id=? AND id IN ({marks})', (cid, pack(ids)))
+            conn.execute(f'DELETE FROM {kind} WHERE company_id=? AND id IN ({marks})', (cid, pack(ids)))
             linked_ids = req.get('linked_journal_ids', []) if kind == 'documents' else []
             if linked_ids:
                 self._apply(conn, cid, {'kind': 'journals', 'action': 'delete', 'ids': linked_ids}, [], actor, reason)

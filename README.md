@@ -81,11 +81,12 @@ Na linha 0.8 em desenvolvimento, Fiscal → **CFOP e associações** oferece a r
 | Auditor Fiscal | Python integrado: auditoria interna/avulsa, snapshots, XML/eventos, recálculos delimitados, catálogos XLSX/JSON revisados, achados/tratamento, reprocessamento e PDF/Excel; DANFE 55 em Python |
 | Digitação contínua | Salvar e novo, padrões opcionais, Alt+N/Alt+S, Ctrl+Enter para partida, Tab/Shift+Tab e Esc; preservação de erro e idempotência |
 | Arquivos e backup | Originais por empresa/ano/hash, backup consistente integral, restauração assistida em pasta nova e verificação de registros, valores e vínculos |
+| Operações em massa | Limpar movimentos de todos os exercícios do módulo com uma confirmação; preservação dos protegidos, páginas até 5.000 e Excel da pesquisa completa |
 | Contabilidade | Plano por empresa, centros de custo, saldos iniciais, múltiplas partidas balanceadas, modelos com vigência e estornos rastreáveis |
 | Financeiro | Pagar/receber, parcelas, baixas parciais/totais com juros, multa e desconto; estorno de baixa e renegociação reversível |
 | Conciliação | Vínculos individuais ou rateados; baixa somente mediante escolha explícita; consulta de títulos e pagamentos por participante |
 | Exercícios e acessos | Doze meses por exercício/empresa/módulo; bloqueios independentes; grupos, concessões/bloqueios individuais, auditoria e permissões efetivas |
-| Relatórios | Diário, Diário Consolidado por dia, Razão, Balancete, centros de custo, Balanço/DRE por classificação, fiscal, títulos, caixa e participantes; CSV e impressão/PDF |
+| Relatórios | Diário, Diário Consolidado por dia, Razão, Balancete, centros de custo, Balanço/DRE por classificação, fiscal, títulos, caixa e participantes; 17 modelos específicos com evidências e limites, prévia PDF maximizável, CSV/Excel/PDF |
 | Parâmetros | CFOP, NCM, receitas, serviços, regras com vigência/versões e modelos reutilizáveis |
 | Pré-apuração | Bases revisadas, regras versionadas por tributo, ajustes, memória de cálculo e identificação de alterações posteriores |
 | Prosoft | Prévia e exportação CTBLCTOS LC1/LC2, com mapeamentos, validação de posições/tamanhos e confirmação |
@@ -99,7 +100,7 @@ As guias compartilham a empresa e preservam o exercício de cada módulo. O mês
 - Regras e catálogos fiscais começam vazios. A simulação matemática não constitui apuração legal automática nem aprovação tributária.
 - SPED corresponde ao perfil parcial documentado de EFD ICMS/IPI; não abrange todas as obrigações. Compactados são limitados por tamanho, quantidade, profundidade e codecs; arquivos criptografados ou multipartes são rejeitados. RAR comprimido depende de libarchive/bsdtar no Docker ou tar compatível do Windows. Transmissão de obrigações não está implementada.
 - XML, bancos e leiautes reais exigem homologação. O código recuperado das referências não foi tratado como fonte original completa ou regra fiscal comprovada.
-- O Razão possui modelo baseado no PDF fornecido, com comparação numérica e visual parcial. Os demais modelos mantêm saídas internas; ECD/ECF, livros legais, encerramento anual e consolidação entre empresas não estão implementados. Balanço/DRE exigem classificação explícita do plano; não presumem o encerramento do resultado.
+- O Razão possui modelo baseado no PDF fornecido, com comparação numérica e visual parcial. Os outros 16 modelos específicos são auxiliares, baseados nos campos e sem homologação visual Prosoft. [Cobertura, operação e lacunas](docs/RELATORIOS_E_MODELOS.md). ECD/ECF, livros legais, encerramento anual e consolidação entre empresas não estão implementados. Balanço/DRE exigem classificação explícita do plano; não presumem o encerramento do resultado.
 - CTBLCTOS segue o PDF fornecido, limitado a LC1/LC2. Importação efetiva na Prosoft, versões da instalação de destino, leiaute fiscal e registros CTA/TRC/SLD permanecem sujeitos a implementação/homologação. Não há escrita na base Prosoft.
 - Perfis são por empresa, sem permissões por campo. A restauração por empresa/exercício isolado e os adaptadores PostgreSQL/MySQL/Redis/MinIO continuam pendentes. O backup e a restauração implementados abrangem o banco integral e seus originais.
 - Consultas dependem da cobertura e disponibilidade dos provedores. Ausência de IE não significa isenção. CNPJ alfanumérico é cadastrado manualmente; consulta externa numérica não certifica regime tributário.

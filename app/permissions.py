@@ -176,7 +176,13 @@ def route_policy(path, method, query, payload, session):
         if tail.endswith(('/report','/files','/auxiliary')) or (not write and query.get('format','json') != 'json'):
             action = 'print' if tail.endswith('/report') and query.get('purpose') == 'print' and query.get('format','pdf') == 'pdf' else 'export'
         return routine, action, False
-    if root == 'report-models': return 'dashboard', 'read', False
+    if root == 'report-models':
+        module = query.get('module') or session.get('module', 'accounting')
+        return (module + '.reports' if module in {'fiscal', 'accounting', 'financial'} else 'invalid'), 'read', False
+    if root == 'movement-exports':
+        kind = tail.split('/')[2] if len(tail.split('/')) > 2 else ''
+        routine = {'documents.xlsx': 'fiscal.documents', 'journals.xlsx': 'accounting.journals'}.get(kind, 'invalid')
+        return routine, 'export', False
     if root == 'storage': return 'system.storage', 'export' if tail.endswith('/download') else 'read', False
     if root in {'exercises', 'periods'}:
         module = payload.get('module') or query.get('module') or session.get('module', 'fiscal')

@@ -31,23 +31,30 @@ class FiscalReportsMixin:
         if kind not in FISCAL_REPORTS:raise DomainError('Relatório fiscal não encontrado.',404)
         start,end=iso_date(start),iso_date(end)
         if start>end:raise DomainError('Período inicial posterior ao final.')
+        if status not in {'','pending','reviewed','booked'}:raise DomainError('Situação fiscal inválida.')
+        if direction not in {'','incoming','outgoing'}:raise DomainError('Operação fiscal inválida.')
+        cfop=str(cfop or '').strip();ncm=str(ncm or '').strip()
+        if cfop and (len(cfop)!=4 or not cfop.isascii() or not cfop.isdigit()):raise DomainError('CFOP deve conter quatro dígitos.')
+        if ncm and (len(ncm)!=8 or not ncm.isascii() or not ncm.isdigit()):raise DomainError('NCM deve conter oito dígitos.')
+        if kind=='fiscal-assessments' and any([query,status,direction,cfop,ncm]):raise DomainError('Apurações são filtradas pelo intervalo de competências, sem filtros documentais.')
         if kind in {'fiscal-entries','fiscal-outputs'}:direction='incoming' if kind=='fiscal-entries' else 'outgoing';status='booked'
         with self.db.read(snapshot=True) as conn:
             company=company_row(conn,cid);docs=[self._document_values(r) for r in conn.execute('SELECT * FROM documents WHERE company_id=? AND posting_date BETWEEN ? AND ? ORDER BY posting_date,id',(cid,start,end))]
             query=query.casefold().strip()
             docs=[d for d in docs if (not status or d['status']==status) and (not direction or d['direction']==direction) and (not query or query in f"{d['number']} {d['partner_name']} {d['partner_tax_id']} {d['key']}".casefold())]
             docs=[d for d in docs if (not cfop or d['cfop']==cfop or any(i.get('cfop')==cfop for i in d['items'])) and (not ncm or any(i.get('ncm')==ncm for i in d['items']))]
-            def document(d):return {'document_id':d['id'],'date':d['posting_date'],'document':d['number'],'model':d['model'],'series':d['series'],
+            def document(d):return {'document_id':d['id'],'date':d['posting_date'],'issue_date':d['issue_date'],'document':d['number'],'model':d['model'],'series':d['series'],
                 'partner_name':d['partner_name'],'partner_tax_id':d['partner_tax_id'],'direction':d['direction'],'cfop':d['cfop'],
                 'total_cents':d['total_cents'],'status':d['status']}
             rows=[];totals={};note='Relatório auxiliar interno. Valores declarados; campos ausentes permanecem em branco. Não substitui obrigação legal, PVA ou validação da incidência/crédito.'
             if kind in {'fiscal-documents','fiscal-entries','fiscal-outputs','fiscal-taxes'}:
                 rows=[document(d) for d in docs]
-                if kind=='fiscal-taxes':
+                if kind in {'fiscal-taxes','fiscal-entries','fiscal-outputs'}:
+                    reported_taxes=TAXES if kind=='fiscal-taxes' else ['icms','ipi']
                     for r,d in zip(rows,docs):
-                        for tax in TAXES:
+                        for tax in reported_taxes:
                             r[tax+'_base_cents']=declared(d['taxes'],tax,True);r[tax+'_cents']=declared(d['taxes'],tax)
-                    for tax in TAXES:
+                    for tax in reported_taxes:
                         for suffix in ['_base_cents','_cents']:totals[tax+suffix]=sum(r[tax+suffix] or 0 for r in rows)
                         totals[tax+'_informed_documents']=sum(r[tax+'_cents'] is not None for r in rows)
                     note+=' Totais tributários abrangem somente valores conhecidos; a quantidade informada indica a cobertura por tributo.'
@@ -100,5 +107,6 @@ class FiscalReportsMixin:
                     saved=json.loads(r['snapshot_json']);rows.append({'ledger_id':r['id'],'period':r['period'],'tax':r['tax'].upper(),'assessment_id':r['assessment_id'],
                         'opening_credit_cents':r['opening_credit_cents'],'debit_cents':saved['debit_cents'],'credit_cents':saved['credit_cents'],
                         'payable_cents':r['payable_cents'],'carry_credit_cents':r['carry_credit_cents'],'responsible':r['created_by'],'reason':r['reason']})
-                totals={'finalized_assessments':len(rows)};note='Livro auxiliar de memórias conferidas e finalizadas por tributo. Saldos de tributos diferentes não são somados nem compensados. Cada linha permite consultar a memória de origem.'
-            return {'kind':kind,'title':FISCAL_REPORTS[kind],'company_id':cid,'company_name':company['name'],'start':start,'end':end,'rows':rows,'totals':totals,'scope_note':note,'filters':{'query':query,'status':status,'direction':direction,'cfop':cfop,'ncm':ncm}}
+                totals={'finalized_assessments':len(rows)};note='Livro auxiliar de memórias conferidas e finalizadas por tributo. O intervalo considera as competências mensais das datas inicial e final, inclusive. Saldos de tributos diferentes não são somados nem compensados. Cada linha permite consultar a memória de origem.'
+            if (cfop or ncm) and kind not in {'fiscal-items','fiscal-classifications','fiscal-operations'}:note+=' CFOP/NCM selecionam documentos que contenham a classificação; os valores documentais permanecem integrais, sem rateio pelos itens selecionados.'
+            return {'kind':kind,'title':FISCAL_REPORTS[kind],'company_id':cid,'company_name':company['name'],'company_code':company['prosoft_code'] or company['code'],'company_tax_id':company['tax_id'],'start':start,'end':end,'rows':rows,'totals':totals,'scope_note':note,'filters':{'query':query,'status':status,'direction':direction,'cfop':cfop,'ncm':ncm}}

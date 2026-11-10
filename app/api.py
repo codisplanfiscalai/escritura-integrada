@@ -151,7 +151,7 @@ def create_app(data_dir=None, demo=False):
             and response.headers.get('content-disposition', '').startswith('inline;'))
         response.headers["X-Frame-Options"] = "SAMEORIGIN" if audit_pdf else "DENY"
         ancestors = "'self'" if audit_pdf else "'none'"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors " + ancestors
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors " + ancestors
         if path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response

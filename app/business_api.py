@@ -93,12 +93,16 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
         from .fiscal_reports import FISCAL_REPORTS
         result=core.fiscal_report(cid,kind,start,end,query,status,direction,cfop,ncm) if kind in FISCAL_REPORTS else core.business_report(cid,kind,start,end,account_id,cost_center_id,query,status,direction)
         if model!='internal':
-            from .report_models import ledger_pdf
-            if model!='prosoft-ledger-v1' or kind!='ledger':raise DomainError('Modelo incompatível com o relatório.')
+            from .report_models import CATALOG,report_model_pdf
+            selected=next((m for m in CATALOG if m['id']==model and m['kind']==kind and m.get('supported',True)),None)
+            if selected is None:raise DomainError('Modelo incompatível com o relatório.')
+            if not 1<=first_page<=99999:raise DomainError('Folha inicial deve estar entre 1 e 99999.')
             result['model']=model
+            result['model_evidence']={k:selected[k] for k in ['name','source','status','limitations'] if k in selected}
             if format=='pdf':
-                content,mime=ledger_pdf(result,first_page,show_numbers)
-                return Response(content,media_type=mime,headers={'Content-Disposition':'inline; filename="razao-analitico.pdf"'})
+                content,mime=report_model_pdf(result,model,first_page,show_numbers)
+                disposition='inline' if request.query_params.get('purpose')=='print' else 'attachment'
+                return Response(content,media_type=mime,headers={'Content-Disposition':f'{disposition}; filename="{kind}-{start}-{end}.pdf"'})
         if format=='json':return result
         if format in {'pdf','xlsx'}:
             from .report_exports import export_report

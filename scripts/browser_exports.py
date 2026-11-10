@@ -18,8 +18,12 @@ def run(page, url, cid, nav, check, shot):
         with page.expect_download() as info:main.get_by_role('link',name='PDF',exact=True).click()
         assert Path(info.value.path()).read_bytes().startswith(b'%PDF')
         expect(main.locator('.report-output')).to_be_visible();assert page.url==original
-        with page.expect_popup() as info:main.get_by_role('link',name='Prévia / imprimir PDF',exact=True).click()
+        main.get_by_role('button',name='Visualizar PDF',exact=True).click()
+        preview=main.get_by_role('region',name='Prévia do relatório',exact=True)
+        expect(preview).to_be_visible()
+        with page.expect_popup() as info:preview.get_by_role('link',name='Abrir PDF / imprimir',exact=True).click()
         popup=info.value;popup.wait_for_load_state('domcontentloaded');popup.close()
+        preview.get_by_role('button',name='Fechar prévia',exact=True).click()
         expect(main.locator('.report-output')).to_be_visible();assert page.url==original
         denial=f'Exportação recusada no teste de preservação: {kind}'
         def deny(route):route.fulfill(status=403,content_type='application/json',body=json.dumps({'detail':denial}))
