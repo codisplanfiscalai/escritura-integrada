@@ -67,7 +67,7 @@ def main():
                 page.screenshot(path=str(OUT/'review-ready.png'), full_page=True)
                 report['checks'].append('Editing date/CFOP invalidates preparation; explicit validation enables confirmation')
                 page.get_by_label('Confirmar importação', exact=True).click()
-                page.get_by_role('dialog').get_by_role('button', name='Cancelar', exact=True).click()
+                page.get_by_role('dialog', name='Confirmar importação?', exact=True).get_by_role('button', name='Voltar', exact=True).click()
                 expect(date).to_have_value('16/11/2026')
                 page.get_by_label('Confirmar importação', exact=True).click()
                 page.get_by_role('dialog').get_by_role('button', name='Importar registros', exact=True).click()

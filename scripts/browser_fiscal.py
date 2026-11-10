@@ -170,7 +170,7 @@ def _purchase_payables(page, url, cid, nav, check, shot, company):
             if not repeat:
                 shot('fiscal-parcela-opcional-revisada-1440.png')
                 confirm.click()
-                page.get_by_role('dialog').get_by_role('button', name='Cancelar', exact=True).click()
+                page.get_by_role('dialog', name='Confirmar importação?', exact=True).get_by_role('button', name='Voltar', exact=True).click()
                 expect(arrival).to_have_value('10/04/2026')
                 expect(page.get_by_label('Base do vencimento', exact=True)).to_have_value('receipt')
         confirm.click()

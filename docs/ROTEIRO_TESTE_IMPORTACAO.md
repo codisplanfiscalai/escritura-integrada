@@ -40,7 +40,7 @@ As opções criam títulos em aberto. Não executam baixa, pagamento, conciliaç
 
 1. Clique em **Validar revisão e selecionar aptos** depois das alterações. Uma mudança posterior deve invalidar a preparação.
 2. Confira os documentos selecionados, as linhas e as parcelas propostas. Documentos bloqueados precisam ser resolvidos ou retirados da seleção.
-3. Abra a confirmação e use **Cancelar** uma vez. As datas, classificações e opções revisadas devem continuar na tela.
+3. Abra a confirmação e use **Voltar** uma vez para cancelar. As datas, classificações e opções revisadas devem continuar na tela.
 4. Confirme somente a seleção desejada. Abra a escrituração e as contas a pagar para conferir IDs, valores, vínculos e parcelas.
 5. Reimporte o mesmo XML em um teste controlado. Deve continuar existindo um documento por identidade na empresa, sem repetir títulos. Versões realmente divergentes exigem conferência, não outro lançamento silencioso.
 
