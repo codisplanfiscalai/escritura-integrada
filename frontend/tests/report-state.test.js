@@ -67,7 +67,11 @@ test('componente: consultas interrompidas não substituem o contexto novo e expo
   const captured=view.result.value.url;view.start.value='2026-02-01';await nextTick();
   assert.equal(view.filtersChanged.value,true);assert.equal(view.result.value.url,captured);
   view.kind.value='ledger';await nextTick();assert.equal(view.result.value,null);
+  assert.equal(view.model.value,'prosoft-ledger-v1','Razão usa o modelo de referência por padrão');
   view.firstPage.value=19;view.showNumbers.value=true;
+  assert.equal(view.parameters().get('first_page'),'19');
+  assert.equal(view.parameters().get('show_numbers'),'true');
+  view.model.value='internal';
   assert.equal(view.parameters().get('first_page'),'1');
   assert.equal(view.parameters().get('show_numbers'),'false');
   view.model.value='prosoft-ledger-v1';
@@ -79,6 +83,10 @@ test('componente: consultas interrompidas não substituem o contexto novo e expo
   view.model.value='internal';
   const third=view.run();view.kind.value='diary';await nextTick();
   pending[2].reject(new Error('old failure'));await third;assert.equal(view.error.value,'');
+  assert.equal(view.model.value,'internal');
+  view.kind.value='fiscal-entries';await nextTick();assert.equal(view.model.value,'reference-entries-p1a-v1');
+  view.kind.value='fiscal-outputs';await nextTick();assert.equal(view.model.value,'reference-outputs-p2a-v1');
+  view.kind.value='fiscal-items';await nextTick();assert.equal(view.model.value,'internal');
  }finally{app.unmount();delete globalThis.__reportTest;}
 });
 

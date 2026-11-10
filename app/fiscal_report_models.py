@@ -16,6 +16,7 @@ FISCAL_MODEL_IDS = {kind: 'internal-' + kind for kind in FISCAL_REPORTS}
 FISCAL_MODEL_STATUS = 'reference_not_homologated'
 
 LABELS = {
+    'partner_state': 'UF do participante', 'partner_ie': 'Inscrição estadual do participante', 'company_ie': 'Inscrição estadual',
     'document_state': 'Estado documental', 'cancellation_source': 'Fonte do cancelamento', 'cancellation_responsible': 'Responsável', 'cancellation_reason': 'Motivo',
     'document_id': 'ID doc.', 'document_ids': 'IDs documentos',
     'date': 'Data escrit.', 'issue_date': 'Emissão', 'document': 'Documento', 'model': 'Modelo',

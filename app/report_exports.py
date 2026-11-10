@@ -5,7 +5,7 @@ import json
 from xml.sax.saxutils import escape
 from .core import DomainError,decimal_text
 
-LABELS={'date':'Data','document':'Documento','document_id':'Origem fiscal','journal_id':'Lançamento','title_id':'Título','item':'Item',
+LABELS={'partner_state':'UF do participante','partner_ie':'Inscrição estadual do participante','company_ie':'Inscrição estadual','date':'Data','document':'Documento','document_id':'Origem fiscal','journal_id':'Lançamento','title_id':'Título','item':'Item',
 'document_version':'Versão do documento','rule_version':'Versão da regra','rule_id':'Regra','item_indices':'Itens selecionados','ledger_id':'Apuração','assessment_id':'Memória','period':'Competência','tax':'Tributo','partner_name':'Participante','partner_tax_id':'CPF/CNPJ',
 'direction':'Operação','description':'Descrição','status':'Situação','model':'Modelo','series':'Série','cfop':'CFOP','ncm':'NCM','quantity':'Quantidade','unit':'Unidade',
 'total_cents':'Total (R$)','item_total_cents':'Total itens (R$)','documents':'Documentos','items':'Itens','occurrences':'Ocorrências',

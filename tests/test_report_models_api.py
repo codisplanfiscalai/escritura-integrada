@@ -42,6 +42,27 @@ class ReportModelsApiTests(unittest.TestCase):
                 response=self.client.get(path+'&format=pdf&purpose=print')
                 self.assertTrue(response.headers['content-disposition'].startswith('inline'))
 
+    def test_reference_books_use_same_rows_and_documental_identity(self):
+        doc=self.reviewed(extra={'issuer':{'state':'ES','ie':'IE-DOCUMENTAL'},
+            'fiscal_treatment':{'code':'synthetic-other','book_mode':'other_excluding_ipi',
+                'source':'Fonte sintética do teste','responsible':'Revisor sintético',
+                'valid_from':'2026-11-01','valid_to':''}})
+        self.post(f'/documents/{doc["id"]}/book',self.booking(doc,generate_titles=False,lines=[]))
+        base_report=self.client.get(self.path('fiscal-entries')).json()
+        path=self.path('fiscal-entries','&model=reference-entries-p1a-v1&first_page=7')
+        reference=self.client.get(path).json()
+        self.assertEqual(base_report['rows'],reference['rows'])
+        self.assertEqual(base_report['totals'],reference['totals'])
+        self.assertEqual('ES',reference['rows'][0]['partner_state'])
+        self.assertEqual('IE-DOCUMENTAL',reference['rows'][0]['partner_ie'])
+        self.assertIn('company_ie',reference)
+        self.assertEqual('reference_layout_partial_not_homologated',reference['model_evidence']['status'])
+        pdf=self.client.get(path+'&format=pdf')
+        self.assertEqual(200,pdf.status_code)
+        text='\n'.join(p.extract_text() for p in PdfReader(io.BytesIO(pdf.content)).pages)
+        for token in ('MODELO P1/A','000007','IE-DOCUMENTAL','EM HOMOLOGAÇÃO','0,0000'):
+            self.assertIn(token,text)
+
     def test_unknown_model_wrong_kind_and_invalid_page_fail_before_export(self):
         for extra in ['&model=missing','&model=prosoft-ledger-v1',
                       '&model=internal-diary&first_page=0','&model=internal-diary&first_page=100000']:

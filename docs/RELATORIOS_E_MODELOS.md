@@ -10,14 +10,17 @@ A tabela, os totalizadores e as ações de CSV, Excel, PDF e prévia ficam vincu
 
 ## Cobertura disponível
 
-Há 17 modelos específicos selecionáveis:
+Há 19 modelos específicos selecionáveis:
 
 - Contábeis: Diário Geral, Diário Consolidado, Razão Analítico Individual, Balancete, Movimentos por centro de custo, Balanço patrimonial e Demonstração do resultado.
-- Fiscais: Documentos fiscais, Livro auxiliar de entradas, Livro auxiliar de saídas, Itens escriturados, Operações por CFOP, Operações por participante, Itens por NCM e CFOP, Bases e tributos declarados, Pendências de conferência e Livro auxiliar de apuração.
+- Fiscais de referência: Registro de entradas P1/A e Registro de saídas P2/A, ambos limitados ao quadro ICMS, transportes e resumo por CFOP. São selecionados por padrão nesses livros, preservando a opção auxiliar.
+- Fiscais auxiliares: Documentos fiscais, Livro auxiliar de entradas, Livro auxiliar de saídas, Itens escriturados, Operações por CFOP, Operações por participante, Itens por NCM e CFOP, Bases e tributos declarados, Pendências de conferência e Livro auxiliar de apuração.
+
+Os quadros P1/A e P2/A preservam a mesma seleção e as mesmas linhas analíticas. A impressão não cria divisões ou consolidações. A apresentação ordena por data de escrituração, número numérico e série, mantendo estáveis as linhas do mesmo documento. UF e IE provêm do participante documental e a IE da empresa provém do seu cadastro. Código contábil, isentas e outros campos sem origem permanecem em branco. Alíquota e imposto do livro não são confundidos com o destaque do XML: a coluna usa somente o tratamento fiscal explícito já vigente. Resumos incompletos ficam em branco, sem transformar dados ausentes em zero. Anexos IPI, quadros por UF/contribuinte e resumo de observações ainda não foram reproduzidos. Todos os quadros exibem **EM HOMOLOGAÇÃO**.
 
 Os modelos contábeis organizam as respectivas colunas, contas/grupos/centros e totalizadores. Campos complementares ficam em anexo de conferência ligado ao número original do registro, sem serem descartados. Os fiscais separam identificação documental, itens, tributos e memórias de apuração conforme a natureza da consulta, em vez de comprimir todos os campos em uma única grade. Folhas, cabeçalhos e continuação acompanham a paginação.
 
-O **Razão Analítico Individual** preserva o modelo baseado no PDF fornecido e sua comparação numérica histórica. Sua equivalência visual continua parcial: tipografia e quebras não são certificadas como idênticas. Os outros 16 modelos são impressões auxiliares específicas, **baseadas nos campos, sem homologação visual Prosoft**, identificadas assim no catálogo e nos PDFs. A matriz de fontes diretas, secundárias e lacunas está em [RELATORIOS_PROSOFT_REFERENCIAS.md](RELATORIOS_PROSOFT_REFERENCIAS.md).
+O **Razão Analítico Individual** preserva o modelo baseado no PDF fornecido e sua comparação numérica histórica. Sua equivalência visual continua parcial: tipografia e quebras não são certificadas como idênticas. Os 16 modelos auxiliares são impressões específicas, **baseadas nos campos, sem homologação visual Prosoft**, identificadas assim no catálogo e nos PDFs. A matriz de fontes diretas, secundárias e lacunas está em [RELATORIOS_PROSOFT_REFERENCIAS.md](RELATORIOS_PROSOFT_REFERENCIAS.md).
 
 ## Filtros, cálculos e cuidados
 
@@ -33,7 +36,7 @@ O **Razão Analítico Individual** preserva o modelo baseado no PDF fornecido e 
 
 Faltam exemplares impressos ou PDFs de cada variante com o mesmo conjunto de dados, filtros e versão da instalação Prosoft. A busca complementar na Space recuperou o pacote histórico de engenharia reversa e confirmou seu SHA256: os 18 binários e interfaces/gabaritos recuperados estão acessíveis para leitura estática. O pacote não contém prints/PDFs e não é um conjunto de fontes originais recompiláveis; os eventos VB6 não foram recuperados. Os controles diretamente verificados e as famílias ainda não implementadas estão detalhados na seção 9 de RELATORIOS_PROSOFT_REFERENCIAS.md. Os livros fiscais históricos P1/A, P2/A e P9 fornecem referências de campos e geometria, mas não comprovam fabricante nem regras fiscais completas. Permanecem fora desta entrega as variantes ISS 51/53/56, Mapa Resumo ECF, resumos IVA/UF/CFO, autenticação, IPI por decêndio, demonstrativos específicos de custos e opções avançadas de termos, assinaturas e consolidação; seus rótulos foram confirmados, não seus algoritmos.
 
-Também não são implementados por esta etapa livros legais homologados, ECD/ECF, termos/assinaturas profissionais inventados, modelos especiais ANS, balanço comparativo, demonstrações não cobertas, dados de isentas/outras ou ajustes fiscais inferidos. A apresentação do P9 completo requer a origem detalhada de ajustes, códigos e demais quadros. A aplicação não declara que os 17 modelos esgotem o catálogo Prosoft.
+Também não são implementados por esta etapa livros legais homologados, ECD/ECF, termos/assinaturas profissionais inventados, modelos especiais ANS, balanço comparativo, demonstrações não cobertas, dados de isentas/outras ou ajustes fiscais inferidos. A apresentação do P9 completo requer a origem detalhada de ajustes, códigos e demais quadros. A aplicação não declara que os modelos esgotem o catálogo Prosoft.
 
 ## Verificação reproduzível
 
