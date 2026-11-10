@@ -64,6 +64,8 @@ class BusinessCore(GlobalAccountPlansMixin, FiscalLibraryMixin, ThirdPartiesMixi
     def _book_document(self,conn,cid,item_id,payload,actor):
         doc=self._document(conn,cid,item_id)
         self._validate_document_links(conn,cid,doc,_existing_document_id=item_id)
+        if doc.get('book_cancellation') and any(payload.get(k) for k in ('lines', 'model_id', 'generate_titles', 'installments', 'use_document_installments')):
+            raise DomainError('Documento cancelado não gera efeitos contábeis ou financeiros.')
         scope='book-document:'+str(item_id)
         if payload.get('idempotency_key'):
             key,hashed,previous=self._operation(conn,cid,scope,payload)

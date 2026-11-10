@@ -30,7 +30,7 @@ def register_movement_export_routes(app, core):
             raise DomainError('Tipo de movimento inválido.')
         if not 1900 <= year <= 2199 or (month and not re.fullmatch(r'0[1-9]|1[0-2]', month)):
             raise DomainError('Exercício ou mês inválido.')
-        if direction not in ('', 'incoming', 'outgoing') or status not in ('', 'pending', 'reviewed', 'booked'):
+        if direction not in ('', 'incoming', 'outgoing') or status not in ('', 'pending', 'reviewed', 'booked', 'cancelled'):
             raise DomainError('Filtro inválido.')
         if kind == 'journals' and (direction or status):
             raise DomainError('Filtro não aplicável a lançamentos contábeis.')
@@ -49,11 +49,11 @@ def register_movement_export_routes(app, core):
         records = [r for r in records if r['period'][:4] == str(year)
                    and (not month or r['period'][5:] == month)
                    and (not direction or r['direction'] == direction)
-                   and (not status or r['status'] == status)
+                   and (not status or r['status'] == status or status == 'cancelled' and r.get('book_cancellation'))
                    and normalized(query) in normalized(search_text(r, kind))]
         if len(records) > 1_048_575:
             raise DomainError('A pesquisa excede a capacidade de uma planilha Excel. Refine os filtros para exportar sem truncamento.')
-        keys = (('id', 'period', 'direction', 'number', 'model', 'series', 'issue_date', 'posting_date', 'partner_name', 'partner_tax_id', 'key', 'cfop', 'total_cents', 'status')
+        keys = (('id', 'period', 'direction', 'number', 'model', 'series', 'issue_date', 'posting_date', 'partner_name', 'partner_tax_id', 'key', 'cfop', 'total_cents', 'status', 'document_state', 'book_cancellation')
                 if kind == 'documents' else ('id', 'period', 'number', 'date', 'document', 'history', 'total_cents', 'status'))
         data = [{k: r.get(k) for k in keys} for r in records]
         result = {'kind': kind, 'title': 'Documentos fiscais pesquisados' if kind == 'documents' else 'Lançamentos contábeis pesquisados',

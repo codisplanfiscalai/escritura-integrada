@@ -32,23 +32,26 @@ class FiscalReportsMixin:
         if kind not in FISCAL_REPORTS:raise DomainError('Relatório fiscal não encontrado.',404)
         start,end=iso_date(start),iso_date(end)
         if start>end:raise DomainError('Período inicial posterior ao final.')
-        if status not in {'','pending','reviewed','booked'}:raise DomainError('Situação fiscal inválida.')
+        if status not in {'','pending','reviewed','booked','cancelled'}:raise DomainError('Situação fiscal inválida.')
         if direction not in {'','incoming','outgoing'}:raise DomainError('Operação fiscal inválida.')
         cfop=str(cfop or '').strip();ncm=str(ncm or '').strip()
         if cfop and (len(cfop)!=4 or not cfop.isascii() or not cfop.isdigit()):raise DomainError('CFOP deve conter quatro dígitos.')
         if ncm and (len(ncm)!=8 or not ncm.isascii() or not ncm.isdigit()):raise DomainError('NCM deve conter oito dígitos.')
         if kind=='fiscal-assessments' and any([query,status,direction,cfop,ncm]):raise DomainError('Apurações são filtradas pelo intervalo de competências, sem filtros documentais.')
+        cancelled_only = status == 'cancelled'
         if kind in {'fiscal-entries','fiscal-outputs'}:direction='incoming' if kind=='fiscal-entries' else 'outgoing';status='booked'
         with self.db.read(snapshot=True) as conn:
             company=company_row(conn,cid);docs=[self._document_values(r) for r in conn.execute('SELECT * FROM documents WHERE company_id=? AND posting_date BETWEEN ? AND ? ORDER BY posting_date,id',(cid,start,end))]
             query=query.casefold().strip()
-            docs=[d for d in docs if (not status or d['status']==status) and (not direction or d['direction']==direction) and (not query or query in f"{d['number']} {d['partner_name']} {d['partner_tax_id']} {d['key']}".casefold())]
+            docs=[d for d in docs if (not status or d['status']==status or status=='cancelled' and d.get('book_cancellation')) and (not cancelled_only or d.get('book_cancellation')) and (not direction or d['direction']==direction) and (not query or query in f"{d['number']} {d['partner_name']} {d['partner_tax_id']} {d['key']}".casefold())]
             analytical_book=kind in {'fiscal-entries','fiscal-outputs'}
             docs=[d for d in docs if analytical_book or (not cfop or d['cfop']==cfop or any(i.get('cfop')==cfop for i in d['items'])) and (not ncm or any(i.get('ncm')==ncm for i in d['items']))]
             def document(d):return {'document_id':d['id'],'date':d['posting_date'],'issue_date':d['issue_date'],'document':d['number'],'model':d['model'],'series':d['series'],
                 'partner_name':d['partner_name'],'partner_tax_id':d['partner_tax_id'],'direction':d['direction'],'cfop':d['cfop'],
-                'total_cents':d['total_cents'],'status':d['status']}
+                'total_cents':d['total_cents'],'status':d['status'], 'document_state':d.get('document_state',''), 'cancellation_source':d.get('book_cancellation',{}).get('source',''), 'cancellation_responsible':d.get('book_cancellation',{}).get('responsible',''), 'cancellation_reason':d.get('book_cancellation',{}).get('reason','')}
             rows=[];totals={};note='Relatório auxiliar interno. Valores declarados; campos ausentes permanecem em branco. Não substitui obrigação legal, PVA ou validação da incidência/crédito.'
+            if any(d.get('book_cancellation') for d in docs):
+                note+=' Canceladas conforme livro validado: datas e classificação atribuídas ao livro; valores zerados, sem efeitos econômicos ou comprovação eletrônica/SEFAZ.'
             document_headers=[]
             if analytical_book:
                 for d in docs:

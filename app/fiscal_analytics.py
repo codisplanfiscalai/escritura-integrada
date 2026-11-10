@@ -180,6 +180,12 @@ def fiscal_posting_lines(document):
     SPED C190 is authoritative and never combined with C170 or C100 amounts.
     """
     doc = _unpack(document)
+    if doc.get('book_cancellation'):
+        line = _base(doc, {}, 'validated_fiscal_book')
+        line.update(document_total='0.00', ipi='0.00', ipi_informed=False,
+                    book_base='0.00', book_icms='0.00', book_other='0.00', book_ipi='0.00',
+                    declared_taxes={}, treatment='Cancelada conforme livro validado; sem evento eletrônico', pending=[])
+        return [line]
     review = None
     review_invalid = False
     if doc.get('posting_group_review') is not None:

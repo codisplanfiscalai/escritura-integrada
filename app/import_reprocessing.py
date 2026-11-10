@@ -51,6 +51,8 @@ class ImportReprocessingMixin:
             old = self._document(conn, cid, row['id'])
             existing[key] = old
             try:
+                if old.get('book_cancellation'):
+                    raise DomainError('Cancelada conforme livro não pode ser reprocessada como XML.')
                 if not raw.get('source_hash') or not any(s['source_hash'] == raw['source_hash'] for s in old['sources']):
                     raise DomainError('Origem não corresponde ao documento existente.')
                 if any(old.get(k) != raw.get(k) for k in ('key', 'direction', 'model')):

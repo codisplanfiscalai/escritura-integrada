@@ -91,6 +91,9 @@ class ImportPayablesMixin:
         return plan
 
     def _create_import_payables(self, conn, cid, doc, source, actor):
+        persisted = self._document(conn, cid, doc['id'])
+        if persisted.get('book_cancellation'):
+            raise DomainError('Cancelada conforme livro não gera parcelas XML ou por regra.',409,'cancelled_document')
         if billing_signature(doc) != billing_signature(source):
             raise DomainError('Cobrança divergente da nota existente; revisão manual necessária.', 409, 'import_payables_blocked')
         proposed = dict(source, id=doc['id'])
@@ -213,6 +216,9 @@ class ImportPayablesMixin:
         return plan
 
     def _create_generated_payables(self, conn, cid, doc, source, options, actor):
+        persisted = self._document(conn, cid, doc['id'])
+        if persisted.get('book_cancellation'):
+            raise DomainError('Cancelada conforme livro não gera parcelas XML ou por regra.',409,'cancelled_document')
         from .core import audit, pack
         plan = self._generated_payables_plan(conn, cid, source, options)
         if plan['status'] == 'not_applicable': return []

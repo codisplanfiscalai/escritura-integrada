@@ -137,3 +137,5 @@ def export_report(result,kind):
     def footer(canvas,document):
         canvas.setFont('EscrituraSans',8);canvas.drawString(30,15,'Escritura Integrada · relatório auxiliar');canvas.drawRightString(pagesize[0]-30,15,f'Página {document.page}')
     doc.build(story,onFirstPage=footer,onLaterPages=footer);return output.getvalue(),'application/pdf'
+
+LABELS.update(document_state='Estado documental', cancellation_source='Fonte do cancelamento', cancellation_responsible='Responsável pelo cancelamento', cancellation_reason='Motivo do cancelamento', book_cancellation='Cancelamento conforme livro validado')

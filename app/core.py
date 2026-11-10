@@ -572,8 +572,38 @@ class Core:
             raise DomainError("Itens fiscais devem conter objetos válidos.")
         source = json_value(payload.get("source", {"type": "manual"}), dict, "Origem")
         source_hash = text(payload.get("source_hash", ""), "Hash de origem", False, 200)
+        cancellation = None
+        if 'book_cancellation' in payload:
+            raw = payload['book_cancellation']
+            if not isinstance(raw, dict) or set(raw) != {'source', 'responsible', 'reason'}:
+                raise DomainError('Cancelamento pelo livro exige fonte, responsável e motivo.')
+            cancellation = {k: text(raw.get(k), k, True, 1000) for k in ('source', 'responsible', 'reason')}
+            if values['total_cents'] or json.loads(items) or json.loads(taxes):
+                raise DomainError('Registro cancelado pelo livro deve ter total zero, sem itens ou tributos.')
+            if any(payload.get(k) for k in ('authorization', 'issuer', 'recipient', 'billing', 'invoices', 'analytics', 'source_hash', 'import_posting', 'fiscal_treatment', 'posting_group_review', 'signature_verified', 'schema_validated', 'environment', 'raw_fields', 'transport', 'declared_new_total', 'total_review')):
+                raise DomainError('Cancelamento pelo livro não aceita origem eletrônica ou efeitos fiscais.')
+            if direction == 'incoming' and not re.sub(r'[.\-/\s]', '', values['partner_tax_id']).upper():
+                raise DomainError('Informe CPF/CNPJ do emitente para identificar a entrada cancelada.')
+            source = pack({'type': 'validated_fiscal_book', **cancellation})
+        elif 'document_state' in payload:
+            raise DomainError('Estado documental não pode ser informado sem evidência de cancelamento pelo livro.')
+        # A book assertion never cancels or replaces a matching electronic document.
+        candidates = conn.execute("SELECT * FROM documents WHERE company_id=? AND direction=? AND model=? AND (? OR extra_json LIKE '%\"book_cancellation\"%')",
+                                  (cid, direction, values['model'], bool(cancellation))).fetchall()
+        canonical = lambda value: str(int(value)) if value and value.isascii() and value.isdigit() else value
+        for candidate in candidates:
+            if any(canonical(candidate[k]) != canonical(values[k]) for k in ('series', 'number')):
+                continue
+            prior = json.loads(candidate['extra_json']).get('book_cancellation')
+            prior_issuer = re.sub(r'[.\-/\s]', '', candidate['partner_tax_id']).upper()
+            new_issuer = re.sub(r'[.\-/\s]', '', values['partner_tax_id']).upper()
+            same_issuer = direction == 'outgoing' or not prior_issuer or not new_issuer or prior_issuer == new_issuer
+            if same_issuer and (cancellation or prior):
+                same = cancellation == prior and all(candidate[k] == v for k, v in values.items())
+                if not same:
+                    raise DomainError('Identidade já registrada; o livro não altera documento existente. Confira a origem.', 409, 'document_conflict')
         business_key = ("key:" + values["key"]) if values["key"] else digest({k: values[k] for k in ("direction", "model", "series", "number", "partner_tax_id", "partner_name", "issue_date")})
-        hashed = digest(values | {"taxes": json.loads(taxes), "items": document_item_semantics(json.loads(items), bool(source_hash and isinstance(payload.get("issuer"), dict)))})
+        hashed = digest(values | ({"book_cancellation": cancellation} if cancellation else {}) | {"taxes": json.loads(taxes), "items": document_item_semantics(json.loads(items), bool(source_hash and isinstance(payload.get("issuer"), dict)))})
         existing = conn.execute("SELECT * FROM documents WHERE company_id=? AND business_key=?", (cid, business_key)).fetchone()
         if existing:
             if existing["payload_hash"] != hashed:
@@ -590,6 +620,8 @@ class Core:
             payload = self._import_document_masters(conn, cid, payload, actor)
             items = pack(payload.get('items', []))
         extras = {k: payload[k] for k in ("source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "billing", "receipt_date", "analytics", "raw_fields", "posting_date_proposed", "movement_date", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting", "carrier_id", "master_import_warnings", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review") if k in payload}
+        if cancellation:
+            extras.update(book_cancellation=cancellation, document_state='cancelled', cancellation_evidence='validated_fiscal_book')
         if 'receipt_date' in extras:
             extras['receipt_date'] = None if extras['receipt_date'] in (None, '') else iso_date(extras['receipt_date'], 'Chegada efetiva')
         from .fiscal_analytics import fiscal_posting_lines, validate_fiscal_treatment, validate_posting_group_review
@@ -620,6 +652,8 @@ class Core:
         with (nullcontext(_conn) if _conn is not None else self.db.transaction()) as conn:
             old = select_one(conn, "documents", cid, item_id)
             check_version(old, payload)
+            if json.loads(old['extra_json']).get('book_cancellation') or 'book_cancellation' in payload or 'document_state' in payload:
+                raise DomainError('Registro cancelado pelo livro é imutável; não converte documentos existentes.', 409, 'document_immutable')
             if hasattr(self, "_validate_document_links"):
                 self._validate_document_links(conn, cid, {**self._document(conn,cid,item_id),**payload}, _existing_document_id=item_id)
             if old["status"] == "booked":
@@ -714,7 +748,10 @@ class Core:
         ensure_unfinalized(conn, cid, doc["period"])
         if doc["status"] != "reviewed":
             raise DomainError("Confira o documento antes de escriturá-lo.", 409, "invalid_status")
-        if doc["model"] in {"55", "65", "57"}:
+        cancelled = bool(json.loads(doc['extra_json']).get('book_cancellation'))
+        if cancelled and any(payload.get(k) for k in ('lines', 'model_id', 'generate_titles', 'installments', 'use_document_installments')):
+            raise DomainError('Documento cancelado não gera efeitos contábeis ou financeiros.')
+        if not cancelled and doc["model"] in {"55", "65", "57"}:
             items = json.loads(doc["items_json"])
             analytics = json.loads(doc["extra_json"]).get("analytics", [])
             classifications = items if items and doc["model"] in {"55", "65"} else analytics
@@ -758,6 +795,8 @@ class Core:
         if values["document_id"] is not None:
             integer(values["document_id"], "Documento fiscal")
             doc = select_one(conn, "documents", cid, values["document_id"])
+            if json.loads(doc['extra_json']).get('book_cancellation'):
+                raise DomainError('Documento cancelado não pode receber título financeiro.')
             expected = "payable" if doc["direction"] == "incoming" else "receivable"
             if kind != expected:
                 raise DomainError("O sentido do título não corresponde ao documento fiscal vinculado.")

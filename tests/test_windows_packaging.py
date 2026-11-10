@@ -8,6 +8,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 from app.desktop import DesktopSmokeReport
@@ -31,7 +32,7 @@ class WindowsPackagingTests(unittest.TestCase):
         self.assertTrue(value["revision_capped"])
         path = self.root / "version.txt"
         write_version_info(path, value)
-        self.assertIn("0.4.1-dev.70000+commit.a12", path.read_text())
+        self.assertIn("0.4.1-dev.70000+commit.a12", path.read_text(encoding="utf-8"))
         self.assertEqual(version_resource("0.4.0")["numeric"], (0, 4, 0, 0))
 
     def test_invalid_or_out_of_range_version_rejected(self):
@@ -91,11 +92,11 @@ class WindowsPackagingTests(unittest.TestCase):
         path = self.root / "smoke.json"
         smoke = DesktopSmokeReport(path)
         smoke.record("ui_rendered", ui_verified=True)
-        self.assertFalse(json.loads(path.read_text())["ok"])
+        self.assertFalse(json.loads(path.read_text(encoding="utf-8"))["ok"])
         self.assertEqual(smoke.complete(False, 0), 1)
-        self.assertFalse(json.loads(path.read_text())["ok"])
+        self.assertFalse(json.loads(path.read_text(encoding="utf-8"))["ok"])
         self.assertEqual(smoke.complete(True, 0), 0)
-        self.assertTrue(json.loads(path.read_text())["shutdown_complete"])
+        self.assertTrue(json.loads(path.read_text(encoding="utf-8"))["shutdown_complete"])
         smoke = DesktopSmokeReport(path)
         self.assertEqual(smoke.complete(True, 0), 1, "Fechar sem renderização não aprova")
 
@@ -107,7 +108,7 @@ class WindowsPackagingTests(unittest.TestCase):
             ('smoke_macos.py', 'after', False),
             ('smoke_installer_windows.py', 'new_counts', True),
         ):
-            tree = ast.parse((root / 'scripts' / script).read_text())
+            tree = ast.parse((root / 'scripts' / script).read_text(encoding="utf-8"))
             comparisons = [node for node in ast.walk(tree) if isinstance(node, ast.Compare)
                            and isinstance(node.left, ast.Subscript)
                            and isinstance(node.left.value, ast.Name)
@@ -120,7 +121,7 @@ class WindowsPackagingTests(unittest.TestCase):
                 with self.subTest(script=script, schema=schema):
                     self.assertEqual(eval(expression, {'SCHEMA_VERSION': SCHEMA_VERSION,
                                                        variable: {'schema_version': schema}}), expected)
-        mac = (root / 'scripts/smoke_macos.py').read_text()
+        mac = (root / 'scripts/smoke_macos.py').read_text(encoding="utf-8")
         self.assertIn("glob(f'antes-schema-{SCHEMA_VERSION}-*.sqlite3')", mac)
 
     def test_both_native_maintenance_helpers_bundle_the_migration_data(self):
@@ -130,7 +131,7 @@ class WindowsPackagingTests(unittest.TestCase):
                                     f'{root / "app" / "data"}{os.pathsep}app/data'])
         self.assertTrue((root / 'app/data/cfop-carga-tabcfop-20261109.json').is_file())
         for filename in ('build_installer_windows.py', 'build_macos.py'):
-            tree = ast.parse((root / 'scripts' / filename).read_text())
+            tree = ast.parse((root / 'scripts' / filename).read_text(encoding="utf-8"))
             calls = [node for node in ast.walk(tree) if isinstance(node, ast.List)
                      and any(isinstance(v, ast.Constant) and v.value == 'EscrituraMaintenance' for v in node.elts)]
             self.assertEqual(len(calls), 1, filename)
@@ -138,9 +139,21 @@ class WindowsPackagingTests(unittest.TestCase):
                                 and isinstance(v.value.func, ast.Name)
                                 and v.value.func.id == 'maintenance_bundle_args' for v in calls[0].elts), filename)
 
+    def test_native_script_checks_work_with_cp1252_default_encoding(self):
+        # Reproduce the Windows default even on UTF-8 Linux/macOS runners.
+        original_read_text = Path.read_text
+
+        def windows_read_text(path, encoding=None, errors=None):
+            return original_read_text(path, encoding=encoding or "cp1252", errors=errors)
+
+        with patch.object(Path, "read_text", windows_read_text):
+            self.test_native_smoke_migration_assertions_require_current_schema()
+            self.test_both_native_maintenance_helpers_bundle_the_migration_data()
+            self.test_installer_console_preserves_unicode_diagnostics_on_cp1252()
+
     def test_installer_console_preserves_unicode_diagnostics_on_cp1252(self):
         root = Path(__file__).resolve().parents[1]
-        tree = ast.parse((root / 'scripts/smoke_installer_windows.py').read_text())
+        tree = ast.parse((root / 'scripts/smoke_installer_windows.py').read_text(encoding="utf-8"))
         prints = [node for node in ast.walk(tree) if isinstance(node, ast.Expr)
                   and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name)
                   and node.value.func.id == 'print' and node.value.args

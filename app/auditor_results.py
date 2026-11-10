@@ -71,10 +71,11 @@ def bookkeeping_document(booked):
     return {'document_ref':'bookkeeping:'+str(booked['id']),'number':booked['number'],'model':booked['model'],
         'series':booked['series'],'access_key':booked.get('key'),'issued_at':booked['issue_date'],
         'posting_date':booked['posting_date'],'direction':'entrada' if booked['direction']=='incoming' else 'saida',
-        'status':'cancelled' if booked.get('status')=='cancelled' else 'bookkeeping_only',
+        'status':'cancelled' if booked.get('document_state')=='cancelled' else 'bookkeeping_only',
         'total_value':str(Decimal(booked['total_cents'])/100),'ibs_cbs_base':'0','ibs_value':'0','cbs_value':'0',
         'items':items,'item_count':len(items),'bookkeeping_id':booked['id'],'bookkeeping_version':booked['version'],
         'original_file_id':None,'normalized':{'origin':'bookkeeping','partner_name':booked.get('partner_name'),'booked_taxes':booked.get('taxes',{})},
+        'book_cancellation':booked.get('book_cancellation'),
         'origin':'bookkeeping','coverage':'Sem XML original: valores escriturados consultáveis; recálculos não executados.'}
 
 

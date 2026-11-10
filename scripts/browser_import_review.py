@@ -1,9 +1,110 @@
 """Chromium acceptance of import revisions; synthetic temporary installation only."""
 from pathlib import Path
-import io, json, os, socket, subprocess, sys, tempfile, time, urllib.request, zipfile
+import io, json, os, re, socket, subprocess, sys, tempfile, time, urllib.request, zipfile
 from playwright.sync_api import sync_playwright, expect
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/browser-import-review'
+
+def check_book_cancellation(page, url, scope, report):
+    """Exercise the actual form and read back only this temporary synthetic DB."""
+    from openpyxl import load_workbook
+    from pypdf import PdfReader
+    def read(path):
+        response = page.request.get(url + scope + path)
+        assert response.ok, response.text()
+        return response.json()
+    before_titles = read('/titles')
+    before_journals = read('/journals')
+    nav = page.get_by_role('navigation', name='Navegação principal')
+    button = nav.get_by_role('button', name='Escrituração e documentos', exact=True, include_hidden=True)
+    parent = button.locator('xpath=ancestor::details')
+    if parent.count() and parent.get_attribute('open') is None: parent.locator('summary').click()
+    button.click()
+    page.get_by_role('button', name='Novo documento', exact=True).click()
+    dialog = page.get_by_role('dialog', name='Novo documento fiscal', exact=True)
+    toggle = dialog.get_by_label('Registrar documento cancelado conforme livro fiscal validado')
+    toggle.check()
+    dialog.get_by_label('Fonte do livro e página *', exact=True).fill('Livro sintético UI, página 1')
+    dialog.get_by_role('button', name='Cancelar', exact=True).click()
+    page.get_by_role('dialog', name='Descartar edição?', exact=True).get_by_role('button', name='Descartar', exact=True).click()
+    expect(dialog).to_have_count(0)
+    page.get_by_role('button', name='Novo documento', exact=True).click()
+    expect(toggle).not_to_be_checked()
+    toggle.check()
+    dialog.get_by_label('Fonte do livro e página *', exact=True).fill('Livro sintético UI, página 1')
+    dialog.get_by_label('Responsável pela validação *', exact=True).fill('Revisor sintético UI')
+    dialog.get_by_label('Motivo / evidência *', exact=True).fill('Cancelada no período sintético conferido')
+    dialog.get_by_role('combobox', name='Operação', exact=True).select_option('outgoing')
+    for label in ('Emissão *', 'Escrituração *'):
+        field=dialog.locator('label').filter(has_text=re.compile('^'+re.escape(label))).locator('input.date-input-field')
+        field.fill('06112026'); field.press('Tab')
+        expect(field).to_have_value('06/11/2026')
+    dialog.get_by_label('Número *', exact=True).fill('90299')
+    dialog.get_by_label('Série', exact=True).fill('003')
+    dialog.get_by_label('Participante *', exact=True).fill('Participante sintético UI')
+    dialog.get_by_label('CFOP informado', exact=True).fill('5102')
+    expect(dialog.get_by_label('Total (R$) *', exact=True)).to_be_disabled()
+    expect(dialog.get_by_label('Total (R$) *', exact=True)).to_have_value('0.00')
+    dialog.get_by_role('button', name='Salvar documento', exact=True).click()
+    expect(dialog).to_have_count(0)
+    row = page.get_by_role('row').filter(has=page.get_by_text('90299', exact=True))
+    expect(row.get_by_text('Cancelado conforme livro validado', exact=True)).to_be_visible()
+    row.get_by_role('button', name='Ver documento 90299', exact=True).click()
+    consult = page.get_by_role('dialog', name='Consultar documento fiscal', exact=True)
+    expect(consult.get_by_label('Número *', exact=True)).to_be_disabled()
+    expect(consult.get_by_role('button', name='Salvar documento', exact=True)).to_have_count(0)
+    consult.get_by_role('button', name='Fechar', exact=True).click()
+    row.get_by_role('button', name='Conferir', exact=True).click()
+    review = page.get_by_role('dialog', name='Registrar conferência', exact=True)
+    review.get_by_label('Observação da conferência', exact=True).fill('Conferência sintética UI do livro')
+    review.get_by_role('button', name='Marcar como conferido', exact=True).click()
+    expect(row.get_by_text('Conferido', exact=True)).to_be_visible()
+    row.get_by_role('button', name='Escriturar', exact=True).click()
+    book = page.get_by_role('dialog', name='Escriturar documento', exact=True)
+    expect(book.get_by_label('Gerar títulos financeiros vinculados')).to_have_count(0)
+    expect(book.get_by_label('Contabilizar junto com o documento')).to_have_count(0)
+    book.get_by_label('Observação da escrituração *', exact=True).fill('Registro sintético de linha cancelada')
+    book.get_by_role('button', name='Cancelar', exact=True).click()
+    page.get_by_role('dialog', name='Descartar escrituração?', exact=True).get_by_role('button', name='Descartar', exact=True).click()
+    expect(book).to_have_count(0)
+    expect(row.get_by_text('Conferido', exact=True)).to_be_visible()
+    row.get_by_role('button', name='Escriturar', exact=True).click()
+    book.get_by_label('Observação da escrituração *', exact=True).fill('Registro sintético de linha cancelada')
+    book.get_by_role('button', name='Confirmar escrituração', exact=True).click()
+    expect(book).to_have_count(0)
+    expect(row.get_by_text('Escriturado', exact=True)).to_be_visible()
+    page.get_by_label('Filtrar estado fiscal', exact=True).select_option('cancelled')
+    expect(page.locator('tbody tr')).to_have_count(1)
+    expect(row.get_by_text('R$ 0,00', exact=True)).to_be_visible()
+    export_link = page.get_by_role('link', name='Exportar Excel (1)', exact=True)
+    export = page.request.get(url + export_link.get_attribute('href'))
+    assert export.ok and export.body().startswith(b'PK'), export.text()
+    doc = next(d for d in read('/documents?year=2026') if d['number']=='90299')
+    assert doc['issue_date']=='2026-11-06' and doc['posting_date']=='2026-11-06'
+    assert doc['status']=='booked' and doc['document_state']=='cancelled' and doc['total_cents']==0
+    assert doc['source']['type']=='validated_fiscal_book' and 'authorization' not in doc
+    assert doc['book_cancellation']['source']=='Livro sintético UI, página 1'
+    trace = read(f"/documents/{doc['id']}/trace")
+    assert trace['titles']==[] and trace['journals']==[]
+    assert read('/titles')==before_titles and read('/journals')==before_journals
+    endpoint='/business-reports/fiscal-outputs?start=2026-11-01&end=2026-11-30&status=cancelled'
+    result=read(endpoint)
+    assert len(result['rows'])==1 and result['totals']['total_cents']==0
+    line=result['rows'][0]
+    assert line['document_id']==doc['id'] and line['cancellation_source']=='Livro sintético UI, página 1'
+    for key in ('total_cents','book_base_cents','book_icms_cents','book_other_cents','book_ipi_cents'):
+        assert line[key]==0, (key,line[key])
+    pdf=page.request.get(url+scope+endpoint+'&format=pdf')
+    assert pdf.ok and pdf.body().startswith(b'%PDF')
+    text=' '.join(p.extract_text() for p in PdfReader(io.BytesIO(pdf.body())).pages)
+    assert 'Canceladas conforme livro validado' in text and 'Livro sintético UI' in text
+    xlsx=page.request.get(url+scope+endpoint+'&format=xlsx')
+    assert xlsx.ok
+    sheet=load_workbook(io.BytesIO(xlsx.body()))['Dados']
+    assert 'Estado documental' in [c.value for c in sheet[1]]
+    assert 'Livro sintético UI, página 1' in [c.value for r in sheet for c in r]
+    page.screenshot(path=str(OUT/'cancelled-book.png'), full_page=True)
+    report['checks'].append('Validated-book cancellation: discard/reopen, immutable record, review/book, zero filtered row, PDF/XLSX provenance, no journals or titles')
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
@@ -78,6 +179,7 @@ def main():
                 assert doc['items'][0]['master_id'] and doc['participant_id']
                 page.screenshot(path=str(OUT/'confirmed.png'), full_page=True)
                 report['checks'].append('Cancel preserves revision; confirm books edited date and links participant/product')
+                check_book_cancellation(page, url, scope, report)
                 assert not report['console_errors'], report['console_errors']
                 report['ok'] = True
                 browser.close()

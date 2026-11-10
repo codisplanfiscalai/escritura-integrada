@@ -197,13 +197,15 @@ class BulkOperations:
                     try:
                         doc = self.core._document(conn, cid, rid)
                         self.core._validate_document_links(conn, cid, doc, _existing_document_id=rid)
-                        if doc['model'] in {'55', '65', '57'}:
+                        if not doc.get('book_cancellation') and doc['model'] in {'55', '65', '57'}:
                             classifications = doc['items'] if doc['items'] and doc['model'] in {'55', '65'} else doc.get('analytics', [])
                             if (classifications and any(not isinstance(i, dict) or not re.fullmatch(r'\d{4}', str(i.get('cfop', ''))) for i in classifications)) or (not classifications and not doc['cfop']):
                                 raise DomainError('Confira o CFOP em cada item/registro analítico.', 409, 'cfop_required')
                     except DomainError as exc:
                         block(exc.code, exc.detail, rid)
                 if action == 'update':
+                    if json.loads(row['extra_json']).get('book_cancellation'):
+                        block('document_immutable', 'Cancelada conforme livro validado é imutável; alteração de CFOP em lote não é permitida.', rid)
                     if row['status'] == 'booked' or json.loads(row['items_json']) or json.loads(row['extra_json']).get('analytics'):
                         block('unsafe_cfop_update', 'CFOP em lote restrito a documentos não escriturados sem itens/analíticos. Use a edição detalhada para manter as classificações consistentes.', rid)
                     try:
@@ -412,6 +414,10 @@ class BulkOperations:
             elif kind == 'journals':
                 conn.execute('UPDATE journals SET ' + ','.join(k + '=?' for k in req['changes']) + ' WHERE id=? AND company_id=?', (*req['changes'].values(), rid, cid))
             else:
+                # Re-read persisted provenance, never trust caller/snapshot extras.
+                persisted = self.core._document(conn, cid, rid)
+                if persisted.get('book_cancellation'):
+                    raise DomainError('Cancelada conforme livro validado é imutável; CFOP em lote bloqueado.',409,'document_immutable')
                 # Header-only CFOP edit invalidates review, preserving values and identity.
                 from .core import semantic_value
                 values = {k: row[k] for k in ('direction', 'number', 'series', 'model', 'partner_name', 'partner_tax_id', 'key', 'cfop', 'issue_date', 'posting_date', 'total_cents')}

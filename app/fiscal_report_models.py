@@ -16,6 +16,7 @@ FISCAL_MODEL_IDS = {kind: 'internal-' + kind for kind in FISCAL_REPORTS}
 FISCAL_MODEL_STATUS = 'reference_not_homologated'
 
 LABELS = {
+    'document_state': 'Estado documental', 'cancellation_source': 'Fonte do cancelamento', 'cancellation_responsible': 'Responsável', 'cancellation_reason': 'Motivo',
     'document_id': 'ID doc.', 'document_ids': 'IDs documentos',
     'date': 'Data escrit.', 'issue_date': 'Emissão', 'document': 'Documento', 'model': 'Modelo',
     'series': 'Série', 'partner_name': 'Participante', 'partner_tax_id': 'CPF/CNPJ',
@@ -54,7 +55,7 @@ def _display(key, value):
         return ', '.join(str(v) for v in value) or 'Não informado'
     if key in {'date', 'issue_date'} and len(str(value)) == 10:
         return '/'.join(str(value).split('-')[::-1])
-    if key in {'direction', 'status'}:
+    if key in {'direction', 'status', 'document_state'}:
         return VALUES.get(str(value), str(value))
     return str(value)
 
@@ -160,6 +161,9 @@ def fiscal_pdf(result, first_page=1, show_numbers=False):
         ]))
         story.extend([table, Spacer(1, 6)])
 
+    cancelled = [d for d in (result.get('document_headers') or rows) if d.get('document_state') == 'cancelled']
+    if cancelled:
+        section('Canceladas conforme livro validado (sem validação eletrônica)', [('document', 65), ('model', 40), ('series', 34), ('cancellation_source', 230), ('cancellation_responsible', 120), ('cancellation_reason', 220)], cancelled)
     if result.get('row_scope') == 'analytical_posting_lines':
         section('Cabeçalhos dos documentos (total integral, uma vez por nota)', DOCUMENT_COLUMNS,
                 result.get('document_headers') or [], True)
@@ -241,6 +245,10 @@ def fiscal_pdf(result, first_page=1, show_numbers=False):
         totals={key:value for key,value in totals.items() if not key.endswith('_informed_lines') and (not key.endswith('_cents') or key=='document_total_cents')}
     section('Totalizadores da seleção', [('metric', 350), ('value', 350)],
             [{'metric': LABELS.get(key, key), 'value': _display(key, value)} for key, value in totals.items()])
+    # A final spacer can overflow an otherwise complete last table and create
+    # a page containing only the repeated header/footer.
+    if story and isinstance(story[-1], Spacer):
+        story.pop()
     doc.build(story, onFirstPage=header, onLaterPages=header)
     return out.getvalue(), 'application/pdf'
 
