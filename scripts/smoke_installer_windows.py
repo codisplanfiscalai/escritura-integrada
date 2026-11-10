@@ -91,7 +91,9 @@ def main():
             report['ok']=True
     except Exception as exc:report['error']=str(exc)
     args.result.parent.mkdir(parents=True,exist_ok=True);args.result.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
-    print(json.dumps(report,ensure_ascii=False))
+    # Keep the UTF-8 artifact intact; console encodings such as cp1252 must
+    # never mask an installer diagnostic containing a BOM or Unicode path.
+    print(json.dumps(report,ensure_ascii=True))
     return 0 if report['ok'] else 1
 
 if __name__=='__main__':raise SystemExit(main())

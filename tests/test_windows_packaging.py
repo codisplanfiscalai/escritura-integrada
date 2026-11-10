@@ -1,6 +1,9 @@
 """Gates de empacotamento independentes de Qt; não simulam execução Windows."""
 import ast
+from contextlib import redirect_stdout
+import io
 import json
+import os
 from pathlib import Path
 import struct
 import tempfile
@@ -9,7 +12,7 @@ import zipfile
 
 from app.desktop import DesktopSmokeReport
 from app.maintenance import SCHEMA_VERSION
-from scripts.build_windows import frontend_assets, pe_details, version_resource, write_version_info
+from scripts.build_windows import frontend_assets, pe_details, version_resource, write_version_info, maintenance_bundle_args
 from scripts.smoke_windows import extract_bundle
 
 
@@ -119,6 +122,43 @@ class WindowsPackagingTests(unittest.TestCase):
                                                        variable: {'schema_version': schema}}), expected)
         mac = (root / 'scripts/smoke_macos.py').read_text()
         self.assertIn("glob(f'antes-schema-{SCHEMA_VERSION}-*.sqlite3')", mac)
+
+    def test_both_native_maintenance_helpers_bundle_the_migration_data(self):
+        root = Path(__file__).resolve().parents[1]
+        arguments = maintenance_bundle_args()
+        self.assertEqual(arguments, ['--paths', str(root), '--add-data',
+                                    f'{root / "app" / "data"}{os.pathsep}app/data'])
+        self.assertTrue((root / 'app/data/cfop-carga-tabcfop-20261109.json').is_file())
+        for filename in ('build_installer_windows.py', 'build_macos.py'):
+            tree = ast.parse((root / 'scripts' / filename).read_text())
+            calls = [node for node in ast.walk(tree) if isinstance(node, ast.List)
+                     and any(isinstance(v, ast.Constant) and v.value == 'EscrituraMaintenance' for v in node.elts)]
+            self.assertEqual(len(calls), 1, filename)
+            self.assertTrue(any(isinstance(v, ast.Starred) and isinstance(v.value, ast.Call)
+                                and isinstance(v.value.func, ast.Name)
+                                and v.value.func.id == 'maintenance_bundle_args' for v in calls[0].elts), filename)
+
+    def test_installer_console_preserves_unicode_diagnostics_on_cp1252(self):
+        root = Path(__file__).resolve().parents[1]
+        tree = ast.parse((root / 'scripts/smoke_installer_windows.py').read_text())
+        prints = [node for node in ast.walk(tree) if isinstance(node, ast.Expr)
+                  and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name)
+                  and node.value.func.id == 'print' and node.value.args
+                  and isinstance(node.value.args[0], ast.Call)
+                  and isinstance(node.value.args[0].func, ast.Attribute)
+                  and node.value.args[0].func.attr == 'dumps']
+        self.assertEqual(len(prints), 1)
+        report = {'ok': False, 'error': '\ufeffErro de instalação: João / 漢'}
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding='cp1252', errors='strict')
+        try:
+            with redirect_stdout(console):
+                exec(compile(ast.Module(body=prints, type_ignores=[]), 'native-smoke-print', 'exec'),
+                     {'json': json, 'report': report})
+            console.flush()
+            self.assertEqual(json.loads(raw.getvalue().decode('cp1252')), report)
+        finally:
+            console.detach()
 
 
 if __name__ == "__main__":
