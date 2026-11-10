@@ -14,6 +14,7 @@ import secrets
 import sqlite3
 import time
 import uuid
+from contextlib import nullcontext
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
@@ -56,6 +57,15 @@ def semantic_value(value):
     if isinstance(value, list):
         return [semantic_value(item) for item in value]
     return value
+
+
+def document_item_semantics(items, imported=False):
+    """Generated master links are not source content for XML deduplication."""
+    values = semantic_value(items)
+    if imported:
+        return [{key: value for key, value in row.items() if key != 'master_id'}
+                if isinstance(row, dict) else row for row in values]
+    return values
 
 
 def text(value, label="Campo", required=False, maximum=500):
@@ -551,20 +561,41 @@ class Core:
             raise DomainError("CFOP deve ter quatro dígitos; sua aplicabilidade exige conferência fiscal.")
         taxes = json_value(payload.get("taxes", {}), dict, "Tributos declarados")
         items = json_value(payload.get("items", []), list, "Itens")
+        if any(not isinstance(row, dict) for row in json.loads(items)):
+            raise DomainError("Itens fiscais devem conter objetos válidos.")
         source = json_value(payload.get("source", {"type": "manual"}), dict, "Origem")
         source_hash = text(payload.get("source_hash", ""), "Hash de origem", False, 200)
         business_key = ("key:" + values["key"]) if values["key"] else digest({k: values[k] for k in ("direction", "model", "series", "number", "partner_tax_id", "partner_name", "issue_date")})
-        hashed = digest(values | {"taxes": json.loads(taxes), "items": semantic_value(json.loads(items))})
+        hashed = digest(values | {"taxes": json.loads(taxes), "items": document_item_semantics(json.loads(items), bool(source_hash and isinstance(payload.get("issuer"), dict)))})
         existing = conn.execute("SELECT * FROM documents WHERE company_id=? AND business_key=?", (cid, business_key)).fetchone()
         if existing:
             if existing["payload_hash"] != hashed:
                 raise DomainError("Já existe documento com a mesma identidade e conteúdo diferente. Confira antes de escriturar.", 409, "document_conflict")
             conn.execute("INSERT OR IGNORE INTO document_sources(company_id,document_id,source_hash,source_json,created_at) VALUES(?,?,?,?,?)", (cid, existing["id"], source_hash, source, now()))
-            return self._document(conn, cid, existing["id"]) | {"duplicate": True}
+            result = self._document(conn, cid, existing["id"]) | {"duplicate": True}
+            if source_hash and existing['source_hash'] and source_hash != existing['source_hash']:
+                result['source_version_warning'] = 'XML com hash diferente para a mesma identidade; campos importados usados na comparação coincidem. As fontes foram preservadas para conferir demais dados e eventos. Hash diferente, por si só, não comprova divergência fiscal.'
+            return result
         ensure_open(conn, cid, values["posting_date"][:7], "fiscal")
         from .tax_ledger import ensure_unfinalized
         ensure_unfinalized(conn, cid, values["posting_date"][:7])
-        extras = {k: payload[k] for k in ("source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "analytics", "raw_fields", "posting_date_proposed", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting") if k in payload}
+        if hasattr(self, '_import_document_masters'):
+            payload = self._import_document_masters(conn, cid, payload, actor)
+            items = pack(payload.get('items', []))
+        extras = {k: payload[k] for k in ("source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "analytics", "raw_fields", "posting_date_proposed", "movement_date", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting", "carrier_id", "master_import_warnings", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review") if k in payload}
+        from .fiscal_analytics import fiscal_posting_lines, validate_fiscal_treatment, validate_posting_group_review
+        if 'fiscal_treatment' in extras:
+            extras['fiscal_treatment'] = validate_fiscal_treatment(extras['fiscal_treatment'], values['posting_date'])
+        from .fiscal_import import validate_total_review, total_comparison
+        if 'total_review' in extras:
+            extras['total_review'] = validate_total_review(extras['total_review'])
+        extras['total_comparison'] = total_comparison({**extras, 'total': decimal_text(values['total_cents']), 'taxes': json.loads(taxes)})
+        if 'posting_group_review' in extras:
+            extras['posting_group_review'] = validate_posting_group_review(extras['posting_group_review'], {**extras, **values, 'items': json.loads(items)})
+        try:
+            extras['posting_lines'] = fiscal_posting_lines({**extras, **values, 'items': json.loads(items), 'taxes': json.loads(taxes)})
+        except (ValueError, TypeError, AttributeError, InvalidOperation):
+            raise DomainError('Itens ou tributos declarados inválidos para gerar as linhas de escrituração.') from None
         values.update(id=next_movement_id(conn,'documents'), company_id=cid, period=values["posting_date"][:7], taxes_json=taxes, items_json=items, source_json=source, extra_json=pack(extras), source_hash=source_hash, business_key=business_key, payload_hash=hashed, status="pending", created_at=now())
         did = conn.execute(f"INSERT INTO documents({','.join(values)}) VALUES({','.join('?' for _ in values)})", tuple(values.values())).lastrowid
         conn.execute("INSERT INTO document_sources(company_id,document_id,source_hash,source_json,created_at) VALUES(?,?,?,?,?)", (cid, did, source_hash, source, now()))
@@ -575,9 +606,9 @@ class Core:
         with self.db.transaction() as conn:
             return self._create_document(conn, cid, payload, actor)
 
-    def update_document(self, cid, item_id, payload, actor):
+    def update_document(self, cid, item_id, payload, actor, *, _conn=None):
         reason = text(payload.get("reason"), "Motivo da alteração", True, 1000)
-        with self.db.transaction() as conn:
+        with (nullcontext(_conn) if _conn is not None else self.db.transaction()) as conn:
             old = select_one(conn, "documents", cid, item_id)
             check_version(old, payload)
             if hasattr(self, "_validate_document_links"):
@@ -607,15 +638,31 @@ class Core:
             if other:
                 raise DomainError("Já existe outro documento com essa identidade.", 409, "document_conflict")
             extras = json.loads(old["extra_json"])
-            for key in ("participant_id", "establishment_id", "document_category"):
+            for key in ("participant_id", "establishment_id", "document_category", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review"):
                 if key in payload:
-                    extras[key] = payload[key]
-            values.update(payload_hash=digest(values | {"taxes": json.loads(taxes), "items": semantic_value(json.loads(items))}), business_key=identity, period=values["posting_date"][:7], taxes_json=taxes, items_json=items)
+                    if key in {'fiscal_treatment', 'posting_group_review', 'total_review'} and payload[key] is None:
+                        extras.pop(key, None)
+                    else:
+                        extras[key] = payload[key]
+            values.update(payload_hash=digest(values | {"taxes": json.loads(taxes), "items": document_item_semantics(json.loads(items), bool(old["source_hash"] and isinstance(extras.get("issuer"), dict)))}), business_key=identity, period=values["posting_date"][:7], taxes_json=taxes, items_json=items)
             if old['status'] == 'booked':
                 self._validate_posted_classification(conn, cid, {**extras, **values, 'items': json.loads(items)})
                 if 'import_posting' in extras:
                     extras['import_posting']['review_pending'] = True
                     extras['import_posting']['last_edit_reason'] = reason
+            from .fiscal_analytics import fiscal_posting_lines, validate_fiscal_treatment, validate_posting_group_review
+            if 'fiscal_treatment' in extras:
+                extras['fiscal_treatment'] = validate_fiscal_treatment(extras['fiscal_treatment'], values['posting_date'])
+            from .fiscal_import import validate_total_review, total_comparison
+            if 'total_review' in extras:
+                extras['total_review'] = validate_total_review(extras['total_review'])
+            extras['total_comparison'] = total_comparison({**extras, 'total': decimal_text(values['total_cents']), 'taxes': json.loads(taxes)})
+            if 'posting_group_review' in extras:
+                extras['posting_group_review'] = validate_posting_group_review(extras['posting_group_review'], {**extras, **values, 'items': json.loads(items)})
+            try:
+                extras['posting_lines'] = fiscal_posting_lines({**extras, **values, 'items': json.loads(items), 'taxes': json.loads(taxes)})
+            except (ValueError, TypeError, AttributeError, InvalidOperation):
+                raise DomainError('Itens ou tributos declarados inválidos para gerar as linhas de escrituração.') from None
             values["extra_json"] = pack(extras)
             new_status = 'booked' if old['status'] == 'booked' else 'pending'
             conn.execute(f"UPDATE documents SET {','.join(k+'=?' for k in values)},status=?,reviewed_by=NULL,review_reason=NULL,version=version+1 WHERE id=? AND company_id=?", (*values.values(), new_status, item_id, cid))
@@ -1020,7 +1067,7 @@ class Core:
 
     def _import_result(self, row):
         result = json.loads(row["parsed_json"])
-        result.update(id=row["id"], filename=row["filename"], sha256=row["sha256"], preview_hash=row["preview_hash"], status=row["status"], period=row["period"], bank_account=row["bank_account"], created_at=row["created_at"])
+        result.update(original_available=bool(row["original"]), id=row["id"], filename=row["filename"], sha256=row["sha256"], preview_hash=row["preview_hash"], status=row["status"], period=row["period"], bank_account=row["bank_account"], created_at=row["created_at"])
         if row["confirmation_json"]:
             result["confirmation"] = json.loads(row["confirmation_json"])
         return result
@@ -1029,7 +1076,7 @@ class Core:
         from .permissions import readable
         with self.db.read() as conn:
             company_row(conn, cid)
-            return [{"id": r["id"], "filename": r["filename"], "sha256": r["sha256"], "status": r["status"], "period": r["period"], "created_at": r["created_at"], "documents_count": len(json.loads(r["parsed_json"]).get("documents", [])), "transactions_count": len(json.loads(r["parsed_json"]).get("transactions", []))} for r in conn.execute("SELECT id,filename,sha256,status,period,created_at,parsed_json FROM imports WHERE company_id=? ORDER BY id DESC", (cid,)) if (not json.loads(r["parsed_json"]).get("documents") or readable(conn,cid,"fiscal.imports")) and (not json.loads(r["parsed_json"]).get("transactions") or readable(conn,cid,"financial.reconciliation"))]
+            return [{"id": r["id"], "filename": r["filename"], "sha256": r["sha256"], "status": r["status"], "period": r["period"], "created_at": r["created_at"], "documents_count": len(json.loads(r["parsed_json"]).get("documents", [])), "transactions_count": len(json.loads(r["parsed_json"]).get("transactions", []))} for r in conn.execute("SELECT id,filename,sha256,status,period,created_at,parsed_json FROM imports WHERE company_id=? AND id NOT IN (SELECT import_id FROM import_package_tombstones WHERE history_hidden=1 UNION SELECT import_id FROM import_package_history) ORDER BY id DESC", (cid,)) if (not json.loads(r["parsed_json"]).get("documents") or readable(conn,cid,"fiscal.imports")) and (not json.loads(r["parsed_json"]).get("transactions") or readable(conn,cid,"financial.reconciliation"))]
 
     def import_detail(self, cid, item_id):
         with self.db.read() as conn:
@@ -1061,8 +1108,10 @@ class Core:
         bank_account = text(payload.get("bank_account"), "Conta bancária", False, 200)
         with self.db.read() as conn:
             company = company_row(conn, cid)
-        identity = digest({"sha256": digest(raw), "filename": filename, "period": competence, "options": options, "company_tax_id": company["tax_id"]})
+        identity = digest({"parser_revision": 2, "sha256": digest(raw), "filename": filename, "period": competence, "options": options, "company_tax_id": company["tax_id"]})
         with self.db.read() as conn:
+            from .import_package_cleanup import reject_removed_upload
+            reject_removed_upload(conn, cid, digest(raw))
             existing = conn.execute("SELECT * FROM imports WHERE company_id=? AND identity_hash=?", (cid, identity)).fetchone()
             if existing:
                 from .permissions import import_access
@@ -1090,6 +1139,8 @@ class Core:
             current = company_row(conn, cid)
             if current["tax_id"] != company["tax_id"]:
                 raise DomainError("CNPJ alterado durante a leitura. Gere novamente a prévia.", 409, "stale_company")
+            from .import_package_cleanup import reject_removed_upload
+            reject_removed_upload(conn, cid, digest(raw))
             existing = conn.execute("SELECT * FROM imports WHERE company_id=? AND identity_hash=?", (cid, identity)).fetchone()
             if existing:
                 from .permissions import import_access
@@ -1105,6 +1156,8 @@ class Core:
         expected_hash = text(payload.get("preview_hash"), "Hash da prévia", True, 100)
         with self.db.transaction() as conn:
             batch = select_one(conn, "imports", cid, item_id)
+            from .import_package_cleanup import require_original
+            require_original(conn, cid, item_id)
             company = company_row(conn, cid)
             if not hmac.compare_digest(batch["preview_hash"], expected_hash):
                 raise DomainError("A prévia não corresponde ao conteúdo confirmado. Reabra a conferência.", 409, "stale_preview")
@@ -1123,6 +1176,12 @@ class Core:
                     raise DomainError('Movimentos deste lote foram excluídos fisicamente. O resultado anterior não pode ser repetido; prepare uma nova intenção de importação.',409,'movement_deleted')
                 if previous.get('posting_mode', 'pending') != posting_mode:
                     raise DomainError('Lote já confirmado com outro modo de escrituração.', 409, 'idempotency_conflict')
+                if payload.get('total_review', {}) != previous.get('total_review', {}):
+                    raise DomainError('Lote já confirmado com outra revisão de totalizadores.', 409, 'idempotency_conflict')
+                if payload.get('purchase_destination', '') != previous.get('purchase_destination', ''):
+                    raise DomainError('Lote já confirmado com outra destinação de compra.', 409, 'idempotency_conflict')
+                if payload.get('document_overrides', {}) != previous.get('document_overrides', {}) or payload.get('cfop_mappings', {}) != previous.get('cfop_mappings', {}):
+                    raise DomainError('Lote já confirmado com outra revisão de datas ou CFOPs.', 409, 'idempotency_conflict')
                 if bank_account != batch["bank_account"]:
                     raise DomainError("Importação já confirmada em outra identificação de conta bancária.", 409, "idempotency_conflict")
                 if payload.get('selected') is not None and sorted(payload['selected']) != previous.get('selected'):
@@ -1133,6 +1192,8 @@ class Core:
             from .import_scope import classify, selected_rows
             classify(conn,cid,parsed,batch['period'][:4])
             posting_reason = ''
+            if posting_mode == 'pending' and payload.get('document_overrides'):
+                raise DomainError('A revisão individual exige a preparação da escrituração. Para importar pendente, defina a data nas opções de leitura ou revise depois.')
             if posting_mode == 'book':
                 if not parsed['documents'] or not hasattr(self, '_prepare_fiscal_import'):
                     raise DomainError('Escrituração direta disponível somente para documentos fiscais.')
@@ -1147,7 +1208,7 @@ class Core:
                 for doc in parsed['documents']:
                     if doc['_selection'] in selected and not doc['import_posting']['eligible']:
                         raise DomainError(doc['import_posting']['reason'], 409, 'fiscal_posting_blocked')
-            result = {"import_id": item_id, "status": "confirmed", "posting_mode": posting_mode, "documents_booked": 0, "documents_created": 0, "documents_duplicate": 0, "transactions_created": 0, "transactions_duplicate": 0, "document_ids": [], "transaction_ids": []}
+            result = {"import_id": item_id, "status": "confirmed", "posting_mode": posting_mode, "documents_booked": 0, "documents_created": 0, "documents_duplicate": 0, "transactions_created": 0, "transactions_duplicate": 0, "document_ids": [], "transaction_ids": [], "master_import_warnings": [], "source_version_warnings": []}
             existing_imports = self._fiscal_import_index(conn, cid, parsed['documents']) if posting_mode == 'book' else {}
             for source_doc in parsed.get("documents", []):
                 if source_doc['_selection'] not in selected: continue
@@ -1159,11 +1220,19 @@ class Core:
                     result['documents_booked'] += 1
                 result["documents_duplicate" if doc.get("duplicate") else "documents_created"] += 1
                 result["document_ids"].append(doc["id"])
+                if doc.get('source_version_warning'):
+                    result['source_version_warnings'].append(f"Documento {doc['number']}: {doc['source_version_warning']}")
+                result['master_import_warnings'].extend(
+                    f"Documento {doc['number']}: {warning}" for warning in doc.get('master_import_warnings', []))
             for source_tx in parsed.get("transactions", []):
                 if source_tx['_selection'] not in selected: continue
                 tx = self._create_bank(conn, cid, source_tx, bank_account, actor)
                 result["transactions_duplicate" if tx.get("duplicate") else "transactions_created"] += 1
                 result["transaction_ids"].append(tx["id"])
+            result['total_review'] = payload.get('total_review', {})
+            result['purchase_destination'] = payload.get('purchase_destination', '')
+            result['document_overrides'] = payload.get('document_overrides', {})
+            result['cfop_mappings'] = payload.get('cfop_mappings', {})
             result['selected'] = sorted(selected)
             result['refused'] = [{'selection':r['_selection'],**r['_eligibility']} for k in ('documents','transactions') for r in parsed.get(k,[]) if r['_selection'] not in selected]
             conn.execute("UPDATE imports SET status='confirmed',bank_account=?,confirmation_json=? WHERE id=? AND company_id=?", (bank_account, pack(result), item_id, cid))

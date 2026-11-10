@@ -2,7 +2,7 @@
 import json
 import re
 from .core import (DomainError, audit, boolean, check_version, company_row, integer,
-                   iso_date, json_value, money, normalize_cnpj, now, pack, select_one, text)
+                   iso_date, json_value, money, normalize_cnpj, now, pack, select_one, text, digest)
 
 KINDS = {'participant', 'establishment', 'product', 'service', 'history', 'accounting_model'}
 UFS = set('AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO EX'.split())
@@ -154,6 +154,132 @@ class CadastrosMixin:
                 item_id = conn.execute('INSERT INTO masters(code,name,tax_id,data_json,active,updated_at,company_id,kind,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(*values,cid,kind,now())).lastrowid
             audit(conn,cid,actor,'update' if old else 'create',kind,item_id,{'before':old,'after':payload})
             return self._master(conn,cid,item_id)
+
+    def _import_document_masters(self, conn, cid, payload, actor):
+        """Link XML identities in the document transaction, never by display name.
+
+        Supplier item codes are scoped to their issuer, not to the buyer's SKU.
+        Existing reviewed descriptions/tax settings are never overwritten.
+        """
+        if not payload.get('source_hash') or not isinstance(payload.get('issuer'), dict):
+            return payload
+        payload = dict(payload)
+        company = company_row(conn, cid)
+        warnings = []
+
+        def allowed(action):
+            from .permissions import effect
+            try:
+                effect(conn, cid, 'fiscal.masters', action)
+            except DomainError as exc:
+                if exc.status != 403:
+                    raise
+                warnings.append('Sem permissão para ' + ('criar cadastros' if action == 'create' else 'atualizar papéis de participantes') + '; dados de origem preservados no documento.')
+                return False
+            return True
+
+        def insert(kind, code, name, tax_id, data):
+            if not allowed('create'):
+                return None
+            # Generated technical codes must not collide with user-entered codes.
+            initial, suffix = code, 0
+            while conn.execute('SELECT 1 FROM masters WHERE company_id=? AND kind=? AND code=?',
+                               (cid, kind, code)).fetchone():
+                suffix += 1
+                code = initial[:40] + '-' + str(suffix)
+            stamp = now()
+            mid = conn.execute(
+                'INSERT INTO masters(company_id,kind,code,name,tax_id,data_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+                (cid, kind, code, name, tax_id, pack(data), stamp, stamp)).lastrowid
+            audit(conn, cid, actor, 'create', kind, mid,
+                  {'source': payload.get('source'), 'source_hash': payload['source_hash'], 'imported': True})
+            return mid
+
+        def participant(party, role):
+            if not isinstance(party, dict) or not party.get('tax_id'):
+                return None  # Anonymous consumers do not become fictitious masters.
+            try:
+                identity = tax_identity(party['tax_id'])
+            except DomainError:
+                warnings.append('CPF/CNPJ inválido na origem; participante não cadastrado automaticamente.')
+                return None
+            if identity == company['tax_id']:
+                return None
+            row = conn.execute("SELECT * FROM masters WHERE company_id=? AND kind='participant' AND tax_id=?",
+                               (cid, identity)).fetchone()
+            if row:
+                if not row['active']:
+                    warnings.append('Participante existente inativo; vínculo automático não realizado.')
+                    return None
+                data = json.loads(row['data_json'])
+                roles = data.get('roles', [])
+                if role not in roles and allowed('edit'):
+                    data['roles'] = sorted(set(roles + [role]))
+                    conn.execute('UPDATE masters SET data_json=?,updated_at=?,version=version+1 WHERE company_id=? AND id=?',
+                                 (pack(data), now(), cid, row['id']))
+                    audit(conn, cid, actor, 'update', 'participant', row['id'], {'added_role': role, 'source_hash': payload['source_hash']})
+                return row['id']
+            name = str(party.get('name') or '').strip()
+            if not name:
+                warnings.append('Participante identificado sem nome na origem; cadastro automático não realizado.')
+                return None
+            data = {k: party[k] for k in ('trade_name', 'address', 'number', 'district', 'city', 'state',
+                    'postal_code', 'ibge', 'ie', 'im', 'email', 'phone') if party.get(k)}
+            data.update(roles=[role], profile=profile_values(None), import_source=payload.get('source'))
+            return insert('participant', 'XML-' + identity, name, identity, data)
+
+        partner_tax_id = payload.get('partner_tax_id')
+        parties = [payload.get('issuer', {}), payload.get('recipient', {})]
+        transport = payload.get('transport') or {}
+        if isinstance(transport, dict):
+            parties.append(transport.get('taker') or {})
+        party = next((p for p in parties if p.get('tax_id') == partner_tax_id and partner_tax_id),
+                     {'tax_id': partner_tax_id, 'name': payload.get('partner_name')})
+        role = 'supplier' if payload.get('direction') in {'incoming', 'entrada'} else 'customer'
+        participant_id = participant(party, role)
+        if participant_id and not payload.get('participant_id'):
+            payload['participant_id'] = participant_id
+        carrier = transport.get('carrier') if isinstance(transport, dict) else None
+        if payload.get('document_type') == 'transport':
+            carrier = payload.get('issuer')
+        carrier_id = participant(carrier, 'carrier')
+        if carrier_id:
+            payload['carrier_id'] = carrier_id
+
+        issuer = payload['issuer'].get('tax_id') or payload['issuer'].get('foreign_id')
+        linked_items = []
+        catalog_index = {}
+        for item in payload.get('items', []):
+            item = dict(item)
+            kind = 'service' if payload.get('document_type') in {'service', 'transport'} else 'product'
+            code = str(item.get('code') or '').strip()
+            name = str(item.get('description') or '').strip()
+            if not item.get('master_id') and issuer and code and name:
+                identity = {'issuer': issuer, 'code': code}
+                if kind not in catalog_index:
+                    catalog_index[kind] = {}
+                    for row in conn.execute('SELECT * FROM masters WHERE company_id=? AND kind=?', (cid, kind)):
+                        origin = json.loads(row['data_json']).get('import_identity')
+                        if isinstance(origin, dict):
+                            catalog_index[kind][pack(origin)] = row
+                found = catalog_index[kind].get(pack(identity))
+                if found and found['active']:
+                    item['master_id'] = found['id']
+                elif found:
+                    warnings.append('Produto/serviço existente inativo; vínculo automático não realizado.')
+                else:
+                    data = {k: item[k] for k in ('unit', 'ncm', 'cest', 'service_code', 'barcode') if item.get(k)}
+                    data.update(import_identity=identity, import_source=payload.get('source'))
+                    # Source CFOP/CST and invoice prices are not master defaults.
+                    master_id = insert(kind, 'XML-' + digest(identity)[:40], name, '', data)
+                    if master_id:
+                        item['master_id'] = master_id
+                        catalog_index[kind][pack(identity)] = {'id': master_id, 'active': True}
+            linked_items.append(item)
+        payload['items'] = linked_items
+        if warnings:
+            payload['master_import_warnings'] = list(dict.fromkeys(warnings))
+        return payload
 
     def _model_lines(self,conn,cid,item_id,doc):
         model = self._master(conn,cid,integer(item_id,'Modelo'),'accounting_model',True)

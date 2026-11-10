@@ -207,6 +207,8 @@ class Database:
             conn.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('schema_version','1')")
             from .migrations import migrate
             migrate(conn)
+            from .import_package_cleanup import migrate as migrate_package_cleanup
+            migrate_package_cleanup(conn)
         if os.name != "nt":
             self.path.chmod(0o600)
 

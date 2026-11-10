@@ -9,7 +9,7 @@ ACTIONS = {'read': 'Consultar', 'create': 'Incluir', 'edit': 'Editar', 'delete':
            'settle': 'Realizar baixas', 'reverse': 'Estornar', 'close': 'Fechar', 'reopen': 'Reabrir'}
 ROUTINES = {
     'fiscal.documents': ('Escrituração e documentos', 'read create edit delete book reverse export print'),
-    'fiscal.imports': ('Importações fiscais', 'read import export'),
+    'fiscal.imports': ('Importações fiscais', 'read import export delete'),
     'fiscal.masters': ('Cadastros fiscais', 'read create edit delete'),
     'fiscal.parameters': ('Parametrizações fiscais', 'read create edit delete'),
     'fiscal.assessments': ('Apurações e ajustes', 'read create edit reverse book export print'),
@@ -153,6 +153,8 @@ def route_policy(path, method, query, payload, session):
         return 'fiscal.masters', 'create' if write else 'read', False
     if root == 'cfop-source-loads':
         return 'fiscal.masters', 'read' if tail.endswith('/preview') or not write else 'create', False
+    if root == 'fiscal-import-settings':
+        return 'fiscal.parameters', 'edit' if write else 'read', False
     if root == 'fiscal-import-mappings':
         return 'fiscal.parameters', action, False
     mapping = {'accounts': 'accounting.accounts', 'cost-centers': 'accounting.cost_centers',
@@ -163,6 +165,7 @@ def route_policy(path, method, query, payload, session):
         'imports': 'fiscal.imports', 'assessments': 'fiscal.assessments', 'tax-adjustments': 'fiscal.assessments',
         'tax-ledgers': 'fiscal.assessments', 'fiscal-reports': 'fiscal.reports',
         'prosoft': 'accounting.prosoft', 'exports': 'accounting.prosoft', 'audit': 'system.audit'}
+    if root == 'import-packages': return 'fiscal.imports', 'delete' if write else 'read', False
     if root == 'module-imports':
         module = payload.get('module') or query.get('module') or session.get('module')
         return module + '.imports' if module in {'accounting','financial'} else 'invalid', ('import' if write else 'export' if tail.endswith('/original') else 'read'), False

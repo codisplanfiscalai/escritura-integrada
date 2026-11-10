@@ -24,6 +24,33 @@ def manifest(path):
         for table,blob,hashcol in [('imports','original','sha256'),('stored_files','content','sha256')]:
             if table not in tables:continue
             for r in conn.execute(f'SELECT id,company_id,{blob},{hashcol} FROM {table}'):
+                tomb = None
+                if table == 'imports' and 'import_package_tombstones' in tables:
+                    tomb = conn.execute('SELECT * FROM import_package_tombstones WHERE import_id=?', (r['id'],)).fetchone()
+                elif table == 'stored_files' and 'stored_file_tombstones' in tables:
+                    tomb = conn.execute('SELECT * FROM stored_file_tombstones WHERE file_id=?', (r['id'],)).fetchone()
+                if tomb is not None:
+                    # An empty blob is legitimate only with a consistent retained
+                    # identity and an explicitly recorded removal, never by size alone.
+                    if r[blob] != b'' or not tomb['removed_at']:
+                        raise RuntimeError('Marcador de original removido inconsistente; backup recusado.')
+                    if table == 'imports':
+                        origin = tomb
+                    else:
+                        origin = conn.execute('''SELECT * FROM import_package_tombstones
+                            WHERE company_id=? AND sha256=? ORDER BY import_id LIMIT 1''',
+                            (r['company_id'], r[hashcol])).fetchone() if 'import_package_tombstones' in tables else None
+                    if (origin is None or origin['company_id'] != r['company_id'] or
+                        origin['sha256'] != r[hashcol] or origin['original_bytes'] <= 0 or
+                        not origin['removed_by'] or len(r[hashcol]) != 64 or
+                        any(c not in '0123456789abcdef' for c in r[hashcol])):
+                        raise RuntimeError('Identidade do original removido inconsistente; backup recusado.')
+                    info.setdefault('removed_originals', []).append({
+                        'table': table, 'id': r['id'], 'company_id': r['company_id'],
+                        'sha256': r[hashcol], 'removed_at': tomb['removed_at'],
+                        'source_import_id': origin['import_id'],
+                        'original_bytes': origin['original_bytes'], 'removed_by': origin['removed_by']})
+                    continue
                 actual=hashlib.sha256(r[blob]).hexdigest()
                 if actual!=r[hashcol]:raise RuntimeError('Original com hash divergente; backup recusado.')
                 info['originals'].append({'table':table,'id':r['id'],'company_id':r['company_id'],'sha256':actual,'bytes':len(r[blob])})
@@ -58,13 +85,13 @@ def restore_snapshot(archive,destination):
             if expected.get('format')!='escritura-complete-1':raise RuntimeError('Versão de backup não reconhecida.')
             with z.open('escritura.sqlite3') as src,(stage/'escritura.sqlite3').open('xb') as dst:shutil.copyfileobj(src,dst,1024*1024)
         actual=manifest(stage/'escritura.sqlite3')
-        if any(actual[k]!=expected.get(k) for k in actual):raise RuntimeError('Backup não confere: registros, totais, vínculos ou hashes divergentes.')
+        if any(actual[k]!=expected.get(k) for k in actual) or actual.get('removed_originals') != expected.get('removed_originals'):raise RuntimeError('Backup não confere: registros, totais, vínculos ou hashes divergentes.')
         # As cópias organizadas são regeneradas; nenhum XML/PDF depende de cache externo.
         from .db import Database
         from .file_store import materialize
         db=Database(stage)
         with db.read() as conn:
-            for row in conn.execute('SELECT * FROM stored_files'):materialize(db,row)
+            for row in conn.execute('SELECT * FROM stored_files WHERE id NOT IN (SELECT file_id FROM stored_file_tombstones)'):materialize(db,row)
         os.rename(stage,destination)
     return actual
 

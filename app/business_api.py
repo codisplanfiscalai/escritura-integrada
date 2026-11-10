@@ -157,7 +157,10 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
     @app.get('/api/companies/{cid}/imports/{item_id}/original')
     def original(cid:int,item_id:int):
         core.import_detail(cid,item_id)  # valida também o tipo de conteúdo do lote
-        with db.read() as conn:r=select_one(conn,'imports',cid,item_id)
+        with db.read() as conn:
+            from .import_package_cleanup import require_original
+            require_original(conn,cid,item_id)
+            r=select_one(conn,'imports',cid,item_id)
         # Original filenames are displayed by the UI; download header uses a safe stable ID.
         extension=Path(r['filename']).suffix.lower()
         if extension not in {'.xml','.txt','.efd','.sped','.zip','.rar','.7z','.csv','.ofx','.qfx','.qif','.ofc'}:extension='.bin'

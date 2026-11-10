@@ -37,10 +37,16 @@ class FiscalImportTests(unittest.TestCase):
         return self.post('/fiscal-import-mappings', {'direction': 'incoming', 'model': '55', 'source_cfop': '5102', 'target_cfop': '1102', 'valid_from': '2026-01-01', 'valid_to': '', 'reason': 'Associação sintética, sem enquadramento fiscal real', 'responsible': 'Teste', **extra})
 
     def prepared(self, batch, **extra):
-        return self.post(f"/imports/{batch['id']}/posting-preview", extra)
+        overrides = extra.setdefault('document_overrides', {})
+        for d in batch['documents']:
+            if d['direction'] == 'incoming':
+                overrides.setdefault(d['_selection'], {}).setdefault('posting_date_confirmed', True)
+        prepared = self.post(f"/imports/{batch['id']}/posting-preview", extra)
+        prepared['_test_payload'] = extra
+        return prepared
 
     def confirm(self, batch, prepared, status=200, **extra):
-        return self.post(f"/imports/{batch['id']}/confirm", {'posting_mode': 'book', 'posting_hash': prepared['posting_hash'], 'preview_hash': batch['preview_hash'], 'selected': [d['_selection'] for d in prepared['documents']], **extra}, status)
+        return self.post(f"/imports/{batch['id']}/confirm", {'posting_mode': 'book', 'posting_hash': prepared['posting_hash'], 'preview_hash': batch['preview_hash'], 'selected': [d['_selection'] for d in prepared['documents']], **prepared.get('_test_payload', {}), **extra}, status)
 
     def test_reference_complete_reproducible_and_wording_versions(self):
         self.assertEqual(reference(), build(SOURCE.read_text(encoding='utf-8')))
