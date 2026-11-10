@@ -7,6 +7,7 @@ import json, os, re, socket, subprocess, sys, tempfile, time, urllib.request
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 OUT = ROOT/'artifacts'/'browser-account-plans'/'global'
 
 
