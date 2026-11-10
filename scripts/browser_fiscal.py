@@ -59,6 +59,8 @@ def run(page, url, cid, nav, check, shot):
     raw = raw.replace(b'35261187654321000198550010000000421000000420', b'8'*44).replace(b'<nNF>42</nNF>', b'<nNF>84008</nNF>').replace(b'<tpAmb>2</tpAmb>', b'<tpAmb>1</tpAmb>')
     raw = raw.replace(b'2026-11-05T10:30:00', b'2026-04-05T10:30:00')  # November is finalized by an earlier gate.
     def upload(name):
+        new_import = page.get_by_role('button', name='Nova importação', exact=True)
+        if new_import.count(): new_import.click()
         page.get_by_label('Selecionar arquivo de importação', exact=True).set_input_files({'name':name, 'mimeType':'text/xml', 'buffer':raw})
         page.get_by_role('button', name='Analisar e gerar prévia', exact=True).click()
         # Issue-date fallback is only a proposal for purchases, not proof of receipt.
@@ -136,6 +138,8 @@ def _purchase_payables(page, url, cid, nav, check, shot, company):
 
     def upload(number, billing, repeat=False):
         nav('Importações fiscais')
+        new_import = page.get_by_role('button', name='Nova importação', exact=True)
+        if new_import.count(): new_import.click()
         raw = source(number, billing)
         page.get_by_label('Selecionar arquivo de importação', exact=True).set_input_files({
             'name': f'compra-{number}-{"repetida" if repeat else "nova"}.xml',
@@ -144,6 +148,7 @@ def _purchase_payables(page, url, cid, nav, check, shot, company):
         select = page.get_by_label(f'Selecionar documento {number}', exact=True)
         expect(select).not_to_be_checked()
         page.get_by_label('Confirmei a entrada/competência', exact=True).check()
+        page.locator('summary').filter(has_text='Contas a pagar (opcional)').click()
         expect(page.get_by_label('Gerar contas a pagar das parcelas do XML', exact=True)).not_to_be_checked()
         if billing:
             page.get_by_label('Gerar contas a pagar das parcelas do XML', exact=True).check()
@@ -154,6 +159,7 @@ def _purchase_payables(page, url, cid, nav, check, shot, company):
             page.get_by_role('combobox', name='Base do vencimento', exact=True).select_option('receipt')
             page.get_by_label('Responsável', exact=True).fill('Operador sintético')
             page.get_by_label('Motivo / referência', exact=True).fill('Condição sintética de compra, sem pagamento')
+            page.locator('.document-import-details > summary').filter(has_text=f'Detalhes do documento {number}').click()
             page.get_by_label('Gerar uma parcela para esta compra sem cobrança', exact=True).check()
             page.get_by_role('button', name='Validar revisão e selecionar aptos', exact=True).click()
             expect(page.get_by_role('button', name='Confirmar importação', exact=True)).to_be_disabled()
