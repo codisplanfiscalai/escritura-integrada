@@ -69,7 +69,7 @@ Versionamento, concorrência, recuperação de falhas, caches e comandos de manu
 
 As tabelas fiscal e contábil oferecem seleção individual/múltipla e operações em lote com prévia: exclusão física, conferência/escrituração fiscal e alterações restritas. Períodos fechados e dependências não autorizadas bloqueiam o conjunto. Consulte [segurança, retenção das fontes e limites](docs/OPERACOES_EM_LOTE.md).
 
-Contabilidade → **Plano de contas** oferece um modelo independente de 73 contas e intercâmbio JSON/Prosoft, com prévia, conservação do original e confirmação sem substituir cadastros. Cargas incompatíveis com o plano ativo podem ser guardadas integralmente como referência. Consulte [formatos, revisão das propriedades e limites](docs/PLANO_CONTAS_INTERCAMBIO.md).
+Contabilidade → **Plano de contas** oferece biblioteca global versionada, vínculo compartilhado sem cópia integral ou duplicação própria opcional por empresa, preservando contas distintas com classificadores repetidos. O intercâmbio JSON/Prosoft conserva o original e exige prévia. O modelo genérico independente de 73 contas permanece separado do plano real fornecido pelo escritório. Cargas incompatíveis com o plano ativo podem ser guardadas integralmente como referência. Consulte [formatos, revisão das propriedades e limites](docs/PLANO_CONTAS_INTERCAMBIO.md).
 
 Na linha 0.8 em desenvolvimento, Fiscal → **CFOP e associações** oferece a referência completa do Anexo II consultado no CONFAZ, com 619 códigos e notas. A importação pode escriturar os documentos diretamente, com associações revisadas por empresa; a escrituração permite correções posteriores rastreáveis enquanto os períodos e efeitos vinculados permitirem. O fluxo de conferência individual continua disponível. Consulte [cobertura, origem, operação e limites](docs/ESCRITURACAO_FISCAL_0_8.md).
 
@@ -97,7 +97,7 @@ As guias compartilham a empresa e preservam o exercício de cada módulo. O mês
 
 ## Limites que permanecem explícitos
 
-- Regras e catálogos fiscais começam vazios. A simulação matemática não constitui apuração legal automática nem aprovação tributária.
+- Regras tributárias da empresa começam vazias. A referência global de CFOP e suas alíquotas declaradas são informativas; importar um padrão cria rascunhos inativos. A simulação matemática não constitui apuração legal automática nem aprovação tributária.
 - SPED corresponde ao perfil parcial documentado de EFD ICMS/IPI; não abrange todas as obrigações. Compactados são limitados por tamanho, quantidade, profundidade e codecs; arquivos criptografados ou multipartes são rejeitados. RAR comprimido depende de libarchive/bsdtar no Docker ou tar compatível do Windows. Transmissão de obrigações não está implementada.
 - XML, bancos e leiautes reais exigem homologação. O código recuperado das referências não foi tratado como fonte original completa ou regra fiscal comprovada.
 - O Razão possui modelo baseado no PDF fornecido, com comparação numérica e visual parcial. Os outros 16 modelos específicos são auxiliares, baseados nos campos e sem homologação visual Prosoft. [Cobertura, operação e lacunas](docs/RELATORIOS_E_MODELOS.md). ECD/ECF, livros legais, encerramento anual e consolidação entre empresas não estão implementados. Balanço/DRE exigem classificação explícita do plano; não presumem o encerramento do resultado.

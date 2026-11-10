@@ -43,12 +43,14 @@ CREATE TABLE IF NOT EXISTS companies (
 );
 CREATE TABLE IF NOT EXISTS accounts (
  id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id),
- access_code TEXT NOT NULL, classifier TEXT NOT NULL, name TEXT NOT NULL,
- nature TEXT NOT NULL CHECK(nature IN ('debit','credit')),
- analytical INTEGER NOT NULL CHECK(analytical IN (0,1)),
- requires_cost_center INTEGER NOT NULL CHECK(requires_cost_center IN (0,1)),
- active INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 1,
- UNIQUE(company_id,access_code), UNIQUE(company_id,classifier), UNIQUE(company_id,id)
+ access_code TEXT NOT NULL, classifier TEXT, name TEXT,
+ nature TEXT CHECK(nature IN ('debit','credit')),
+ analytical INTEGER CHECK(analytical IN (0,1)),
+ requires_cost_center INTEGER CHECK(requires_cost_center IN (0,1)),
+ active INTEGER DEFAULT 1, version INTEGER NOT NULL DEFAULT 1,
+ shared_entry_id INTEGER REFERENCES global_account_entries(id),
+ UNIQUE(company_id,access_code), UNIQUE(company_id,id),
+ CONSTRAINT account_definition_or_reference CHECK(shared_entry_id IS NOT NULL OR (classifier IS NOT NULL AND name IS NOT NULL AND nature IS NOT NULL AND analytical IS NOT NULL AND requires_cost_center IS NOT NULL AND active IS NOT NULL))
 );
 CREATE TABLE IF NOT EXISTS cost_centers (
  id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id),
@@ -207,6 +209,16 @@ class Database:
             conn.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('schema_version','1')")
             from .migrations import migrate
             migrate(conn)
+            from .import_package_cleanup import migrate as migrate_package_cleanup
+            migrate_package_cleanup(conn)
+            from .migration_third_parties import migrate_third_parties
+            migrate_third_parties(conn)
+            from .migration_fiscal_library import migrate as migrate_fiscal_library
+            migrate_fiscal_library(conn)
+            # The schema 6 marker is written only after every global migration
+            # succeeds. An interrupted startup remains eligible for pre-upgrade backup.
+            from .migration_global_accounts import migrate_global_accounts
+            migrate_global_accounts(conn)
         if os.name != "nt":
             self.path.chmod(0o600)
 

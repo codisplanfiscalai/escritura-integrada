@@ -4,6 +4,7 @@ import re
 from .core import (Core, DomainError, audit, check_version, decimal_text, ensure_open,
                    integer, iso_date, money, now, pack, period, select_one, text)
 from .cadastros import CadastrosMixin
+from .third_parties import ThirdPartiesMixin
 from .finance import FinanceMixin
 from .reconciliation import ReconciliationMixin
 from .reports import ReportsMixin
@@ -20,12 +21,21 @@ from .cfop import CfopMixin
 from .fiscal_import import FiscalImportMixin
 from .cfop_source import CfopSourceMixin
 from .account_plans import AccountPlansMixin
+from .global_account_plans import GlobalAccountPlansMixin
+from .import_reprocessing import ImportReprocessingMixin
 
-class BusinessCore(AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
-    def _validate_document_links(self,conn,cid,payload):
+from .import_payables import ImportPayablesMixin
+
+from .fiscal_library import FiscalLibraryMixin
+
+class BusinessCore(GlobalAccountPlansMixin, FiscalLibraryMixin, ThirdPartiesMixin, ImportPayablesMixin, ImportReprocessingMixin, AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
+    def _validate_document_links(self,conn,cid,payload,*,_existing_document_id=None):
         for k,kind in [('participant_id','participant'),('establishment_id','establishment')]:
             if payload.get(k):
-                m=self._master(conn,cid,integer(payload[k],k),kind,True)
+                from .third_parties import preserved_document_party
+                mid=integer(payload[k],k)
+                historical=preserved_document_party(conn,cid,mid,_existing_document_id,k)
+                m=self._master(conn,cid,mid,kind,active=historical is None)
                 if kind=='participant' and m['tax_id'] and m['tax_id']!=re.sub(r'[.\-/\s]','',payload.get('partner_tax_id','')).upper():
                     raise DomainError('CPF/CNPJ do documento diverge do participante selecionado.')
         items=payload.get('items',[])
@@ -53,7 +63,9 @@ class BusinessCore(AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMi
 
     def _book_document(self,conn,cid,item_id,payload,actor):
         doc=self._document(conn,cid,item_id)
-        self._validate_document_links(conn,cid,doc)
+        self._validate_document_links(conn,cid,doc,_existing_document_id=item_id)
+        if doc.get('book_cancellation') and any(payload.get(k) for k in ('lines', 'model_id', 'generate_titles', 'installments', 'use_document_installments')):
+            raise DomainError('Documento cancelado não gera efeitos contábeis ou financeiros.')
         scope='book-document:'+str(item_id)
         if payload.get('idempotency_key'):
             key,hashed,previous=self._operation(conn,cid,scope,payload)
@@ -84,7 +96,7 @@ class BusinessCore(AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMi
             titles.append(self._create_title(conn,cid,{'kind':'payable' if doc['direction']=='incoming' else 'receivable',
                 'description':f'Documento {doc["number"]} - parcela {n}','partner_name':doc['partner_name'],
                 'participant_id':doc.get('participant_id'),'document':doc['number'],'document_id':item_id,'issue_date':doc['issue_date'],**p,
-                'installment':n,'source_key':f'document:{item_id}:revision:{doc["version"]}:installment:{n}'},actor))
+                'installment':n,'source_key':f'document:{item_id}:revision:{doc["version"]}:installment:{n}'},actor,_historical_document_id=item_id))
         result['titles']=titles
         audit(conn,cid,actor,'integrate','document',item_id,{'title_ids':[t['id'] for t in titles],
             'journal_id':result['journal']['id'] if result['journal'] else None,'model_id':model_id,

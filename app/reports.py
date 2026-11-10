@@ -12,13 +12,16 @@ class ReportsMixin:
             clauses=['l.company_id=?'];params=[cid]
             for field,value,table in [('account_id',account_id,'accounts'),('cost_center_id',cost_center_id,'cost_centers')]:
                 if value is not None:
-                    select_one(conn,table,cid,integer(value,field));clauses.append('l.'+field+'=?');params.append(value)
+                    record=select_one(conn,table,cid,value if table=='accounts' else integer(value,field))
+                    value=record['id']
+                    if table=='accounts':account_id=value
+                    clauses.append('l.'+field+'=?');params.append(value)
             where=' AND '.join(clauses)
             openings={r['account_id']:r['balance'] for r in conn.execute('SELECT l.account_id,SUM(l.debit_cents-l.credit_cents) AS balance FROM journal_lines l JOIN journals j ON j.id=l.journal_id WHERE '+where+' AND j.date<? GROUP BY l.account_id',(*params,start))}
             rows=[dict(r) for r in conn.execute('''SELECT j.id AS journal_id,j.number,j.date,j.document,j.history,
                 a.id AS account_id,a.access_code,a.classifier,a.name AS account_name,a.nature,a.report_group,
                 l.cost_center_id,c.code AS cost_center_code,c.name AS cost_center_name,l.debit_cents,l.credit_cents
-                FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.id=l.account_id
+                FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN effective_accounts a ON a.id=l.account_id
                 LEFT JOIN cost_centers c ON c.id=l.cost_center_id WHERE '''+where+' AND j.date BETWEEN ? AND ? ORDER BY j.date,j.id,l.position',(*params,start,end))]
             totals={'debit_cents':sum(r['debit_cents'] for r in rows),'credit_cents':sum(r['credit_cents'] for r in rows)}
             note='Relatório interno, com base nos movimentos cadastrados. Débito positivo; crédito negativo nos saldos.'
@@ -35,7 +38,7 @@ class ReportsMixin:
                 for r in rows:
                     x=movements.setdefault(r['account_id'],{'debit_cents':0,'credit_cents':0,'journal_ids':set()})
                     x['debit_cents']+=r['debit_cents'];x['credit_cents']+=r['credit_cents'];x['journal_ids'].add(r['journal_id'])
-                accounts=[dict(r) for r in conn.execute('SELECT * FROM accounts WHERE company_id=? AND analytical=1 ORDER BY classifier',(cid,))]
+                accounts=[dict(r) for r in conn.execute('SELECT * FROM effective_accounts WHERE company_id=? AND analytical=1 ORDER BY classifier',(cid,))]
                 rows=[]
                 for a in accounts:
                     if account_id and a['id']!=account_id:continue
@@ -106,9 +109,9 @@ class ReportsMixin:
             ledger_groups=[]
             if kind=='ledger':
                 for r in rows:
-                    others=[x['access_code'] for x in conn.execute('SELECT DISTINCT a.access_code FROM journal_lines l JOIN accounts a ON a.id=l.account_id WHERE l.company_id=? AND l.journal_id=? AND l.account_id<>?',(cid,r['journal_id'],r['account_id']))]
+                    others=[x['access_code'] for x in conn.execute('SELECT DISTINCT a.access_code FROM journal_lines l JOIN effective_accounts a ON a.id=l.account_id WHERE l.company_id=? AND l.journal_id=? AND l.account_id<>?',(cid,r['journal_id'],r['account_id']))]
                     r['counterpart']=others[0] if len(others)==1 else 'Diversos' if others else ''
-                for a in conn.execute('SELECT id,access_code,classifier,name FROM accounts WHERE company_id=? AND analytical=1 ORDER BY classifier',(cid,)):
+                for a in conn.execute('SELECT id,access_code,classifier,name FROM effective_accounts WHERE company_id=? AND analytical=1 ORDER BY classifier',(cid,)):
                     if account_id and a['id']!=account_id:continue
                     movements=[r for r in rows if r['account_id']==a['id']]
                     if movements or openings.get(a['id']):ledger_groups.append({'account_id':a['id'],'access_code':a['access_code'],'classifier':a['classifier'],'account_name':a['name'],'opening_cents':openings.get(a['id'],0),'closing_cents':balances.get(a['id'],openings.get(a['id'],0)),'filtered':bool(query),'rows':movements})

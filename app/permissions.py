@@ -9,7 +9,7 @@ ACTIONS = {'read': 'Consultar', 'create': 'Incluir', 'edit': 'Editar', 'delete':
            'settle': 'Realizar baixas', 'reverse': 'Estornar', 'close': 'Fechar', 'reopen': 'Reabrir'}
 ROUTINES = {
     'fiscal.documents': ('Escrituração e documentos', 'read create edit delete book reverse export print'),
-    'fiscal.imports': ('Importações fiscais', 'read import export'),
+    'fiscal.imports': ('Importações fiscais', 'read import export delete'),
     'fiscal.masters': ('Cadastros fiscais', 'read create edit delete'),
     'fiscal.parameters': ('Parametrizações fiscais', 'read create edit delete'),
     'fiscal.assessments': ('Apurações e ajustes', 'read create edit reverse book export print'),
@@ -144,15 +144,33 @@ def route_policy(path, method, query, payload, session):
         # session, CSRF, active company, module and exercise on both POSTs.
         routine = {'fiscal':'fiscal.documents','accounting':'accounting.journals'}.get(session.get('module'),'invalid')
         return routine, 'read', False
+    if root == 'global-account-plans':
+        if tail.endswith(('/original','/native')): return 'accounting.imports', 'export', False
+        if tail.endswith('/publish'): return 'accounting.accounts', 'read', True
+        if tail.endswith('/detach'): return 'accounting.accounts', 'edit', False
+        if tail.endswith('/confirm'): return 'accounting.accounts', 'create', False
+        return 'accounting.accounts', 'read', False
     if root == 'account-plans':
         if tail.endswith(('/export-preview','/export-confirm','/original','/native')):
             return 'accounting.imports', 'export', False
         if write:return 'accounting.imports', 'import', False
         return 'accounting.accounts', 'read', False
+    if root == 'third-parties':
+        return 'fiscal.masters', ('read' if not write or tail.endswith('/reuse-preview') else 'edit'), False
+    if root == 'master-movements':
+        return 'fiscal.documents', 'read', False
+    if root == 'global-fiscal-catalogs':
+        return 'fiscal.masters', action, write
+    if root == 'fiscal-patterns':
+        if tail.endswith('/preview'): return 'fiscal.parameters', 'read', False
+        if tail.endswith('/apply'): return 'fiscal.parameters', 'create', False
+        return 'fiscal.parameters', action, write
     if root == 'cfop-reference':
         return 'fiscal.masters', 'create' if write else 'read', False
     if root == 'cfop-source-loads':
         return 'fiscal.masters', 'read' if tail.endswith('/preview') or not write else 'create', False
+    if root == 'fiscal-import-settings':
+        return 'fiscal.parameters', 'edit' if write else 'read', False
     if root == 'fiscal-import-mappings':
         return 'fiscal.parameters', action, False
     mapping = {'accounts': 'accounting.accounts', 'cost-centers': 'accounting.cost_centers',
@@ -163,6 +181,7 @@ def route_policy(path, method, query, payload, session):
         'imports': 'fiscal.imports', 'assessments': 'fiscal.assessments', 'tax-adjustments': 'fiscal.assessments',
         'tax-ledgers': 'fiscal.assessments', 'fiscal-reports': 'fiscal.reports',
         'prosoft': 'accounting.prosoft', 'exports': 'accounting.prosoft', 'audit': 'system.audit'}
+    if root == 'import-packages': return 'fiscal.imports', 'delete' if write else 'read', False
     if root == 'module-imports':
         module = payload.get('module') or query.get('module') or session.get('module')
         return module + '.imports' if module in {'accounting','financial'} else 'invalid', ('import' if write else 'export' if tail.endswith('/original') else 'read'), False

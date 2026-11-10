@@ -7,6 +7,39 @@ from .core import select_one
 
 
 def register_account_plan_routes(app,core,actor):
+    shared='/api/companies/{cid}/global-account-plans'
+    @app.get(shared)
+    def global_plans(cid:int):return core.global_account_plans(cid)
+    @app.get(shared+'/{item_id}')
+    def global_detail(cid:int,item_id:int,search:str='',page:int=1):
+        return core.global_account_plan(cid,item_id,search,page)
+    @app.get(shared+'/{item_id}/original')
+    def global_original(cid:int,item_id:int):
+        from .global_account_plans import global_plan
+        with core.db.read() as conn:
+            from .core import company_row
+            company_row(conn,cid);r=global_plan(conn,item_id)
+        extension='json' if r['format'] in {'native','default'} else 'txt'
+        return Response(r['original'],media_type='application/octet-stream',headers={'Content-Disposition':f'attachment; filename="plano-global-original-{item_id}.{extension}"'})
+    @app.get(shared+'/{item_id}/native')
+    def global_native(cid:int,item_id:int):
+        from .global_account_plans import global_plan
+        with core.db.read() as conn:
+            from .core import company_row
+            company_row(conn,cid);r=global_plan(conn,item_id)
+        return Response(r['plan_json'],media_type='application/json',headers={'Content-Disposition':f'attachment; filename="plano-global-{item_id}.json"'})
+    @app.post(shared+'/batches/{batch_id}/publish')
+    def publish_global(cid:int,batch_id:int,request:Request,payload:dict[str,Any]=Body(...)):
+        return core.publish_global_account_plan(cid,batch_id,payload,actor(request))
+    @app.post(shared+'/{item_id}/preview')
+    def preview_global(cid:int,item_id:int,request:Request,payload:dict[str,Any]=Body(...)):
+        return core.preview_global_account_plan(cid,item_id,payload,actor(request))
+    @app.post(shared+'/previews/{preview_id}/confirm')
+    def confirm_global(cid:int,preview_id:int,request:Request,payload:dict[str,Any]=Body(...)):
+        return core.confirm_global_account_plan(cid,preview_id,payload,actor(request))
+    @app.post(shared+'/binding/detach')
+    def detach_global(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
+        return core.detach_global_account_plan(cid,payload,actor(request))
     root='/api/companies/{cid}/account-plans'
     @app.get(root+'/default')
     def default(cid:int):

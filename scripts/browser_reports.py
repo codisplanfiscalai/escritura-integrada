@@ -299,20 +299,50 @@ def main():
                         controls.get_by_role('textbox', name='NCM', exact=True).fill('12345678')
                         controls.get_by_role('textbox', name='Documento, participante ou histórico', exact=True).fill('synthetic-query')
                         kind.select_option('fiscal-entries')
-                        expect(controls.get_by_role('combobox', name='Situação', exact=True)).to_have_count(0)
+                        book_status = controls.get_by_role('combobox', name='Situação', exact=True)
+                        expect(book_status).to_be_visible()
+                        expect(book_status).to_have_value('')
+                        assert book_status.locator('option').evaluate_all('(xs)=>xs.map(x=>x.value)') == ['', 'cancelled']
                         expect(controls.get_by_role('combobox', name='Operação', exact=True)).to_have_count(0)
                         expect(controls.get_by_role('textbox', name='CFOP', exact=True)).to_have_value('')
+                        # Explicit fixture in this disposable demo only. The new
+                        # documentary filter must select a real zero-valued row,
+                        # not merely be present or silently ignored.
+                        def fixture_post(path, payload):
+                            response = page.request.post(url + f'/api/companies/{cid}' + path,
+                                data=payload, headers={'X-CSRF-Token': read('/api/session')['csrf_token']})
+                            assert response.ok, response.text()
+                            return response.json()
+                        cancellation = fixture_post('/documents', {
+                            'direction':'incoming','model':'55','series':'1','number':'90298',
+                            'issue_date':'2026-11-06','posting_date':'2026-11-06',
+                            'partner_name':'Emitente sintético do filtro','partner_tax_id':'11111111111',
+                            'total':'0.00','items':[],'taxes':{},
+                            'book_cancellation':{'source':'Livro sintético de filtros, página 1',
+                                'responsible':'Revisor sintético','reason':'Cancelamento documental conferido'}})
+                        cancellation = fixture_post(f"/documents/{cancellation['id']}/review",
+                            {'version':cancellation['version'],'reason':'Conferência sintética do filtro'})
+                        fixture_post(f"/documents/{cancellation['id']}/book",
+                            {'version':cancellation['version'],'reason':'Linha zero no livro sintético'})
                         payload, requested = run()
                         q = parse_qs(urlparse(requested).query)
                         assert not q.get('status') and not q.get('direction')
                         assert all(r.get('direction') in (None, 'incoming') for r in payload['rows'])
+                        book_status.select_option('cancelled')
+                        payload, requested = run()
+                        assert parse_qs(urlparse(requested).query).get('status') == ['cancelled']
+                        assert payload['filters']['status'] == 'cancelled'
+                        assert len(payload['rows']) == 1 and payload['rows'][0]['document_id'] == cancellation['id']
+                        assert payload['rows'][0]['document_state'] == 'cancelled' and payload['rows'][0]['status'] == 'booked'
+                        assert payload['totals']['total_cents'] == 0
+                        shot('fiscal-book-cancelled-filter.png')
                         kind.select_option('fiscal-assessments')
                         for label, role in [('Situação', 'combobox'), ('Operação', 'combobox'), ('CFOP', 'textbox'), ('NCM', 'textbox'), ('Documento, participante ou histórico', 'textbox')]:
                             expect(controls.get_by_role(role, name=label, exact=True)).to_have_count(0)
                         _, requested = run()
                         q = parse_qs(urlparse(requested).query)
                         assert not any(q.get(k) for k in ('status','direction','cfop','ncm','query'))
-                        report['checks'].append('Entry book fixed status/direction, type changes clear filters; assessments hide and omit all document filters')
+                        report['checks'].append('Entry book fixes booked lifecycle/direction, offers only explicit cancelled documentary filter selecting a zero row; type changes clear filters and assessments omit document filters')
 
                         # Capture real responses and change context before fulfilling their delivery.
                         for change in ('kind','company'):

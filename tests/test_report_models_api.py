@@ -66,25 +66,47 @@ class ReportModelsApiTests(unittest.TestCase):
         workbook=load_workbook(io.BytesIO(self.client.get(path+'&format=xlsx').content))
         self.assertIn('abc',str([r for r in workbook['Conferência'].values]))
 
-    def test_book_filters_are_effective_and_document_totals_not_item_allocation(self):
+    def test_book_filters_select_analytical_lines_and_keep_document_reference(self):
         doc=self.reviewed(extra={'items':[{'description':'A','cfop':'1102','ncm':'11111111','total':'30.00'},
                                          {'description':'B','cfop':'1403','ncm':'22222222','total':'70.00'}]})
         self.post(f'/documents/{doc["id"]}/book',self.booking(doc,generate_titles=False,lines=[]))
         result=self.client.get(self.path('fiscal-entries','&status=pending&direction=outgoing&ncm=11111111')).json()
         self.assertEqual('booked',result['filters']['status'])
         self.assertEqual('incoming',result['filters']['direction'])
-        self.assertEqual(10000,result['totals']['total_cents'])
-        self.assertIn('integrais',result['scope_note'])
+        self.assertEqual(3000,result['totals']['total_cents'])
+        self.assertEqual(10000,result['totals']['document_total_cents'])
+        self.assertIn('linha fiscal permanece integral',result['scope_note'])
         selected=self.client.get(self.path('fiscal-items','&ncm=11111111')).json()
         self.assertEqual(3000,selected['totals']['item_total_cents'])
 
     def test_fiscal_filters_are_validated_instead_of_silently_ignored(self):
-        for extra in ['&cfop=abc','&ncm=123','&status=cancelled','&direction=payable']:
+        for extra in ['&cfop=abc','&ncm=123','&status=not-a-status','&direction=payable']:
             self.assertEqual(400,self.client.get(self.path('fiscal-documents',extra)).status_code)
         for extra in ['&query=ignored','&cfop=1102','&status=booked','&direction=incoming']:
             self.assertEqual(400,self.client.get(self.path('fiscal-assessments',extra)).status_code)
         report=self.client.get(self.path('fiscal-assessments')).json()
         self.assertIn('competências mensais',report['scope_note'])
+
+    def test_cancelled_filter_selects_only_explicit_book_cancellations(self):
+        normal=self.post('/documents',self.document('ACTIVE-FILTER'),201)
+        cancelled=self.post('/documents',self.document('CANCELLED-FILTER')|{
+            'direction':'outgoing','total':'0.00','items':[],'taxes':{},'source':{},'source_hash':'',
+            'book_cancellation':{'source':'Livro sintético de filtros, página 1',
+                                 'responsible':'Revisor sintético','reason':'Cancelada conferida no livro'}},201)
+        path=self.path('fiscal-documents','&status=cancelled&model=internal-fiscal-documents')
+        response=self.client.get(path)
+        self.assertEqual(200,response.status_code,response.text)
+        result=response.json()
+        self.assertEqual('cancelled',result['filters']['status'])
+        self.assertEqual([cancelled['id']],[row['document_id'] for row in result['rows']])
+        self.assertNotIn(normal['id'],[row['document_id'] for row in result['rows']])
+        self.assertEqual('cancelled',result['rows'][0]['document_state'])
+        self.assertEqual(0,result['totals']['total_cents'])
+        pdf=self.client.get(path+'&format=pdf')
+        self.assertEqual(200,pdf.status_code)
+        text='\n'.join(page.extract_text() for page in PdfReader(io.BytesIO(pdf.content)).pages)
+        self.assertIn('Livro sintético de filtros',text)
+        self.assertNotIn('ACTIVE-FILTER',text)
 
     def test_model_print_permission_does_not_grant_download_or_other_area(self):
         cid=self.a['id']

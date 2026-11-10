@@ -7,9 +7,12 @@ from .permissions import effect
 class FinanceMixin:
     def _operation(self,conn,cid,scope,payload):
         key=text(payload.get('idempotency_key'),'Chave de idempotência',True,200)
-        hashed=digest({k:v for k,v in payload.items() if k!='version'})
+        from .account_refs import canonical_payload_accounts
+        canonical=canonical_payload_accounts(conn,cid,payload)
+        hashed=digest({k:v for k,v in canonical.items() if k!='version'})
+        original_hash=digest({k:v for k,v in payload.items() if k!='version'})
         old=conn.execute('SELECT * FROM operations WHERE company_id=? AND scope=? AND key=?',(cid,scope,key)).fetchone()
-        if old and old['request_hash']!=hashed:
+        if old and old['request_hash'] not in {hashed,original_hash}:
             raise DomainError('Chave já utilizada com conteúdo diferente.',409,'idempotency_conflict')
         if old and json.loads(old['result_json']).get('movement_deleted'):
             raise DomainError('Esta operação possui movimentos excluídos fisicamente. Inicie uma nova intenção com outra chave.',409,'movement_deleted')
@@ -30,7 +33,7 @@ class FinanceMixin:
         r['allocations']=[dict(x) for x in conn.execute('SELECT id,transaction_id,amount_cents,settlement_id,reason FROM bank_allocations WHERE company_id=? AND title_id=? AND reversed_at IS NULL',(cid,item_id))]
         return r
 
-    def _create_title(self,conn,cid,payload,actor):
+    def _create_title(self,conn,cid,payload,actor,*,_historical_document_id=None,_historical_title_ids=()):
         participant_id=payload.get('participant_id')
         if payload.get('document_id'):
             doc=self._document(conn,cid,integer(payload['document_id'],'Documento'))
@@ -38,8 +41,15 @@ class FinanceMixin:
             if participant_id and doc.get('participant_id') and participant_id!=doc['participant_id']:
                 raise DomainError('Participante do título diverge do documento.')
         if participant_id:
-            participant=self._master(conn,cid,integer(participant_id,'Participante'),'participant',True)
-            payload=dict(payload,partner_name=participant['name'],participant_id=participant['id'])
+            from .third_parties import preserved_document_party, preserved_title_party
+            participant_id=integer(participant_id,'Participante')
+            historical=None
+            if _historical_document_id is not None and payload.get('document_id')==_historical_document_id:
+                historical=preserved_document_party(conn,cid,participant_id,_historical_document_id)
+            if historical is None:
+                historical=preserved_title_party(conn,cid,participant_id,_historical_title_ids)
+            participant=self._master(conn,cid,participant_id,'participant',active=historical is None)
+            payload=dict(payload,partner_name=historical['partner_name'] if historical else participant['name'],participant_id=participant['id'])
         source=payload.get('source_key')
         if source:
             source=text(source,'Identificação do título',True,200)
@@ -75,12 +85,15 @@ class FinanceMixin:
         cash=amount+charges['interest']+charges['fine']-charges['discount']
         if cash<0:
             raise DomainError('Desconto excede principal e encargos.')
-        hashed=digest({'title_id':item_id,'amount':amount,'date':day,'reason':reason,'charges':charges,'lines':payload.get('lines',[])})
+        from .account_refs import canonical_payload_accounts
+        canonical=canonical_payload_accounts(conn,cid,payload)
+        hashed=digest({'title_id':item_id,'amount':amount,'date':day,'reason':reason,'charges':charges,'lines':canonical.get('lines',[])})
+        original_hash=digest({'title_id':item_id,'amount':amount,'date':day,'reason':reason,'charges':charges,'lines':payload.get('lines',[])})
         title=self._title(conn,cid,item_id)
         existing=conn.execute('SELECT * FROM settlements WHERE company_id=? AND idempotency_key=?',(cid,key)).fetchone()
         if existing:
             legacy=digest({'title_id':item_id,'amount_cents':amount,'date':day,'reason':reason,'lines':payload.get('lines',[])})
-            if existing['request_hash']!=hashed and (any(charges.values()) or existing['request_hash']!=legacy):
+            if existing['request_hash'] not in {hashed,original_hash} and (any(charges.values()) or existing['request_hash']!=legacy):
                 raise DomainError('Chave de baixa já utilizada com conteúdo diferente.',409,'idempotency_conflict')
             return {'title':title,'settlement':dict(existing),'journal':self._journal(conn,cid,existing['journal_id']) if existing['journal_id'] else None,'duplicate':True}
         if payload.get('version') is not None:
@@ -176,7 +189,7 @@ class FinanceMixin:
             for n,p in enumerate(parts,1):
                 created.append(self._create_title(conn,cid,{'kind':titles[0]['kind'],'description':f'Renegociação {rid} - parcela {n}',
                     'partner_name':titles[0]['partner_name'],'participant_id':titles[0]['participant_id'],'document':f'REN-{rid}','issue_date':day,**p,
-                    'installment':n,'source_key':f'renegotiation:{rid}:{n}'},actor))
+                    'installment':n,'source_key':f'renegotiation:{rid}:{n}'},actor,_historical_title_ids=tuple(t['id'] for t in titles)))
             for t in titles:
                 conn.execute('UPDATE titles SET cancelled=1,renegotiation_id=?,version=version+1 WHERE id=?',(rid,t['id']))
             result={'id':rid,'titles':created,'principal_cents':principal,'total_cents':total,'accounting_created':False}

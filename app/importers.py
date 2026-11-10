@@ -38,7 +38,7 @@ IMPORTER_SCOPE = {
     "ofx": "Extratos bancários/cartão OFX XML e SGML: STMTTRN, DTPOSTED, TRNAMT, FITID, CHECKNUM, NAME/MEMO. Investimentos, pendentes e correções não são tratados como novos movimentos.",
     "ofc": "OFC 1.0.6: ACCTSTMT/ACCTFROM, TRNTYPE numérico, CHKNUM, data YYYYMMDD, valor com sinal. Leitor separado do OFX; sujeito a homologação por banco.",
     "qif": "Seções Bank/Cash/CCard/Oth A/Oth L, campos D/T/P/M/N e terminador ^. Datas locais exigem formato explícito; contas múltiplas e investimentos são recusados.",
-    "zip": "Leitura em memória, limites de tamanho/quantidade/expansão/profundidade, sem extração de caminhos e sem seguir links.",
+    "zip": "Leitura em memória, limites de tamanho/quantidade/expansão/profundidade, sem extração de caminhos e sem seguir links. PDFs acessórios reconhecidos dentro de compactados são ignorados com aviso e origem rastreável; não geram documentos fiscais nem dispensam limites e integridade.",
     "rar_7z": "7z via py7zr; RAR via rarfile com libarchive (bsdtar no contêiner/macOS ou tar.exe no Windows) para entradas comprimidas. Sem leitor compatível, retorna diagnóstico e orienta ZIP/7z. Pacotes com senha, multipartes e codecs não suportados são recusados; limites e proteção de caminhos aplicados.",
 }
 
@@ -64,6 +64,22 @@ def _source(file, record=None, line=None, **extra):
 
 
 def _issue(result, code, message, source, severity="error"):
+    # These generic reminders repeat for every XML, but contain no per-document
+    # eligibility decision. Keep their complete provenance without consuming
+    # the diagnostic budget once per document. Decision-bearing warnings such
+    # as XML_NO_PROTOCOL and RTC_TOTAL_REVIEW must remain individual: posting
+    # checks match their source.file to the document.
+    aggregate_codes = {"DOCUMENT_REVIEW_REQUIRED", "HOMOLOGATION_DOCUMENT", "CFOP_CLASSIFICATION_REQUIRED"}
+    # Billing details remain complete on each document; repeated financial
+    # warnings must not consume the fiscal error budget for large batches.
+    if severity == "warning" and (code in aggregate_codes or code.startswith("FINANCIAL_BILLING_")):
+        existing = next((item for item in result["issues"] if item["code"] == code and item["severity"] == severity), None)
+        if existing is not None:
+            sources = existing.setdefault("sources", [existing["source"]])
+            sources.append(source)
+            existing["count"] = len(sources)
+            existing["message"] = f"{message} ({len(sources)} ocorrências; origens preservadas na prévia.)"
+            return
     if len(result["issues"]) < MAX_ISSUES:
         result["issues"].append({"severity": severity, "code": code, "message": message, "source": source})
     elif not any(x["code"] == "ISSUE_LIMIT" for x in result["issues"]):
@@ -231,6 +247,82 @@ def _text(element, path, default=""):
     return (value.text or "").strip() if value is not None else default
 
 
+def _nfe_billing(info, filename, result):
+    """Preserve cobrança evidence separately from payments and fiscal validity.
+
+    Only malformed billing values become financial warnings. Structural XML
+    ambiguity (including repeated singleton fields) still raises ImportProblem.
+    Missing values are never synthesized from the fiscal total or issue date.
+    """
+    cobr = _node(info, "cobr")
+    billing = {"present": cobr is not None, "invoice": None, "installments": [],
+               "issues": [], "financial_rules_pending": False}
+    if cobr is None:
+        return billing
+
+    def warn(code, message, source):
+        code = "FINANCIAL_BILLING_" + code
+        billing["issues"].append({"code": code, "message": message,
+                                  "source": source, "severity": "warning"})
+        billing["financial_rules_pending"] = True
+        _issue(result, code, message, source, "warning")
+
+    def value(raw, tag, source, *, required=True, is_date=False):
+        text = raw[tag]
+        if not text:
+            if required:
+                warn("INCOMPLETE", f"Cobrança: {tag} ausente; confira o financeiro sem presumir valores ou vencimentos.", source)
+            return None
+        try:
+            return _date(text) if is_date else _decimal(text, money=True, allow_negative=False)
+        except ImportProblem as problem:
+            warn("INVALID_VALUE", f"Cobrança: {tag} inválido ({problem.code}); original preservado, financeiro pendente.", source)
+            return None
+
+    fat = _node(cobr, "fat")
+    if fat is not None:
+        source = _source(filename, "cobr/fat")
+        raw = {tag: _text(fat, tag) for tag in ("nFat", "vOrig", "vDesc", "vLiq")}
+        invoice = {"number": raw["nFat"], "original_amount": value(raw, "vOrig", source),
+                   "discount": value(raw, "vDesc", source, required=False),
+                   "net_amount": value(raw, "vLiq", source), "raw_fields": raw, "source": source}
+        billing["invoice"] = invoice
+        if not invoice["number"]:
+            warn("INCOMPLETE", "Cobrança: nFat ausente; identificação da fatura não foi inventada.", source)
+        # An omitted optional discount permits the arithmetic check, but remains
+        # null in the stored evidence, rather than becoming a declared zero.
+        if (invoice["original_amount"] is not None and invoice["net_amount"] is not None
+                and (invoice["discount"] is not None or not raw["vDesc"])):
+            discount = Decimal(invoice["discount"]) if invoice["discount"] is not None else Decimal("0")
+            if Decimal(invoice["original_amount"]) - discount != Decimal(invoice["net_amount"]):
+                warn("TOTAL_MISMATCH", "Cobrança: vOrig menos vDesc diverge de vLiq; confira a fatura.", source)
+    seen_numbers = set()
+    for sequence, dup in enumerate(_children(cobr, "dup"), 1):
+        source = _source(filename, f"cobr/dup[{sequence}]")
+        raw = {tag: _text(dup, tag) for tag in ("nDup", "dVenc", "vDup")}
+        installment = {"sequence": sequence, "number": raw["nDup"],
+                       "due_date": value(raw, "dVenc", source, is_date=True),
+                       "amount": value(raw, "vDup", source), "raw_fields": raw,
+                       "source": source, "financial_posting_created": False}
+        billing["installments"].append(installment)
+        if not installment["number"]:
+            warn("INCOMPLETE", "Cobrança: nDup ausente; sequência técnica não substitui a identificação declarada.", source)
+        elif installment["number"] in seen_numbers:
+            warn("DUPLICATE_INSTALLMENT", "Cobrança: nDup repetido; confira as parcelas antes de gerar títulos.", source)
+        seen_numbers.add(installment["number"])
+        if installment["amount"] is not None and Decimal(installment["amount"]) == 0:
+            warn("INVALID_VALUE", "Cobrança: vDup igual a zero; confira a parcela antes de gerar título.", source)
+    if not billing["installments"]:
+        warn("INCOMPLETE", "Cobrança sem duplicatas: nenhum vencimento ou parcelamento foi presumido.", _source(filename, "cobr"))
+    invoice = billing["invoice"]
+    if (invoice is not None and invoice["net_amount"] is not None and billing["installments"]
+            and all(part["amount"] is not None for part in billing["installments"])):
+        total = sum((Decimal(part["amount"]) for part in billing["installments"]), Decimal("0"))
+        if total != Decimal(invoice["net_amount"]):
+            warn("INSTALLMENT_TOTAL_MISMATCH", "Cobrança: soma de vDup diverge de vLiq; confira as parcelas.", _source(filename, "cobr"))
+    return billing
+
+
 class _BoundedTreeBuilder(ET.TreeBuilder):
     """Aplica limites durante a construção, antes de materializar uma árvore gigante."""
     def __init__(self):
@@ -287,7 +379,28 @@ def _flatten(element, prefix=""):
 
 
 def _party(element):
-    return {"name": _text(element, "xNome"), "tax_id": _tax_id(_text(element, "CNPJ") or _text(element, "CPF")), "foreign_id": _text(element, "idEstrangeiro")}
+    party = {"name": _text(element, "xNome"), "tax_id": _tax_id(_text(element, "CNPJ") or _text(element, "CPF")), "foreign_id": _text(element, "idEstrangeiro")}
+    if element is None:
+        return party
+    address_tag = {"emit": "enderEmit", "dest": "enderDest", "rem": "enderReme",
+                   "exped": "enderExped", "receb": "enderReceb", "toma4": "enderToma"}.get(_local(element.tag))
+    address = _node(element, address_tag) if address_tag else None
+    for key, tag in {"trade_name": "xFant", "ie": "IE", "im": "IM", "email": "email", "phone": "fone"}.items():
+        value = _text(element, tag)
+        if value:
+            party[key] = value
+    for key, tag in {"address": "xLgr", "number": "nro", "district": "xBairro", "city": "xMun",
+                     "state": "UF", "postal_code": "CEP", "ibge": "cMun", "phone": "fone"}.items():
+        value = _text(address, tag)
+        if value:
+            party[key] = value
+    # NF-e transporta uses flat address fields instead of an ender* group.
+    if _local(element.tag) == "transporta":
+        for key, tag in {"address": "xEnder", "city": "xMun", "state": "UF"}.items():
+            value = _text(element, tag)
+            if value:
+                party[key] = value
+    return party
 
 
 def _xml_document(filename, data, company, result, digest):
@@ -372,6 +485,11 @@ def _xml_document(filename, data, company, result, digest):
     posting_date = _date(options["posting_date"]) if options.get("posting_date") else issue_date
     doc = {"direction": direction, "document_type": "goods" if nfe else "transport", "number": number, "series": _text(info, "ide/serie"), "model": model, "issue_date": issue_date, "posting_date": posting_date, "posting_date_proposed": not bool(options.get("posting_date")), "partner_name": partner["name"] or ("Consumidor não identificado" if model == "65" else ""), "partner_tax_id": partner["tax_id"], "key": key, "cfop": "", "total": total, "taxes": taxes, "items": [], "invoices": [], "source": source, "source_hash": digest, "company_tax_id": own, "issuer": issuer, "recipient": recipient, "review_required": True, "environment": _text(info, "ide/tpAmb"), "signature_verified": False, "schema_validated": False, "tax_rules_applied": False}
     _required(doc["partner_name"], "nome do participante")
+    # The declared goods movement date is evidence, not an automatic posting
+    # rule. Do not fabricate it from issue_date when the XML omits the field.
+    movement_date = (_text(info, "ide/dhSaiEnt") or _text(info, "ide/dSaiEnt")) if nfe else ""
+    if movement_date:
+        doc["movement_date"] = _xml_date(movement_date)
     if transport:
         doc["transport"] = transport
         declared_cfops = [_text(info, "ide/CFOP")]
@@ -384,8 +502,12 @@ def _xml_document(filename, data, company, result, digest):
             cfop = _text(product, "CFOP")
             declared_cfops.append(cfop)
             doc["items"].append({"number": det.get("nItem", str(index)), "code": _text(product, "cProd"), "description": _text(product, "xProd"), "ncm": _text(product, "NCM"), "cest": _text(product, "CEST"), "unit": _text(product, "uCom"), "quantity": _decimal(_required(_text(product, "qCom"), "qCom")), "unit_price": _decimal(_required(_text(product, "vUnCom"), "vUnCom")), "total": _decimal(_required(_text(product, "vProd"), "vProd"), money=True, allow_negative=False), "cfop": cfop if own == issuer["tax_id"] else "", "source_cfop": cfop, "taxes": _flatten(_node(det, "imposto")), "declared_product_fields": _flatten(product), "source": _source(filename, f"det[{index}]", item=det.get("nItem", str(index)))})
-        for index, dup in enumerate(_children(_node(info, "cobr"), "dup"), 1):
-            doc["invoices"].append({"number": _text(dup, "nDup") or str(index), "due_date": _date(_required(_text(dup, "dVenc"), "dup/dVenc")), "amount": _decimal(_required(_text(dup, "vDup"), "dup/vDup"), money=True, allow_negative=False), "source": _source(filename, f"cobr/dup[{index}]"), "financial_posting_created": False})
+            barcode = _text(product, "cEAN")
+            if barcode and barcode.upper() != "SEM GTIN":
+                doc["items"][-1]["barcode"] = barcode
+        doc["billing"] = _nfe_billing(info, filename, result)
+        doc["invoices"] = doc["billing"]["installments"]
+        doc["financial_rules_pending"] = doc["billing"]["financial_rules_pending"]
         if not doc["items"]:
             raise ImportProblem("XML_ITEM_MISSING", "NF-e/NFC-e sem itens det; o leitor requer um documento completo.")
     declared_cfops = sorted(set(x for x in declared_cfops if x))
@@ -395,6 +517,10 @@ def _xml_document(filename, data, company, result, digest):
         doc["cfop"] = declared_cfops[0]
     elif own != issuer["tax_id"]:
         _issue(result, "CFOP_CLASSIFICATION_REQUIRED", "CFOP do XML representa a operação do emitente. Classifique a operação da empresa ativa; o leitor preservou os códigos originais sem convertê-los.", source, "warning")
+    if nfe:
+        carrier = _node(info, "transp/transporta")
+        if carrier is not None:
+            doc["transport"] = {"carrier": _party(carrier)}
     if nfe and _text(info, "total/vNFTot"):
         doc["declared_new_total"] = _text(info, "total/vNFTot")
         _issue(result, "RTC_TOTAL_REVIEW", "XML contém vNFTot. O total extraído de vNF e os novos totalizadores foram preservados; o tratamento da versão RTC precisa de conferência.", source, "warning")
@@ -872,6 +998,14 @@ def _parse(filename, data, company, result, state, depth):
                 _parse(filename+"!/"+name.replace("\\","/"),child,company,result,state,depth+1)
         elif suffix == ".zip" or data.startswith(b"PK\x03\x04"):
             fmt = _zip(filename, data, company, result, state, depth)
+        elif depth > 0 and suffix == ".pdf" and data.startswith(b"%PDF-"):
+            # Archive readers have already checked paths, encryption, expansion
+            # and integrity. Keep the source/hash but never parse PDF contents.
+            # Aggregate the notice later: one warning per PDF would hit
+            # MAX_ISSUES and incorrectly block otherwise valid large batches.
+            fmt = "pdf"
+            source_info["status"] = "ignored"
+            source_info["reason"] = "ARCHIVE_PDF_IGNORED"
         elif suffix in (".ofx", ".qfx"):
             fmt = _bank_markup(filename, data, company, result, digest)
         elif suffix == ".ofc":
@@ -921,6 +1055,9 @@ def parse_file(filename: str, data: bytes, company: dict) -> dict:
     result["bank_account_hint"] = hints[0] if len(hints) == 1 else None
     if len(hints) > 1 and not any(x["code"] == "MULTIPLE_BANK_ACCOUNTS" for x in result["issues"]):
         _issue(result, "MULTIPLE_BANK_ACCOUNTS", "O lote contém extratos de contas distintas. Separe os arquivos por conta antes de confirmar.", _source(filename))
+    ignored_pdfs = sum(source.get("reason") == "ARCHIVE_PDF_IGNORED" for source in result["sources"])
+    if ignored_pdfs:
+        _issue(result, "ARCHIVE_PDF_IGNORED", f"{ignored_pdfs} PDF(s) acessório(s) ignorado(s) no compactado; não geram documentos fiscais. Consulte as fontes para os nomes e hashes.", _source(filename), "warning")
     result["can_confirm"] = not any(x["severity"] == "error" for x in result["issues"]) and bool(result["documents"] or result["transactions"])
     result["review_required"] = True
     return result

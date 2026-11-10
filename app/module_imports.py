@@ -80,7 +80,7 @@ class ModuleImportsMixin:
                         if any(any(r[k]!=row[k] for k in ('date','document','history')) for r in group['rows']):raise DomainError('Partidas do mesmo ID têm cabeçalhos diferentes.')
                         lines=[]
                         for r in group['rows']:
-                            account=conn.execute('SELECT id FROM accounts WHERE company_id=? AND access_code=?',(cid,r['account'])).fetchone()
+                            account=conn.execute('SELECT id FROM effective_accounts WHERE company_id=? AND access_code=?',(cid,r['account'])).fetchone()
                             if not account:raise DomainError('Conta não localizada: '+r['account'])
                             cc=conn.execute('SELECT id FROM cost_centers WHERE company_id=? AND code=?',(cid,r['cost_center'])).fetchone() if r['cost_center'] else None
                             if r['cost_center'] and not cc:raise DomainError('Centro de custo não localizado: '+r['cost_center'])
@@ -114,7 +114,7 @@ class ModuleImportsMixin:
 
     def _import_account(self,conn,cid,data,actor):
         effect(conn,cid,'accounting.accounts','create')
-        existing=conn.execute('SELECT * FROM accounts WHERE company_id=? AND access_code=?',(cid,data['access_code'])).fetchone()
+        existing=conn.execute('SELECT * FROM effective_accounts WHERE company_id=? AND access_code=?',(cid,data['access_code'])).fetchone()
         if existing:
             if any(existing[k]!=v for k,v in data.items()):raise DomainError('Conta existente com conteúdo diferente. Edite pelo cadastro.',409,'account_conflict')
             return {'id':existing['id'],'duplicate':True}

@@ -132,4 +132,10 @@ def main():
       if process:process.terminate();process.wait(timeout=15)
       (OUT/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n');print(json.dumps(report,ensure_ascii=False,indent=2))
     return 0 if report['ok'] else 1
-if __name__=='__main__':raise SystemExit(main())
+if __name__=='__main__':
+    status=main()
+    if status:raise SystemExit(status)
+    # Keep global-plan acceptance in the existing CI entry point. Evidence is
+    # nested beneath this suite's already-collected artifact directory.
+    from browser_global_account_plans import main as global_plans
+    global_plans()

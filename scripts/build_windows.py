@@ -28,6 +28,14 @@ def run(arguments, cwd=ROOT, env=None, timeout=None):
     subprocess.run([str(x) for x in arguments], cwd=cwd, env=env, timeout=timeout, check=True)
 
 
+def maintenance_bundle_args():
+    """The standalone installer helper runs the same data-backed migrations."""
+    data = ROOT / 'app' / 'data'
+    if not data.is_dir():
+        raise RuntimeError('Dados de migração ausentes: app/data')
+    return ['--paths', str(ROOT), '--add-data', f'{data}{os.pathsep}app/data']
+
+
 def source_revision() -> str | None:
     explicit = os.environ.get("ESCRITURA_SOURCE_SHA", "").strip()
     if explicit and not re.fullmatch(r"[0-9a-f]{40}", explicit):
