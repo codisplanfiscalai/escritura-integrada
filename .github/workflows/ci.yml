@@ -64,6 +64,12 @@ jobs:
           python scripts/smoke_browser.py
           python scripts/browser_account_plans.py
           python scripts/browser_bulk_operations.py
+      - name: Validar revisão e documentos auxiliares da importação
+        if: success() || failure()
+        run: python scripts/browser_import_review.py
+      - name: Validar tabelas e padrões fiscais globais no Chromium
+        if: success() || failure()
+        run: python scripts/browser_fiscal_library.py
       - name: Validar modelos e prévia PDF no Chromium
         if: success() || failure()
         run: |
@@ -77,6 +83,8 @@ jobs:
             artifacts/browser-account-plans/
             artifacts/browser-bulk-operations/
             artifacts/browser-reports/
+            artifacts/browser-import-review/
+            artifacts/browser-fiscal-library/
           retention-days: 14
           overwrite: true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

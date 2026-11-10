@@ -46,6 +46,42 @@ class ImportMastersTests(unittest.TestCase):
         self.assertNotEqual(first['items'][0]['master_id'], service['items'][0]['master_id'])
         self.assertEqual(1, len(self.core.masters(self.a['id'], 'service')))
 
+    def test_nfe_service_item_uses_explicit_issqn_source_and_keeps_products_separate(self):
+        from pathlib import Path
+        from app.importers import parse_file
+        product = self.payload()
+        product['items'][0]['code'] = 'TESTE-001'
+        goods = self.create(product)
+        raw = (Path(__file__).parent / 'fixtures/nfe_ficticia.xml').read_bytes()
+        raw = raw.replace(b'12345678000195', self.a['tax_id'].encode())
+        start, end = raw.index(b'<imposto>'), raw.index(b'</imposto>') + len(b'</imposto>')
+        raw = raw[:start] + b'<imposto><ISSQN><vBC>100.00</vBC><vAliq>2.00</vAliq><vISSQN>2.00</vISSQN><cMunFG>3550308</cMunFG><cListServ>01.01</cListServ></ISSQN></imposto>' + raw[end:]
+        raw = raw.replace(b'<CFOP>5102</CFOP>', b'<CFOP>5933</CFOP>')
+        parsed = parse_file('service-item.xml', raw, self.a)['documents'][0]
+        self.assertEqual('goods', parsed['document_type'])  # NF-e header may mix item types.
+        service = self.create(parsed)
+        self.assertNotEqual(goods['items'][0]['master_id'], service['items'][0]['master_id'])
+        services = self.core.masters(self.a['id'], 'service')
+        self.assertEqual(1, len(services))
+        self.assertEqual('01.01', services[0]['data']['service_code'])
+        self.assertEqual(1, len(self.core.masters(self.a['id'], 'product')))
+        self.assertEqual(parsed['items'][0]['taxes'], service['items'][0]['taxes'])
+        self.assertNotIn('rate', services[0]['data'])
+        self.assertNotIn('cfop', services[0]['data'])
+        self.assertTrue(self.create(parsed)['duplicate'])
+        self.assertEqual([], self.core.masters(self.b['id'], 'service'))
+
+    def test_conflicting_item_tax_groups_keep_source_without_inventing_master_kind(self):
+        payload = self.payload()
+        payload['items'][0]['number'] = '1'
+        payload['items'][0]['taxes'] = {'ICMS/ICMS00/vICMS': '18.00', 'ISSQN/vISSQN': '2.00'}
+        doc = self.create(payload)
+        self.assertNotIn('master_id', doc['items'][0])
+        self.assertEqual(payload['items'][0]['taxes'], doc['items'][0]['taxes'])
+        self.assertEqual([], self.core.masters(self.a['id'], 'product'))
+        self.assertEqual([], self.core.masters(self.a['id'], 'service'))
+        self.assertTrue(any('ICMS e ISSQN' in warning for warning in doc['master_import_warnings']))
+
     def test_participant_roles_preserve_reviewed_master_and_carrier(self):
         master = self.core.save_master(self.a['id'], 'participant', {
             'code': 'CUSTOM', 'name': 'Nome revisado', 'tax_id': '87654321000198',

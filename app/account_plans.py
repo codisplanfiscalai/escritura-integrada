@@ -38,24 +38,32 @@ class AccountPlansMixin:
     def _plan_state(self, conn, cid):
         company_row(conn, cid)
         accounts = []
-        for row in conn.execute('SELECT a.*,m.prosoft_json,m.extras_json FROM accounts a LEFT JOIN account_plan_metadata m ON m.account_id=a.id AND m.company_id=a.company_id WHERE a.company_id=? ORDER BY a.classifier', (cid,)):
+        for row in conn.execute("SELECT a.*,COALESCE(m.prosoft_json,g.prosoft_json,'{}') AS prosoft_json,COALESCE(m.extras_json,g.extras_json,'{}') AS extras_json FROM effective_accounts a LEFT JOIN account_plan_metadata m ON m.account_id=a.id AND m.company_id=a.company_id LEFT JOIN global_account_entries g ON g.id=a.shared_entry_id WHERE a.company_id=? ORDER BY a.classifier,a.access_code", (cid,)):
             r = dict(row)
             accounts.append(json.loads(r['extras_json'] or '{}') | {k: bool(r[k]) if k in {'analytical','requires_cost_center','active'} else r[k] for k in FIELDS} | {'id':r['id'], 'version':r['version'], 'prosoft':json.loads(r['prosoft_json'] or '{}')})
-        saved = conn.execute('SELECT properties_json FROM account_plan_properties WHERE company_id=?', (cid,)).fetchone()
-        return accounts, json.loads(saved['properties_json']) if saved else None
+        properties,_ = self._plan_properties(conn,cid)
+        return accounts,properties
 
-    def _plan_preview(self, conn, cid, plan, template=False):
+    def _plan_properties(self,conn,cid):
+        saved=conn.execute('SELECT properties_json,extras_json FROM account_plan_properties WHERE company_id=?',(cid,)).fetchone()
+        if saved:return json.loads(saved['properties_json']),json.loads(saved['extras_json'])
+        shared=conn.execute('SELECT g.plan_json FROM company_account_plan_bindings b JOIN global_account_plans g ON g.id=b.global_plan_id WHERE b.company_id=?',(cid,)).fetchone()
+        if not shared:return None,None
+        plan=json.loads(shared['plan_json'])
+        return plan['properties'],{k:v for k,v in plan.items() if k not in {'schema','properties','accounts','format','encoding'}}
+
+    def _plan_preview(self, conn, cid, plan, template=False, identity_by_access=False):
         current, properties = self._plan_state(conn, cid)
         by_code = {r['access_code']:r for r in current}; by_classifier = {r['classifier']:r for r in current}
         created, preserved, conflicts = [], 0, []
         seen_codes, seen_classifiers = set(), set()
         for raw in plan['accounts']:
             r = account_values(raw)
-            if r['access_code'] in seen_codes or r['classifier'] in seen_classifiers:
-                conflicts.append({'access_code':r['access_code'], 'classifier':r['classifier'], 'reason':'Acesso ou classificador repetido na origem. A estrutura atual exige ambos únicos na empresa; todas as linhas ficam preservadas na carga de referência.'})
+            if r['access_code'] in seen_codes or (not identity_by_access and r['classifier'] in seen_classifiers):
+                conflicts.append({'access_code':r['access_code'], 'classifier':r['classifier'], 'reason':'Acesso repetido ou classificador repetido no modo tradicional. Para subcontas distintas, revise a identidade por acesso ou publique uma versão global; todas as linhas permanecem na origem.'})
                 continue
             seen_codes.add(r['access_code']); seen_classifiers.add(r['classifier'])
-            matches = [x for x in (by_code.get(r['access_code']), by_classifier.get(r['classifier'])) if x]
+            matches = [x for x in (by_code.get(r['access_code']), None if identity_by_access else by_classifier.get(r['classifier'])) if x]
             if not matches:
                 created.append(r); continue
             if template:
@@ -65,8 +73,7 @@ class AccountPlansMixin:
             conflicts.append({'access_code':r['access_code'], 'classifier':r['classifier'], 'reason':'Acesso ou classificador já cadastrado com dados diferentes. Nenhuma conta será substituída.'})
         if properties is not None and properties != plan['properties'] and created:
             conflicts.append({'access_code':'', 'reason':'Propriedades do plano diferem das já importadas nesta empresa. Revise a máscara e os grupos antes de combinar planos.'})
-        saved_extras=conn.execute('SELECT extras_json FROM account_plan_properties WHERE company_id=?',(cid,)).fetchone()
-        extras=json.loads(saved_extras['extras_json']) if saved_extras else None
+        _,extras=self._plan_properties(conn,cid)
         incoming_extras={k:v for k,v in plan.items() if k not in {'schema','properties','accounts','format','encoding'}}
         if not template and extras is not None and extras!=incoming_extras:
             conflicts.append({'access_code':'','reason':'Metadados gerais da origem diferem do plano atual. Guarde a carga completa como referência; os metadados existentes não serão substituídos.'})
@@ -79,6 +86,7 @@ class AccountPlansMixin:
         format = text(payload.get('format', 'native'), 'Formato', True, 30)
         options = payload.get('options', {})
         if not isinstance(options, dict): raise DomainError('Opções do plano devem ser um objeto.')
+        if options.get('identity_mode', 'traditional') not in {'traditional','access'}: raise DomainError('Modo de identidade do plano inválido.')
         if format == 'default':
             raw = pack(default_plan()).encode('utf-8'); filename = 'plano-padrao-escritura.json'
             try: plan = decode_plan(raw, 'native', {})
@@ -95,7 +103,7 @@ class AccountPlansMixin:
         if not 1 <= len(plan['accounts']) <= 50000: raise DomainError('O plano deve conter de 1 a 50.000 contas.')
         with self.db.transaction() as conn:
             effect(conn, cid, 'accounting.accounts', 'read')
-            result = self._plan_preview(conn, cid, plan, format == 'default')
+            result = self._plan_preview(conn, cid, plan, format == 'default', options.get('identity_mode') == 'access')
             fingerprint = digest({'raw':digest(raw), 'format':format, 'options':options, 'state':result['state_hash'], 'plan':plan})
             batch = conn.execute('INSERT INTO account_plan_batches(company_id,filename,format,sha256,original,options_json,plan_json,preview_hash,state_hash,status,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
                 (cid,filename,format,digest(raw),raw,pack(options),pack(plan),fingerprint,result['state_hash'],'preview',now(),actor)).lastrowid
@@ -119,7 +127,9 @@ class AccountPlansMixin:
                 audit(conn,cid,actor,'import-reference','account_plan',item_id,confirmed|{'reason':reason,'sha256':batch['sha256']})
                 return confirmed
             effect(conn,cid,'accounting.accounts','create')
-            plan = json.loads(batch['plan_json']); result = self._plan_preview(conn,cid,plan,batch['format']=='default')
+            from .global_account_plans import assert_own_plan
+            assert_own_plan(conn,cid)
+            plan = json.loads(batch['plan_json']); result = self._plan_preview(conn,cid,plan,batch['format']=='default',json.loads(batch['options_json']).get('identity_mode')=='access')
             if result['state_hash']!=batch['state_hash']: raise DomainError('O plano da empresa mudou. Gere uma nova prévia.',409,'stale_preview')
             if result['conflicts']: raise DomainError('Há conflitos de acesso, classificação ou propriedades. Nenhuma conta foi gravada.',409,'account_plan_conflict')
             for row in result['to_create']:
@@ -151,8 +161,8 @@ class AccountPlansMixin:
             if not 1<=len(accounts)<=50000:raise DomainError('O plano deve conter de 1 a 50.000 contas para exportação.')
             properties = payload.get('properties',saved or default_plan()['properties'])
             if not isinstance(properties,dict): raise DomainError('Propriedades do plano devem ser um objeto.')
-            saved_extras=conn.execute('SELECT extras_json FROM account_plan_properties WHERE company_id=?',(cid,)).fetchone()
-            plan = (json.loads(saved_extras['extras_json']) if saved_extras else {}) | {'schema':'escritura-account-plan/v1','properties':properties,'accounts':[{k:v for k,v in r.items() if k not in {'id','version'}} for r in accounts]}
+            _,extras=self._plan_properties(conn,cid)
+            plan = (extras or {}) | {'schema':'escritura-account-plan/v1','properties':properties,'accounts':[{k:v for k,v in r.items() if k not in {'id','version'}} for r in accounts]}
             try: raw, manifest = encode_plan(plan,format,{'allow_ascii':payload.get('allow_ascii') is True})
             except PlanCodecError as exc: raise DomainError(str(exc))
             changes = manifest.get('text_changes',manifest.get('changes',[]))

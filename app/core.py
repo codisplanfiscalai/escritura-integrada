@@ -170,6 +170,9 @@ def json_value(value, expected, label):
 
 def select_one(conn, table, company_id, item_id):
     # Table names are constants in service code, never request values.
+    if table == "accounts":
+        from .account_refs import resolve_account
+        return resolve_account(conn,company_id,item_id)
     row = conn.execute(f"SELECT * FROM {table} WHERE id=? AND company_id=?", (item_id, company_id)).fetchone()
     if row is None:
         raise DomainError("Registro não encontrado nesta empresa.", 404, "not_found")
@@ -367,7 +370,7 @@ class Core:
     def accounts(self, cid):
         with self.db.read() as conn:
             company_row(conn, cid)
-            rows = [dict(r) for r in conn.execute("SELECT * FROM accounts WHERE company_id=? ORDER BY classifier", (cid,))]
+            rows = [dict(r) for r in conn.execute("SELECT * FROM effective_accounts WHERE company_id=? ORDER BY classifier,access_code", (cid,))]
             for row in rows:
                 for flag in ("analytical", "requires_cost_center", "active"):
                     row[flag] = bool(row[flag])
@@ -378,10 +381,13 @@ class Core:
             return self._save_account(conn,cid,payload,actor,item_id)
 
     def _save_account(self, conn, cid, payload, actor, item_id=None):
+        from .global_account_plans import assert_own_plan
+        assert_own_plan(conn, cid)
         company_row(conn, cid)
         old = select_one(conn, "accounts", cid, item_id) if item_id else {}
         if old:
             check_version(old, payload)
+            item_id=old["id"]
         values = {k: text(payload.get(k, old.get(k, "")), k, True, 200) for k in ("access_code", "classifier", "name", "nature")}
         values["report_group"] = text(payload.get("report_group", old.get("report_group", "")), "Grupo do demonstrativo", False, 30)
         values["prosoft_code"] = text(payload.get("prosoft_code", old.get("prosoft_code", "")), "Acesso Prosoft", False, 5)
@@ -428,7 +434,7 @@ class Core:
         result = select_one(conn, "journals", cid, item_id)
         result.pop("request_hash", None)
         result["status"] = "reversed" if result["reversed_by"] else "posted"
-        result["lines"] = [dict(r) for r in conn.execute("SELECT l.*,a.access_code,a.classifier,a.name AS account_name,c.name AS cost_center_name FROM journal_lines l JOIN accounts a ON a.id=l.account_id LEFT JOIN cost_centers c ON c.id=l.cost_center_id WHERE l.journal_id=? AND l.company_id=? ORDER BY l.position", (item_id, cid))]
+        result["lines"] = [dict(r) for r in conn.execute("SELECT l.*,a.access_code,a.classifier,a.name AS account_name,c.name AS cost_center_name FROM journal_lines l JOIN effective_accounts a ON a.id=l.account_id LEFT JOIN cost_centers c ON c.id=l.cost_center_id WHERE l.journal_id=? AND l.company_id=? ORDER BY l.position", (item_id, cid))]
         return result
 
     def journals(self, cid, competence=None):
@@ -438,15 +444,16 @@ class Core:
             ids = [r["id"] for r in conn.execute("SELECT id FROM journals WHERE company_id=?" + clause + " ORDER BY date DESC,id DESC", params)]
             return [self._journal(conn, cid, key) for key in ids]
 
-    def _normalize_lines(self, conn, cid, lines, allow_inactive=False):
+    def _normalize_lines(self, conn, cid, lines, allow_inactive=False, materialize=False, actor=None):
         if not isinstance(lines, list) or not 2 <= len(lines) <= 1000:
             raise DomainError("O lançamento deve conter de 2 a 1000 partidas.")
         result = []
         for position, line in enumerate(lines, 1):
             if not isinstance(line, dict):
                 raise DomainError("Partida inválida.")
-            aid = integer(line.get("account_id"), "Conta")
-            account = select_one(conn, "accounts", cid, aid)
+            from .account_refs import resolve_account
+            account = resolve_account(conn,cid,line.get("account_id"),materialize=materialize,actor=actor)
+            aid = account["id"]
             if not account["analytical"] or (not account["active"] and not allow_inactive):
                 raise DomainError("Selecione uma conta analítica ativa.")
             debit = money(line.get("debit", "0.00"), "Débito")
@@ -477,7 +484,7 @@ class Core:
         document = text(payload.get("document"), "Documento", False, 100)
         history = text(payload.get("history"), "Histórico", True, 2000)
         key = text(payload.get("idempotency_key"), "Chave de idempotência", True, 200)
-        lines, total = self._normalize_lines(conn, cid, payload.get("lines"), allow_inactive=reversal_of is not None)
+        lines, total = self._normalize_lines(conn, cid, payload.get("lines"), allow_inactive=reversal_of is not None,materialize=True,actor=actor)
         hashed = digest({"date": day, "document": document, "history": history, "lines": lines, "reversal_of": reversal_of})
         existing = conn.execute("SELECT * FROM journals WHERE company_id=? AND idempotency_key=?", (cid, key)).fetchone()
         if existing:
@@ -614,7 +621,7 @@ class Core:
             old = select_one(conn, "documents", cid, item_id)
             check_version(old, payload)
             if hasattr(self, "_validate_document_links"):
-                self._validate_document_links(conn, cid, {**self._document(conn,cid,item_id),**payload})
+                self._validate_document_links(conn, cid, {**self._document(conn,cid,item_id),**payload}, _existing_document_id=item_id)
             if old["status"] == "booked":
                 if not hasattr(self, '_validate_booked_edit'):
                     raise DomainError("Documento escriturado não pode ser editado por esta rotina.", 409, "document_booked")
@@ -1275,7 +1282,7 @@ class Core:
             company_row(conn, cid)
             clauses, params = ["l.company_id=?"], [cid]
             if account_id is not None:
-                select_one(conn, "accounts", cid, integer(account_id, "Conta"))
+                account_id = select_one(conn, "accounts", cid, account_id)["id"]
                 clauses.append("l.account_id=?")
                 params.append(account_id)
             if cost_center_id is not None:
@@ -1284,7 +1291,7 @@ class Core:
                 params.append(cost_center_id)
             where = " AND ".join(clauses)
             openings = {r["account_id"]: r["opening_cents"] for r in conn.execute("SELECT l.account_id,SUM(l.debit_cents-l.credit_cents) AS opening_cents FROM journal_lines l JOIN journals j ON j.id=l.journal_id WHERE " + where + " AND j.period<? GROUP BY l.account_id", (*params, competence))}
-            line_query = "SELECT l.journal_id,j.number,j.date,j.document,j.history,j.reversal_of,j.reversed_by,l.account_id,a.access_code,a.classifier,a.name AS account_name,a.nature,l.debit_cents,l.credit_cents,l.cost_center_id,c.name AS cost_center_name FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.id=l.account_id LEFT JOIN cost_centers c ON c.id=l.cost_center_id WHERE " + where + " AND j.period=? ORDER BY " + ("a.classifier," if kind == "ledger" else "") + "j.date,j.id,l.position"
+            line_query = "SELECT l.journal_id,j.number,j.date,j.document,j.history,j.reversal_of,j.reversed_by,l.account_id,a.access_code,a.classifier,a.name AS account_name,a.nature,l.debit_cents,l.credit_cents,l.cost_center_id,c.name AS cost_center_name FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN effective_accounts a ON a.id=l.account_id LEFT JOIN cost_centers c ON c.id=l.cost_center_id WHERE " + where + " AND j.period=? ORDER BY " + ("a.classifier," if kind == "ledger" else "") + "j.date,j.id,l.position"
             rows = [dict(r) for r in conn.execute(line_query, (*params, competence))]
             totals = {"debit_cents": sum(r["debit_cents"] for r in rows), "credit_cents": sum(r["credit_cents"] for r in rows)}
             if kind == "ledger":
@@ -1305,7 +1312,7 @@ class Core:
                     entry["credit_cents"] += row["credit_cents"]
                 aquery, aparams = (" AND id=?", (cid, account_id)) if account_id else ("", (cid,))
                 rows = []
-                for account in conn.execute("SELECT * FROM accounts WHERE company_id=? AND analytical=1" + aquery + " ORDER BY classifier", aparams):
+                for account in conn.execute("SELECT * FROM effective_accounts WHERE company_id=? AND analytical=1" + aquery + " ORDER BY classifier", aparams):
                     aid = account["id"]
                     entry = {"account_id": aid, "access_code": account["access_code"], "classifier": account["classifier"], "account_name": account["name"], "nature": account["nature"], "opening_cents": openings.get(aid, 0), **movements.get(aid, {"debit_cents": 0, "credit_cents": 0})}
                     entry["closing_cents"] = entry["opening_cents"] + entry["debit_cents"] - entry["credit_cents"]
@@ -1356,7 +1363,7 @@ class Core:
                 initialize_exercises(conn, cid, 2026)
                 self._default_accounts(conn, cid)
                 cc = conn.execute("INSERT INTO cost_centers(company_id,code,name) VALUES(?,?,?)", (cid, "ADM", "Administrativo — demonstração")).lastrowid
-                accounts = {r["access_code"]: r["id"] for r in conn.execute("SELECT id,access_code FROM accounts WHERE company_id=?", (cid,))}
+                accounts = {r["access_code"]: r["id"] for r in conn.execute("SELECT id,access_code FROM effective_accounts WHERE company_id=?", (cid,))}
                 if index == 1:
                     for key, debit, credit, amount, history in (("sale", "3", "5", "2500.00", "Venda fictícia para demonstração"), ("expense", "6", "4", "450.00", "Despesa fictícia para demonstração")):
                         self._create_journal(conn, cid, {"date": "2026-11-05", "document": "DEMO-" + key.upper(), "history": history, "idempotency_key": "demo:" + key, "lines": [{"account_id": accounts[debit], "debit": amount, "credit": "0.00", "cost_center_id": cc}, {"account_id": accounts[credit], "debit": "0.00", "credit": amount}]}, "demonstração")

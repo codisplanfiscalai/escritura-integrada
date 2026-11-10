@@ -20,10 +20,23 @@ def manifest(path):
         info['money']={}
         for t,col in [('documents','total_cents'),('journals','total_cents'),('titles','amount_cents'),('settlements','amount_cents')]:
             info['money'][t]=conn.execute(f'SELECT COALESCE(SUM({col}),0) FROM {t}').fetchone()[0]
+        fiscal_tables = {'global_fiscal_sources','global_fiscal_catalogs','fiscal_patterns','fiscal_library_versions','company_fiscal_pattern_imports'} & set(tables)
+        if fiscal_tables:
+            info['fiscal_library'] = {}
+            for table in sorted(fiscal_tables):
+                records = [dict(r) for r in conn.execute('SELECT * FROM "'+table+'" ORDER BY rowid')]
+                canonical = json.dumps(records,ensure_ascii=False,sort_keys=True,separators=(',',':'))
+                info['fiscal_library'][table] = hashlib.sha256(canonical.encode()).hexdigest()
+                if table == 'global_fiscal_sources':
+                    for row in records:
+                        if hashlib.sha256(row['data_json'].encode()).hexdigest()!=row['sha256']:
+                            raise RuntimeError('Fonte fiscal global com hash divergente; backup recusado.')
         info['originals']=[]
-        for table,blob,hashcol in [('imports','original','sha256'),('stored_files','content','sha256')]:
+        info['originals_scope']='imports-stored-files-account-plans-v2'
+        for table,blob,hashcol in [('imports','original','sha256'),('stored_files','content','sha256'),('account_plan_batches','original','sha256'),('global_account_plans','original','sha256')]:
             if table not in tables:continue
-            for r in conn.execute(f'SELECT id,company_id,{blob},{hashcol} FROM {table}'):
+            company_column = 'source_company_id AS company_id' if table == 'global_account_plans' else 'company_id'
+            for r in conn.execute(f'SELECT id,{company_column},{blob},{hashcol} FROM {table}'):
                 tomb = None
                 if table == 'imports' and 'import_package_tombstones' in tables:
                     tomb = conn.execute('SELECT * FROM import_package_tombstones WHERE import_id=?', (r['id'],)).fetchone()
@@ -85,7 +98,14 @@ def restore_snapshot(archive,destination):
             if expected.get('format')!='escritura-complete-1':raise RuntimeError('Versão de backup não reconhecida.')
             with z.open('escritura.sqlite3') as src,(stage/'escritura.sqlite3').open('xb') as dst:shutil.copyfileobj(src,dst,1024*1024)
         actual=manifest(stage/'escritura.sqlite3')
-        if any(actual[k]!=expected.get(k) for k in actual) or actual.get('removed_originals') != expected.get('removed_originals'):raise RuntimeError('Backup não confere: registros, totais, vínculos ou hashes divergentes.')
+        comparison=actual
+        if 'originals_scope' not in expected:
+            # Older backups verified these two original stores. The full DB
+            # hash still authenticates their plan rows; manifest above also
+            # verifies all original plan hashes before any restore promotion.
+            comparison={k:v for k,v in actual.items() if k!='originals_scope'}
+            comparison['originals']=[r for r in actual['originals'] if r['table'] in {'imports','stored_files'}]
+        if any(comparison[k]!=expected.get(k) for k in comparison) or actual.get('removed_originals') != expected.get('removed_originals'):raise RuntimeError('Backup não confere: registros, totais, vínculos ou hashes divergentes.')
         # As cópias organizadas são regeneradas; nenhum XML/PDF depende de cache externo.
         from .db import Database
         from .file_store import materialize

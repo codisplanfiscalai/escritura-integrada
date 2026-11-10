@@ -84,6 +84,8 @@ O script `scripts/browser_import_review.py` cobre upload, PDF, edição, Cancela
 
 Build e suítes aplicáveis devem ser reexecutados no commit final. Instaladores Windows/macOS, CI remoto e validação do fluxo real antes de uso operacional continuam necessários. Nenhum push, merge ou release é implícito nesta entrega.
 
-Plano de contas global/050, catálogos globais editáveis e biblioteca tributária global independente constam em `PLANO_CADASTROS_GLOBAIS.md`; não foram implementados integralmente neste patch. O catálogo de propostas de reclassificação descrito acima já existe, mas não substitui esses cadastros.
+Plano compartilhado sem cópia integral, tabelas globais informativas, biblioteca de padrões deriváveis e terceiros com identidade global foram integrados nesta etapa. Consulte `PLANO_CADASTROS_GLOBAIS.md` para operação, limites e validação. O TXT 050 real permanece privado e exige revisão de suas propriedades; modelos genéricos não o substituem. O CNAE do padrão é validado na importação, não convertido em condição automática de cálculo futuro. O catálogo contextual de reclassificação continua separado desses módulos.
+
+Para validar a interface e o reprocessamento, siga `ROTEIRO_TESTE_IMPORTACAO.md`.
 
 A revisão financeira posterior deve distinguir FITIDs repetidos, conta, data, valor e ocorrência. Aplicações, empréstimos, vencimentos e pagamentos não são tratados como equivalentes. Esta entrega não altera o leitor financeiro.

@@ -19,21 +19,8 @@ def profile_values(payload, previous=None):
     if state not in {'unknown', 'not_found', 'registered', 'exempt', 'not_applicable'}:
         raise DomainError('Situação da inscrição estadual inválida.')
     result['ie_status'] = state
-    result['state_registrations'] = []
-    regs = p.get('state_registrations', [])
-    if not isinstance(regs, list) or len(regs) > 100:
-        raise DomainError('Informe até 100 inscrições estaduais.')
-    for r in regs:
-        if not isinstance(r, dict):
-            raise DomainError('Inscrição estadual inválida.')
-        uf = text(r.get('state'), 'UF da IE', True, 2).upper()
-        if uf not in UFS:
-            raise DomainError('UF da inscrição estadual inválida.')
-        result['state_registrations'].append({
-            'state': uf, 'number': text(r.get('number'), 'Inscrição estadual', True, 30),
-            'active': r.get('active') if isinstance(r.get('active'), bool) else None,
-            'source': text(r.get('source'), 'Fonte da IE', False, 100),
-            'updated_at': text(r.get('updated_at'), 'Atualização da IE', False, 100)})
+    from .third_parties import registration_values
+    result['state_registrations'] = registration_values(p.get('state_registrations', []))
     cnaes = p.get('secondary_cnaes', [])
     if not isinstance(cnaes, list) or len(cnaes) > 200:
         raise DomainError('CNAEs secundários inválidos.')
@@ -88,6 +75,8 @@ class CadastrosMixin:
             old = self._master(conn, cid, item_id, kind) if item_id else None
             if old:
                 check_version(old, payload)
+                if payload.get('active') is not False and conn.execute('SELECT 1 FROM third_party_replacements WHERE company_id=? AND master_id=?', (cid, item_id)).fetchone():
+                    raise DomainError('Cadastro substituído; utilize o cadastro correto indicado no histórico.', 409, 'already_replaced')
             code = text(payload.get('code'), 'Código', True, 50)
             name = text(payload.get('name'), 'Nome', True, 250)
             active = boolean(payload.get('active'), True)
@@ -128,7 +117,9 @@ class CadastrosMixin:
                 data = {k: data.get(k) for k in ('debit_account_id','credit_account_id','cost_center_id',
                          'valid_from','valid_to','history','direction','status','source','responsible')}
                 for k in ('debit_account_id','credit_account_id'):
-                    account = select_one(conn,'accounts',cid,integer(data[k],'Conta'))
+                    from .account_refs import resolve_account
+                    account = resolve_account(conn,cid,data[k],materialize=True,actor=actor)
+                    data[k]=account['id']
                     if not account['active'] or not account['analytical']:
                         raise DomainError('Modelo exige contas analíticas ativas.')
                 if data['debit_account_id'] == data['credit_account_id']:
@@ -152,6 +143,8 @@ class CadastrosMixin:
                 conn.execute('UPDATE masters SET code=?,name=?,tax_id=?,data_json=?,active=?,updated_at=?,version=version+1 WHERE id=? AND company_id=?',(*values,item_id,cid))
             else:
                 item_id = conn.execute('INSERT INTO masters(code,name,tax_id,data_json,active,updated_at,company_id,kind,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(*values,cid,kind,now())).lastrowid
+            from .third_parties import sync_third_party
+            sync_third_party(conn, cid, item_id, actor, 'Cadastro local revisado explicitamente.')
             audit(conn,cid,actor,'update' if old else 'create',kind,item_id,{'before':old,'after':payload})
             return self._master(conn,cid,item_id)
 
@@ -191,6 +184,8 @@ class CadastrosMixin:
             mid = conn.execute(
                 'INSERT INTO masters(company_id,kind,code,name,tax_id,data_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
                 (cid, kind, code, name, tax_id, pack(data), stamp, stamp)).lastrowid
+            from .third_parties import sync_third_party
+            sync_third_party(conn, cid, mid, actor, 'Identidade vinculada pela importação; origem local preservada.')
             audit(conn, cid, actor, 'create', kind, mid,
                   {'source': payload.get('source'), 'source_hash': payload['source_hash'], 'imported': True})
             return mid
@@ -217,6 +212,8 @@ class CadastrosMixin:
                     data['roles'] = sorted(set(roles + [role]))
                     conn.execute('UPDATE masters SET data_json=?,updated_at=?,version=version+1 WHERE company_id=? AND id=?',
                                  (pack(data), now(), cid, row['id']))
+                    from .third_parties import sync_third_party
+                    sync_third_party(conn, cid, row['id'], actor, 'Função local acrescentada pela importação autorizada.')
                     audit(conn, cid, actor, 'update', 'participant', row['id'], {'added_role': role, 'source_hash': payload['source_hash']})
                 return row['id']
             name = str(party.get('name') or '').strip()
@@ -251,7 +248,17 @@ class CadastrosMixin:
         catalog_index = {}
         for item in payload.get('items', []):
             item = dict(item)
-            kind = 'service' if payload.get('document_type') in {'service', 'transport'} else 'product'
+            tax_fields = item.get('taxes') if isinstance(item.get('taxes'), dict) else {}
+            # Mixed NF-e can declare services per item. Use the actual ISSQN
+            # source group, never CFOP or description as a tax/type guess.
+            issqn = any(str(key).startswith('ISSQN/') for key in tax_fields)
+            icms = any(str(key).startswith('ICMS/') for key in tax_fields)
+            explicit_service = payload.get('document_type') in {'service', 'transport'}
+            if not item.get('master_id') and issqn and icms and not explicit_service:
+                warnings.append(f"Item {item.get('number', '?')}: grupos ICMS e ISSQN simultâneos; cadastro automático pendente de revisão.")
+                linked_items.append(item)
+                continue
+            kind = 'service' if explicit_service or issqn else 'product'
             code = str(item.get('code') or '').strip()
             name = str(item.get('description') or '').strip()
             if not item.get('master_id') and issuer and code and name:
@@ -269,6 +276,8 @@ class CadastrosMixin:
                     warnings.append('Produto/serviço existente inativo; vínculo automático não realizado.')
                 else:
                     data = {k: item[k] for k in ('unit', 'ncm', 'cest', 'service_code', 'barcode') if item.get(k)}
+                    if kind == 'service' and not data.get('service_code') and tax_fields.get('ISSQN/cListServ'):
+                        data['service_code'] = str(tax_fields['ISSQN/cListServ']).strip()
                     data.update(import_identity=identity, import_source=payload.get('source'))
                     # Source CFOP/CST and invoice prices are not master defaults.
                     master_id = insert(kind, 'XML-' + digest(identity)[:40], name, '', data)

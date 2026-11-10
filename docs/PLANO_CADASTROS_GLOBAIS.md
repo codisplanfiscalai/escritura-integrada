@@ -1,59 +1,47 @@
-# Plano de cadastros globais e modelos fiscais
+# Cadastros globais e padrões fiscais
 
-Status: proposta futura, não implementada. Esta entrega apenas documenta o desenho; não migra cadastros, não altera lançamentos e não publica regras fiscais. Inspeção do código local em 10/11/2026.
+Os módulos descritos abaixo estão implementados na revisão em desenvolvimento do PR 11. A publicação de um instalador exige o gate conjunto e a CI da revisão final. Esta documentação não declara homologação tributária ou equivalência integral com a Prosoft.
 
-## Estado atual verificado
+## Plano contábil compartilhado e plano próprio
 
-- **CFOP e associações** consulta a referência oficial compartilhada em `app/data/cfop-confaz-20261109.json`, permite copiar/editar CFOPs da empresa e mantém associações original → escrituração por empresa, sentido, modelo e vigência. O código original permanece preservado.
-- **Classificações fiscais** edita `catalogs` da empresa: CFOP, NCM, receita e serviço. Seus CFOPs são os mesmos cadastros locais exibidos no outro menu. Há sobreposição de interface.
-- **Plano de contas** é local à empresa: contas, propriedades, metadados e lotes. O plano padrão é copiado, não compartilhado. Não existe seletor global/próprio. Referências a `0050` em testes/documentação não demonstram plano global operacional nem validam a integralidade do plano fornecido.
-- **Alíquotas** não existem no cadastro CFOP. Existem em regras separadas com fonte, responsável, versão, regime, UF, município e vigência. A pré-apuração exige seleção explícita de documentos/itens, base, efeito débito/crédito, fundamento e regra conferida compatível; grava memória e detecta alteração posterior. Não infere incidência apenas pelo CFOP.
-- **Modelos reutilizáveis** já existem em `templates`: são snapshots de regras selecionadas de uma empresa de origem. A listagem depende de acesso a essa empresa. Aplicar um modelo copia regras para a destinatária como rascunho, sem responsável, para revisão local. Não é uma biblioteca global independente de empresas. Não há fluxo direto de derivar modelo de outro, versionamento de modelos, filtro estruturado de atividade, nem pacotes completos de apuração por segmento. Regime, UF e município já existem nas regras.
-- **Produtos** importados usam `master_id` da empresa e identidade de origem emitente + código, separada por produto/serviço. Não existe equivalência canônica fornecedor → SKU próprio. Compras e vendas do mesmo produto podem ter IDs diferentes corretamente.
+Uma versão global guarda a definição, os metadados e a origem uma única vez. A empresa pode adotar essa versão em modo compartilhado, que é a opção inicial do diálogo, sem copiar integralmente suas contas ou seu arquivo original para a empresa. A consulta apresenta o plano completo; somente o uso de uma conta cria uma referência técnica local para preservar as chaves dos lançamentos. Ler ou pesquisar não deve materializar contas.
 
-## Desenho proposto, ainda não implementado
+A opção de plano próprio é explícita. Pode duplicar o plano inteiro ou, se escolhido pelo usuário, somente contas usadas e seus ancestrais existentes necessários. Uma cópia parcial vazia não representa uma cópia integral. As contas próprias podem ser adaptadas sem mudar outras empresas. IDs históricos, aliases já utilizados, acessos e classificadores originais permanecem rastreáveis. Classificadores repetidos não são identidade de conta e não devem ser renumerados ou descartados.
 
-### 1. Catálogos globais e organização dos menus
+Empresas existentes não são reassociadas automaticamente. Uma nova versão global também não modifica versões ou movimentos anteriores silenciosamente. Prévia, permissões, revisão de propriedades e confirmação são necessárias para publicar e adotar um plano. Os seletores usam busca e uma janela de opções, mantendo a seleção atual, sem cortar a definição do plano.
 
-Centralizar CFOP e códigos de serviço em catálogo global versionado, com fonte, vigência e auditoria. Serviços precisam identificar tabela/sistema e município quando aplicável: códigos iguais não garantem mesmo significado. Consolidar a manutenção CFOP e deixar **Associações de importação** como configuração específica da empresa. Separar referência oficial de descrição ou parâmetro editorial; não sobrescrever texto oficial silenciosamente.
+**050 é o TXT contábil fornecido pelo usuário, não um registro I050.** O código oferece a importação e o compartilhamento desse plano, mas não publica o arquivo privado no repositório ou no instalador. Os modelos genéricos já existentes não são o 050. Sua carga real exige conferência de máscaras, natureza, indicadores, acessos, metadados e conflitos apresentados. A documentação histórica registra 22.596 acessos e 428 classificadores distintos; o teste sintético de igual porte não substitui a validação da íntegra privada.
 
-Adicionar alíquotas informativas editáveis por tributo, contexto e vigência, sem conexão automática com o motor de cálculo. Informar explicitamente na interface que não são regra de incidência nem autorização de crédito. Qualquer uso operacional exige regra específica conferida, compatibilidade e vigência.
+Detalhes: [intercâmbio e plano global](PLANO_CONTAS_INTERCAMBIO.md).
 
-### 2. Plano global padrão e cópia própria
+## CFOP e códigos de serviço globais
 
-Criar entidade de plano e versões publicadas. Validar e carregar o plano fornecido, incluindo 050, como plano global padrão. Na empresa, permitir **Usar plano global** ou **Duplicar como plano próprio**. A cópia conserva origem/versão e aceita adaptações independentes. Alterações globais futuras não reclassificam movimentos históricos automaticamente.
+A referência oficial de CFOP é compartilhada, com redações e origem preservadas. O painel global permite editar informações e alíquotas declaradas, incluindo adicionar ou remover valores, com motivo, versão e histórico. Valores sem contexto tributário ou vigência comprovada permanecem informativos. Não definem incidência, crédito ou cálculo automaticamente.
 
-Preservar IDs e referências históricas. `journal_lines` hoje referencia `(company_id, account_id)`; remover o escopo da empresa ou compartilhar IDs diretamente quebraria a integridade. Projetar vínculo explícito conta local histórica ↔ conta/versão do plano e migração aditiva revisável. Empresas existentes com contas próprias não devem ser reassociadas sem conferência. Validar máscaras, hierarquia, acessos, classificadores e metadados Prosoft antes de publicar o 050.
+Códigos de serviço identificam tabela/sistema e jurisdição. O mesmo código municipal e nacional não é tratado como serviço equivalente. Catálogos locais legados continuam identificados como escolhas da empresa, sem promoção de seus dados privados. As associações entre CFOP original e escrituração e os padrões contextuais de compra continuam empresariais. O catálogo de propostas de reclassificação não é uma biblioteca de alíquotas.
 
-### 3. Biblioteca global de tributação e apuração
+Detalhes: [tabelas e biblioteca fiscal global](BIBLIOTECA_FISCAL_GLOBAL.md).
 
-Evoluir os modelos atuais para biblioteca global independente da empresa de origem, com permissões próprias, versões imutáveis, linhagem e ações **Criar modelo**, **Criar baseado em outro** e **Aplicar cópia à empresa**. Não copiar documentos, bases, participantes ou cenários reais entre empresas.
+## Biblioteca global de padrões fiscais
 
-Cada modelo deve declarar: finalidade, regime, atividade/CNAE ou segmento, jurisdição, início/fim de vigência, tributos abrangidos, hipóteses de aplicação, exclusões, fontes verificadas, responsável pela revisão e estado rascunho/conferido. Regras devem detalhar enquadramento e exceções necessários, não apenas CFOP. Cenários reutilizáveis devem conter estrutura e critérios de apuração, nunca valores ou conclusões de outra empresa.
+A biblioteca global é independente dos modelos legados que contêm snapshots empresariais. Permite publicar versões, criar um padrão baseado em outro com linhagem preservada e importar uma cópia para a empresa. Regime, segmento, atividade declarada, filtro CNAE opcional, jurisdição das regras e vigência ajudam a selecionar e revisar o contexto.
 
-Aplicar uma versão cria cópia local adaptável, rastreando modelo/versão de origem e alterações locais. Manter o comportamento seguro atual de exigir revisão da cópia antes do uso. Revisar regime, atividade, UF/município, vigência e eventuais conflitos com regras existentes; apresentar prévia e bloquear ambiguidades. Atualizar modelo global não altera a cópia local nem apurações anteriores. Oferecer comparação e adoção explícita de nova versão.
+As estruturas iniciais são propostas sem alíquotas presumidas. Farmácia pode ser uma atividade declarada de um padrão próprio; o nome ou o CNAE não cria tratamento tributário. A importação compara regime, atividade confirmada, CNAE quando informado e vigência, mostra prévia e cria regras locais em rascunho e inativas. Alterar a biblioteca não altera as cópias anteriores.
 
-Exemplos de organização futura, sem parâmetros tributários presumidos:
+O filtro CNAE é uma guarda da **importação do padrão**, não uma condição automaticamente adicionada ao cálculo futuro. O histórico exibe origem e avisos de alteração do enquadramento. As regras locais precisam de revisão e condições próprias antes de ativação. Não se afirma apuração completa de DAS, monofásico, substituição tributária, benefícios ou operações especiais somente por selecionar um modelo ou CFOP.
 
-- **Simples Nacional**: separar regime, atividades, segregações e requisitos de apuração. Não apresentar o cálculo atual base × alíquota como apuração completa do DAS; anexos, receita acumulada e demais condições exigem suporte específico e revisão.
-- **Regime normal**: esclarecer o escopo estadual e o regime federal aplicável, sem tratar “normal” como sinônimo único de Lucro Real ou Presumido.
-- **Farmácia**: modelo de atividade combinável com o regime efetivo. Eventuais tratamentos por produto, monofásicos ou de substituição tributária só entram com enquadramento, fonte, jurisdição e vigência verificados. Não aplicar a todos os itens pela descrição “farmácia”.
+## Terceiros e cadastros da empresa
 
-### 4. Identificação de produtos para futura conciliação
+A identidade global mínima distingue CPF, raiz de CNPJ e estabelecimentos por CNPJ completo. Dados, papéis, contatos, inscrições e movimentos permanecem vinculados à empresa autorizada. Compartilhar uma identidade não concede acesso às relações de outras empresas.
 
-Manter `master_id`, emitente, código e conteúdo original. Acrescentar mapa explícito entre produto do fornecedor e produto canônico/SKU próprio, com unidade, fator de conversão, vigência, evidência e responsável. NCM, descrição e código de barras podem sugerir candidatos, mas não autorizam fusão automática. A conciliação futura deve conseguir rastrear cada venda e compra até seus itens originais.
+Reutilizar dados cadastrais exige leitura da origem e edição no destino, seleção de campos, prévia e confirmação. Múltiplas inscrições estaduais preservam UF, situação e histórico, sem inventar isenção quando a informação estiver ausente. Correção de identidade usa substituição auditada; documentos e títulos históricos mantêm seus IDs e vínculos, sem liberar novas escolhas do cadastro substituído.
 
-## Sequência segura e critérios de aceite futuros
+Produtos e serviços continuam separados e locais à empresa. Importação conserva identificação de emitente e código original para rastreabilidade; não inventa equivalência entre código do fornecedor e SKU próprio. Há consulta dos movimentos vinculados. Essa consulta não constitui uma conciliação de estoque ou margem já homologada.
 
-1. Validar fontes/carga 050 e desenhar contratos de dados e permissões globais antes de migrar.
-2. Implementar entidades e migração aditiva, com prévia de conflitos, backup e testes de preservação das referências existentes.
-3. Consolidar menus e seletor de plano; manter associações e adaptações específicas isoladas por empresa.
-4. Implementar versões/derivações dos modelos e cópias locais com revisão obrigatória.
-5. Testar que nenhuma edição global, alíquota informativa ou mera escolha de CFOP gera tributo, crédito, contabilização ou alteração retroativa; testar incompatibilidade de regime/atividade/jurisdição/vigência, acesso entre empresas e rastreabilidade dos itens.
+Detalhes: [terceiros globais e rastreabilidade](TERCEIROS_GLOBAIS.md).
 
-## Código inspecionado
+## Migração e verificação
 
-- `frontend/src/App.vue`, `frontend/src/views/CfopView.vue`, `frontend/src/views/SettingsView.vue`.
-- `app/cfop.py`, `app/core.py` (`catalogs`, regras e `templates`), `app/db.py`, `app/migration_v3.py`.
-- `app/account_plans.py`, `app/account_plan_codec.py`, `app/data/account-plan-default.json`.
-- `app/tax_assessment.py`, `app/cadastros.py`, `tests/test_account_plans.py`, `tests/test_import_masters.py`.
+As migrações globais concluem antes da marca de esquema 6. Uma falha não deve marcar a atualização como pronta; a retomada conserva o backup anterior à atualização. IDs, vínculos, totais, originais e hashes entram nas verificações de migração e backup/restauração.
+
+Testes usam bases temporárias e fontes sintéticas. Fontes empresariais privadas permanecem fora do repositório e dos artefatos públicos. O resultado de cada gate vale somente para a revisão indicada; uma suíte focada ou um build isolado não substitui a CI conjunta nem a aceitação visual dos fluxos finais.

@@ -48,12 +48,16 @@ def create_app(data_dir=None, demo=False):
     application.state.demo = demo
     from .import_package_cleanup import register as register_package_cleanup
     register_package_cleanup(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .fiscal_library_api import register_fiscal_library_routes
+    register_fiscal_library_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .fiscal_api import register_fiscal_routes
     register_fiscal_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .account_plan_api import register_account_plan_routes
     register_account_plan_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .bulk_api import register_bulk_routes
     register_bulk_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .third_party_api import register_third_party_routes
+    register_third_party_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .lookups import LookupService
     application.state.lookups = LookupService(database)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"

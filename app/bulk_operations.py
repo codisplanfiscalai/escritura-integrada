@@ -196,7 +196,7 @@ class BulkOperations:
                         block('invalid_status', 'Confira o documento antes de escriturá-lo.', rid)
                     try:
                         doc = self.core._document(conn, cid, rid)
-                        self.core._validate_document_links(conn, cid, doc)
+                        self.core._validate_document_links(conn, cid, doc, _existing_document_id=rid)
                         if doc['model'] in {'55', '65', '57'}:
                             classifications = doc['items'] if doc['items'] and doc['model'] in {'55', '65'} else doc.get('analytics', [])
                             if (classifications and any(not isinstance(i, dict) or not re.fullmatch(r'\d{4}', str(i.get('cfop', ''))) for i in classifications)) or (not classifications and not doc['cfop']):
@@ -208,7 +208,7 @@ class BulkOperations:
                         block('unsafe_cfop_update', 'CFOP em lote restrito a documentos não escriturados sem itens/analíticos. Use a edição detalhada para manter as classificações consistentes.', rid)
                     try:
                         doc = self.core._document(conn, cid, rid) | req['changes']
-                        self.core._validate_document_links(conn, cid, doc)
+                        self.core._validate_document_links(conn, cid, doc, _existing_document_id=rid)
                         self.core._validate_posted_classification(conn, cid, doc)
                     except DomainError as exc:
                         block(exc.code, exc.detail, rid)

@@ -105,7 +105,7 @@ class ImportPayablesMixin:
             'description': f"NF {doc['number']} / duplicata {row['number']}",
             'issue_date': doc['issue_date'], 'due_date': row['due_date'], 'amount': row['amount'],
             'installment': row['installment'], 'source_key': f"xml-billing:{doc['id']}:{digest(row['number'])}"
-        }, actor) for row in plan['installments']]
+        }, actor, _historical_document_id=doc['id']) for row in plan['installments']]
 
     def _safe_payables_classification(self, conn, cid, old, payload):
         doc = self._document(conn, cid, old['id'])
@@ -225,7 +225,7 @@ class ImportPayablesMixin:
             'partner_name': doc['partner_name'], 'document': row['number'],
             'description': f"NF {doc['number']} / condição de compra definida pelo usuário",
             'issue_date': doc['issue_date'], 'due_date': row['due_date'], 'amount': row['amount'],
-            'installment': 1, 'source_key': f"generated-billing:{doc['id']}:single"}, actor)
+            'installment': 1, 'source_key': f"generated-billing:{doc['id']}:single"}, actor, _historical_document_id=doc['id'])
         import json
         saved = conn.execute('SELECT extra_json FROM documents WHERE company_id=? AND id=?', (cid, doc['id'])).fetchone()
         extras = json.loads(saved['extra_json']); extras['generated_payment_terms'] = plan['terms']

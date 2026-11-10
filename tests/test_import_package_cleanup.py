@@ -165,6 +165,7 @@ class PackageCleanupTests(fiscal.FiscalImportTests):
         from app.snapshots import create_snapshot, restore_snapshot, manifest
         from pathlib import Path
         import sqlite3
+        from contextlib import closing
         self.mapping(); live = self.preview(); self.confirm(live, self.prepared(live))
         discarded = self.preview(raw=b'invalid original package', filename='invalid.zip'); self.old(discarded)
         self.assertNotIn('removed_originals', manifest(self.core.db.path))
@@ -177,12 +178,14 @@ class PackageCleanupTests(fiscal.FiscalImportTests):
         restored = restore_snapshot(archive, restored_dir)
         for key in ('records', 'money', 'originals', 'removed_originals'):
             self.assertEqual(saved[key], restored[key])
-        with sqlite3.connect(restored_dir / 'escritura.sqlite3') as conn:
+        with closing(sqlite3.connect(restored_dir / 'escritura.sqlite3')) as conn:
             self.assertEqual(b'', conn.execute('SELECT original FROM imports WHERE id=?', (discarded['id'],)).fetchone()[0])
             for cid, year, category, sha, content in conn.execute('SELECT company_id,year,category,sha256,content FROM stored_files'):
                 path = restored_dir / 'companies' / str(cid) / str(year) / category / sha
                 self.assertEqual(bool(content), path.exists())
                 if content: self.assertEqual(content, path.read_bytes())
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute('SELECT 1')
         self.assertEqual(saved['removed_originals'], manifest(restored_dir / 'escritura.sqlite3')['removed_originals'])
 
     def test_snapshot_refuses_unmarked_empty_or_inconsistent_tombstone(self):

@@ -144,11 +144,27 @@ def route_policy(path, method, query, payload, session):
         # session, CSRF, active company, module and exercise on both POSTs.
         routine = {'fiscal':'fiscal.documents','accounting':'accounting.journals'}.get(session.get('module'),'invalid')
         return routine, 'read', False
+    if root == 'global-account-plans':
+        if tail.endswith(('/original','/native')): return 'accounting.imports', 'export', False
+        if tail.endswith('/publish'): return 'accounting.accounts', 'read', True
+        if tail.endswith('/detach'): return 'accounting.accounts', 'edit', False
+        if tail.endswith('/confirm'): return 'accounting.accounts', 'create', False
+        return 'accounting.accounts', 'read', False
     if root == 'account-plans':
         if tail.endswith(('/export-preview','/export-confirm','/original','/native')):
             return 'accounting.imports', 'export', False
         if write:return 'accounting.imports', 'import', False
         return 'accounting.accounts', 'read', False
+    if root == 'third-parties':
+        return 'fiscal.masters', ('read' if not write or tail.endswith('/reuse-preview') else 'edit'), False
+    if root == 'master-movements':
+        return 'fiscal.documents', 'read', False
+    if root == 'global-fiscal-catalogs':
+        return 'fiscal.masters', action, write
+    if root == 'fiscal-patterns':
+        if tail.endswith('/preview'): return 'fiscal.parameters', 'read', False
+        if tail.endswith('/apply'): return 'fiscal.parameters', 'create', False
+        return 'fiscal.parameters', action, write
     if root == 'cfop-reference':
         return 'fiscal.masters', 'create' if write else 'read', False
     if root == 'cfop-source-loads':
