@@ -33,7 +33,10 @@ def migrate_third_parties(conn):
         from .third_parties import sync_third_party
         for row in conn.execute("SELECT id,company_id FROM masters WHERE kind IN ('participant','establishment') ORDER BY id").fetchall():
             sync_third_party(conn, row['company_id'], row['id'], 'migration', 'Vínculo aditivo; cadastro local preservado.')
-        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('third_parties_schema_version','1')")
+        # REPLACE deletes/reinserts an existing marker, changing its rowid and
+        # complete backup/dump even when the schema and value are unchanged.
+        conn.execute("""INSERT INTO meta(key,value) VALUES('third_parties_schema_version','1')
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE meta.value<>excluded.value""")
         conn.commit()
     except BaseException:
         conn.rollback()
