@@ -86,7 +86,7 @@ Na linha 0.8 em desenvolvimento, Fiscal → **CFOP e associações** oferece a r
 | Financeiro | Pagar/receber, parcelas, baixas parciais/totais com juros, multa e desconto; estorno de baixa e renegociação reversível |
 | Conciliação | Vínculos individuais ou rateados; baixa somente mediante escolha explícita; consulta de títulos e pagamentos por participante |
 | Exercícios e acessos | Doze meses por exercício/empresa/módulo; bloqueios independentes; grupos, concessões/bloqueios individuais, auditoria e permissões efetivas |
-| Relatórios | Diário, Diário Consolidado por dia, Razão, Balancete, centros de custo, Balanço/DRE por classificação, fiscal, títulos, caixa e participantes; 17 modelos específicos com evidências e limites, prévia PDF maximizável, CSV/Excel/PDF |
+| Relatórios | Diário, Diário Consolidado por dia, Razão, Balancete, centros de custo, Balanço/DRE por classificação, fiscal, títulos, caixa e participantes; 19 modelos específicos com evidências e limites, prévia PDF maximizável, CSV/Excel/PDF |
 | Parâmetros | CFOP, NCM, receitas, serviços, regras com vigência/versões e modelos reutilizáveis |
 | Pré-apuração | Bases revisadas, regras versionadas por tributo, ajustes, memória de cálculo e identificação de alterações posteriores |
 | Prosoft | Prévia e exportação CTBLCTOS LC1/LC2, com mapeamentos, validação de posições/tamanhos e confirmação |

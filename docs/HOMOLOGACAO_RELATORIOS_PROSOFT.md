@@ -64,3 +64,11 @@ Consolidar o documento inteiro é verificável quando a referência mostra uma �
 - Aceite fiscal/contábil e validação Prosoft de intercâmbio, separados dos testes técnicos.
 
 Referências de campos, geometria, fontes e limites: [RELATORIOS_PROSOFT_REFERENCIAS.md](RELATORIOS_PROSOFT_REFERENCIAS.md). Operação dos modelos e filtros: [RELATORIOS_E_MODELOS.md](RELATORIOS_E_MODELOS.md).
+
+## Quadros fiscais de referência e ajustes do Razão
+
+Os modelos `reference-entries-p1a-v1` e `reference-outputs-p2a-v1` reproduzem o quadro principal ICMS, transportes e resumo por CFOP com base nos livros fornecidos. Não são substituições dos anexos auxiliares e não afirmam homologação. A seleção é a mesma da consulta, sem alteração da partição dos itens. As classificações declaradas e a origem permanecem disponíveis no modelo auxiliar e no Excel.
+
+Não preencher códigos contábeis dos exemplares no novo livro sem mapeamento efetivo da empresa. Não inferir isentas, IE/UF, código 2, ajustes ou observações a partir do simples valor de um XML. Resumos por contribuinte/UF e subquadros IPI exigem origem compatível, ainda não reproduzida. Número inicial/final do P2/A repete a identidade de cada linha, sem compactar intervalos.
+
+Os ajustes do Razão restringem-se a métricas diretamente comprovadas no exemplar (bordas monetárias, cabeçalho CRÉDITO, espaçamento de SALDO FINAL e traço inferior). Históricos privados e regras de partição não foram codificados. Os testes de regressão usam exclusivamente dados sintéticos.
