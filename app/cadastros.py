@@ -83,11 +83,19 @@ class CadastrosMixin:
             data = payload.get('data', {})
             json_value(data, dict, 'Dados cadastrais')
             data = dict(data)
+            # Documentary provenance is immutable during ordinary master editing.
+            if old:
+                for field in ('import_identity', 'import_source', 'import_source_hash'):
+                    if field in old['data']:
+                        if field in data and data[field] != old['data'][field]:
+                            raise DomainError('Origem documental do cadastro deve permanecer preservada.', 409, 'master_origin_preserved')
+                        data[field] = old['data'][field]
             tax_id = tax_identity(payload.get('tax_id')) if kind in {'participant', 'establishment'} else ''
             if kind in {'participant', 'establishment'}:
                 data['profile'] = profile_values(data.get('profile'))
                 for k in ('trade_name', 'address', 'number', 'district', 'city', 'state', 'postal_code',
-                          'ibge', 'ie', 'im', 'cnae', 'email', 'phone', 'prosoft_code'):
+                          'ibge', 'ie', 'im', 'cnae', 'email', 'phone', 'prosoft_code',
+                          'country', 'country_code', 'crt', 'ie_indicator', 'suframa', 'ie_substitute', 'foreign_id'):
                     data[k] = text(data.get(k), k, False, 500)
                 if data['state'] and data['state'] not in UFS:
                     raise DomainError('UF inválida.')
@@ -104,13 +112,18 @@ class CadastrosMixin:
                 if old and old['tax_id'] != tax_id:
                     raise DomainError('A identidade de um participante/estabelecimento é preservada. Crie outro cadastro para outro CPF/CNPJ.')
             if kind in {'product','service'}:
-                for k in ('unit','ncm','cfop','service_code','cst','cclass_trib','barcode'):
+                for k in ('unit','ncm','cfop','service_code','cst','cclass_trib','barcode',
+                          'cest','extipi','origin','tax_unit','tax_barcode','manufacturer_code',
+                          'benefit_code','anp_code'):
                     data[k] = text(data.get(k), k, False, 100)
-                for k,n in [('ncm',8),('cfop',4)]:
+                for k,n in [('ncm',8),('cfop',4),('cest',7)]:
                     if data[k] and not re.fullmatch(rf'\d{{{n}}}',data[k]):
                         raise DomainError(f'{k.upper()}: informe {n} dígitos.')
-                data['price'] = str(data.get('price') or '0.00')
-                money(data['price'], 'Preço')
+                if data.get('price') in (None, ''):
+                    data.pop('price', None)
+                else:
+                    data['price'] = str(data['price'])
+                    money(data['price'], 'Preço')
             if kind == 'history':
                 data = {'text': text(data.get('text'), 'Histórico', True, 2000)}
             if kind == 'accounting_model':
@@ -221,8 +234,20 @@ class CadastrosMixin:
                 warnings.append('Participante identificado sem nome na origem; cadastro automático não realizado.')
                 return None
             data = {k: party[k] for k in ('trade_name', 'address', 'number', 'district', 'city', 'state',
-                    'postal_code', 'ibge', 'ie', 'im', 'email', 'phone') if party.get(k)}
-            data.update(roles=[role], profile=profile_values(None), import_source=payload.get('source'))
+                    'postal_code', 'ibge', 'ie', 'im', 'email', 'phone', 'cnae', 'crt',
+                    'ie_indicator', 'suframa', 'ie_substitute', 'country', 'country_code', 'foreign_id') if party.get(k)}
+            profile = profile_values(None)
+            profile['complement'] = str(party.get('complement') or '')
+            ie, uf = str(party.get('ie') or ''), str(party.get('state') or '')
+            # XML evidence, not an online registration-status assertion.
+            exempt = ie.upper() == 'ISENTO' or (not ie and party.get('ie_indicator') == '2')
+            if uf in UFS - {'EX'} and (ie or exempt):
+                profile['state_registrations'] = [{'state': uf, 'number': '' if exempt else ie,
+                    'status': 'exempt' if exempt else '', 'active': None,
+                    'source': 'XML importado', 'updated_at': ''}]
+                profile['ie_status'] = 'exempt' if exempt else 'registered'
+            data.update(roles=[role], profile=profile, import_source=payload.get('source'),
+                        import_source_hash=payload['source_hash'])
             return insert('participant', 'XML-' + identity, name, identity, data)
 
         partner_tax_id = payload.get('partner_tax_id')
@@ -276,9 +301,16 @@ class CadastrosMixin:
                     warnings.append('Produto/serviço existente inativo; vínculo automático não realizado.')
                 else:
                     data = {k: item[k] for k in ('unit', 'ncm', 'cest', 'service_code', 'barcode') if item.get(k)}
+                    declared = item.get('declared_product_fields') or {}
+                    for field, tag in {'tax_unit': 'uTrib', 'tax_barcode': 'cEANTrib', 'extipi': 'EXTIPI',
+                                       'manufacturer_code': 'cProdFabricante', 'benefit_code': 'cBenef',
+                                       'anp_code': 'comb/cProdANP'}.items():
+                        if declared.get(tag) and str(declared[tag]).upper() != 'SEM GTIN':
+                            data[field] = declared[tag]
                     if kind == 'service' and not data.get('service_code') and tax_fields.get('ISSQN/cListServ'):
                         data['service_code'] = str(tax_fields['ISSQN/cListServ']).strip()
-                    data.update(import_identity=identity, import_source=payload.get('source'))
+                    data.update(import_identity=identity, import_source=payload.get('source'),
+                                import_source_hash=payload['source_hash'])
                     # Source CFOP/CST and invoice prices are not master defaults.
                     master_id = insert(kind, 'XML-' + digest(identity)[:40], name, '', data)
                     if master_id:

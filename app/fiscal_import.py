@@ -55,7 +55,7 @@ class FiscalImportMixin:
                     raise DomainError('Item acrescentado ou renumerado não pode declarar outra origem de importação.', 409, 'item_origin_preserved')
         return items
 
-    def _prepare_fiscal_import(self, conn, cid, batch, payload):
+    def _prepare_fiscal_import(self, conn, cid, batch, payload, *, preserve_item_cfops=False):
         from .import_payables import requested_payables
         create_payables = requested_payables(payload)
         parsed = json.loads(batch['parsed_json'])
@@ -144,6 +144,9 @@ class FiscalImportMixin:
                         if value:
                             destination, destination_origin = value, origin
                             break
+                    explicit_destination = revision.get('item_destinations', {}).get(str(item.get('number'))) or revision.get('purchase_destination') or batch_destination
+                    if preserve_item_cfops and target and not explicit_destination:
+                        destination, destination_origin = item.get('purchase_destination', ''), 'existing_document'
                     item['purchase_destination'] = destination
                     key = mapping_key(doc['direction'], doc['model'], source)
                     if doc.get('_import_revision', {}).get('cfop'):
@@ -152,6 +155,8 @@ class FiscalImportMixin:
                     elif key in overrides:
                         target = overrides[key]
                         info['mappings'].append({'source_cfop': source, 'target_cfop': target, 'origin': 'batch', 'key': key})
+                    elif preserve_item_cfops and target and not explicit_destination:
+                        info['mappings'].append({'source_cfop': source, 'target_cfop': target, 'origin': 'existing_document', 'key': key})
                     elif not target or (doc['direction'] == 'incoming' and source.startswith(('5', '6', '7'))):
                         mapping = select_import_mapping(saved, doc, item, source, destination)
                         if mapping:

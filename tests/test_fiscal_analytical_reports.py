@@ -72,9 +72,11 @@ class AnalyticalReportTests(unittest.TestCase):
         self.book()
         pdf = self.report('&format=pdf').content
         text = ' '.join(' '.join(p.extract_text().split()) for p in PdfReader(io.BytesIO(pdf)).pages)
-        for label in ['Cabeçalhos dos documentos', 'Linhas analíticas do livro', 'Outras livro',
-                      'IPI livro', 'IPI declarado', 'não são crédito do livro', 'Origem ICMS']:
+        # The default is the reference book, not a generic dump of every field.
+        for label in ['MODELO P1/A', 'EM HOMOLOGAÇÃO', 'Tratamento fiscal do livro não definido.']:
             self.assertIn(label, text)
+        self.assertNotIn('FISCAL_TREATMENT_REQUIRED', text)
+        self.assertNotIn('Classificações declaradas preservadas', text)
         wb = load_workbook(io.BytesIO(self.report('&format=xlsx').content))
         self.assertEqual(2, wb['Cabeçalhos documentos'].max_row)
         self.assertEqual(3, wb['Dados'].max_row)
@@ -169,8 +171,13 @@ class AnalyticalReportTests(unittest.TestCase):
         self.assertEqual(3, wb['Classificações declaradas'].max_row)
         self.assertEqual({'4', '12'}, {wb['Classificações declaradas'].cell(i,9).value for i in [2,3]})
         text = ' '.join(' '.join(p.extract_text().split()) for p in PdfReader(io.BytesIO(self.report('&format=pdf').content)).pages)
-        for expected in ['Grupos de escrituração revisados', 'GRUPO-A', "'rate': '4'", "'rate': '12'", 'Fonte sintética de agrupamento', 'Revisor sintético']:
-            self.assertIn(expected, text)
+        self.assertIn('MODELO P1/A', text)
+        self.assertIn('100,00', text)
+        self.assertNotIn("'rate':", text)
+        self.assertIn('detalhes na consulta ou no Excel', text)
+        # The full reviewed partition and declared classifications remain in
+        # the API/XLSX above, not in a retired generic PDF annex.
+        self.assertEqual(review, row['posting_group_review'])
 
     def test_excel_classification_detail_survives_single_cell_limit(self):
         from app.report_exports import export_report

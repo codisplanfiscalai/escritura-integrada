@@ -26,14 +26,32 @@ CATALOG=[
     ('income-statement','Demonstração do resultado','CTB021400 / opção DRE'),
     ('cost-centers','Centro de custo','CTB020700, CTB021500 e CTB021700 / variantes'),
     *[(kind,name,'LFSLIVROSAPUR / formulários' if kind=='fiscal-assessments' else 'LFSLIVROS / formulários; agrupamentos operacionais do Escritura')
-      for kind,name in FISCAL_REPORTS.items()]]]]
+      for kind,name in FISCAL_REPORTS.items()]] if kind not in {'fiscal-entries','fiscal-outputs'}]]
 CATALOG[0]['supported'] = True
+
+# URLs antigas continuam funcionando, mas não reintroduzem impressões
+# genéricas ou alternativas auxiliares já substituídas no catálogo.
+MODEL_ALIASES = {
+    'internal-fiscal-entries': 'reference-entries-p1a-v1',
+    'internal-fiscal-outputs': 'reference-outputs-p2a-v1',
+}
+
+
+def resolve_model_id(kind, requested='internal'):
+    if requested in (None, '', 'internal'):
+        selected = next((m for m in CATALOG if m['kind'] == kind and m.get('supported', True)), None)
+        return selected['id'] if selected else None
+    requested = MODEL_ALIASES.get(requested, requested)
+    if not any(m['id'] == requested and m['kind'] == kind and m.get('supported', True) for m in CATALOG):
+        raise DomainError('Modelo incompatível com o relatório.')
+    return requested
 
 
 def report_model_pdf(result, model_id, first_page=1, show_numbers=False):
     """Despacha apenas pares modelo/relatório explicitamente cadastrados."""
     from .accounting_report_models import accounting_pdf, validate_first_page
     validate_first_page(first_page)
+    model_id = resolve_model_id(result.get('kind'), model_id)
     model = next((item for item in CATALOG if item['id'] == model_id), None)
     if model is None:
         raise DomainError('Modelo de impressão não encontrado.', 404)

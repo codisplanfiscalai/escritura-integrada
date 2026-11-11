@@ -226,7 +226,7 @@ class BulkSecurityTests(unittest.TestCase):
         self.assertTrue(self.exists('journals', j['id']))
         self.assert_integrity()
 
-    def test_malformed_json_types_and_limit_are_client_errors(self):
+    def test_malformed_json_types_are_client_errors(self):
         self.context()
         with TestClient(self.app, raise_server_exceptions=False) as client:
             client.cookies.update(self.client.cookies)
@@ -235,7 +235,7 @@ class BulkSecurityTests(unittest.TestCase):
                 for raw in ('{', 'null', '[]', '"text"', '42'):
                     r = client.post(self.scope('/bulk-operations/' + endpoint), content=raw, headers={'Content-Type': 'application/json'})
                     self.assertIn(r.status_code, (400, 422), (endpoint, raw, r.text))
-            for ids in ([], list(range(1, 5002)), [True], ['1'], [1, 1], [-1]):
+            for ids in ([], [True], ['1'], [1, 1], [-1]):
                 r = client.post(self.scope('/bulk-operations/preview'), json={'kind': 'journals', 'action': 'delete', 'period': '2026-11', 'ids': ids})
                 self.assertIn(r.status_code, (400, 422), r.text)
 

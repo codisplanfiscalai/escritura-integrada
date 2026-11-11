@@ -203,7 +203,8 @@ def ensure_open(conn, company_id, competence, module):
         raise DomainError("Cadastre o exercício deste módulo antes de gravar movimentos.", 409, "exercise_missing")
     lock = conn.execute("SELECT closed FROM period_locks WHERE company_id=? AND period=? AND module=?",
                         (company_id, competence, module)).fetchone()
-    if lock and lock["closed"]:
+    from .operational_settings import get_settings
+    if lock and lock["closed"] and get_settings(conn, company_id)["enforce_period_locks"]:
         title = {"fiscal":"fiscal", "accounting":"contábil", "financial":"financeiro", "social":"social"}.get(module,module)
         raise DomainError(f"A competência {competence} está fechada no módulo {title}.", 409, "period_closed")
 
@@ -619,7 +620,7 @@ class Core:
         if hasattr(self, '_import_document_masters'):
             payload = self._import_document_masters(conn, cid, payload, actor)
             items = pack(payload.get('items', []))
-        extras = {k: payload[k] for k in ("source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "billing", "receipt_date", "analytics", "raw_fields", "posting_date_proposed", "movement_date", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting", "carrier_id", "master_import_warnings", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review") if k in payload}
+        extras = {k: payload[k] for k in ("declared_source", "declared_xml", "declared_document_fields", "declared_protocol", "source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "billing", "receipt_date", "analytics", "raw_fields", "posting_date_proposed", "movement_date", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting", "carrier_id", "master_import_warnings", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review") if k in payload}
         if cancellation:
             extras.update(book_cancellation=cancellation, document_state='cancelled', cancellation_evidence='validated_fiscal_book')
         if 'receipt_date' in extras:
@@ -740,12 +741,22 @@ class Core:
             return self._book_document(conn, cid, item_id, payload, actor)
 
     def _book_document(self, conn, cid, item_id, payload, actor):
-        reason = text(payload.get("reason"), "Confirmação de escrituração", True, 1000)
+        from .operational_settings import get_settings
+        cfg = get_settings(conn, cid)
+        reason = text(payload.get("reason"), "Observação da escrituração", cfg['require_extra_confirmations'], 1000) or 'Escrituração solicitada pelo operador.'
         doc = select_one(conn, "documents", cid, item_id)
         check_version(doc, payload)
         ensure_open(conn, cid, doc["period"], "fiscal")
         from .tax_ledger import ensure_unfinalized
         ensure_unfinalized(conn, cid, doc["period"])
+        if doc['status'] == 'pending' and not cfg['require_separate_document_review']:
+            # One explicit operator action, with both permissions and one transaction.
+            # Any later validation/financial failure rolls this review back as well.
+            from .permissions import effect
+            effect(conn, cid, 'fiscal.documents', 'edit')
+            conn.execute("UPDATE documents SET status='reviewed',reviewed_by=?,review_reason=?,version=version+1 WHERE id=? AND company_id=?", (actor, reason, item_id, cid))
+            audit(conn, cid, actor, 'review', 'document', item_id, {'reason': reason, 'combined_with_booking': True})
+            doc = select_one(conn, 'documents', cid, item_id)
         if doc["status"] != "reviewed":
             raise DomainError("Confira o documento antes de escriturá-lo.", 409, "invalid_status")
         cancelled = bool(json.loads(doc['extra_json']).get('book_cancellation'))
@@ -1145,23 +1156,21 @@ class Core:
             raise DomainError("Informe somente o nome do arquivo, sem caminhos.")
         competence = period(payload.get("period"))
         encoded = payload.get("content_base64")
-        if not isinstance(encoded, str) or len(encoded) > 28_000_000:
-            raise DomainError("Arquivo ausente ou maior que 20 MiB.", 413, "file_too_large")
-        try:
-            raw = base64.b64decode(encoded, validate=True)
-        except (ValueError, base64.binascii.Error):
-            raise DomainError("Conteúdo base64 inválido.")
-        if not raw or len(raw) > 20 * 1024 * 1024:
-            raise DomainError("O arquivo deve conter entre 1 byte e 20 MiB.", 413, "file_too_large")
+        from .operational_settings import decode_import_content, ensure_import_allowed
+        with self.db.read() as conn:
+            raw = decode_import_content(conn, cid, encoded)
         options = payload.get("options", {})
         json_value(options, dict, "Opções de importação")
         bank_account = text(payload.get("bank_account"), "Conta bancária", False, 200)
         with self.db.read() as conn:
             company = company_row(conn, cid)
         identity = digest({"parser_revision": 3, "sha256": digest(raw), "filename": filename, "period": competence, "options": options, "company_tax_id": company["tax_id"]})
-        with self.db.read() as conn:
-            from .import_package_cleanup import reject_removed_upload
-            reject_removed_upload(conn, cid, digest(raw))
+        with self.db.transaction() as conn:
+            ensure_import_allowed(conn, cid, len(raw))
+            from .import_package_cleanup import restore_upload
+            restored = restore_upload(conn, cid, raw, actor)
+            if restored:
+                return classify(conn, cid, self._import_result(restored), restored['period'][:4]) | {'original_restored': True, 'movements_preserved': True}
             existing = conn.execute("SELECT * FROM imports WHERE company_id=? AND identity_hash=?", (cid, identity)).fetchone()
             if existing:
                 from .permissions import import_access
@@ -1189,8 +1198,11 @@ class Core:
             current = company_row(conn, cid)
             if current["tax_id"] != company["tax_id"]:
                 raise DomainError("CNPJ alterado durante a leitura. Gere novamente a prévia.", 409, "stale_company")
-            from .import_package_cleanup import reject_removed_upload
-            reject_removed_upload(conn, cid, digest(raw))
+            ensure_import_allowed(conn, cid, len(raw))
+            from .import_package_cleanup import restore_upload
+            restored = restore_upload(conn, cid, raw, actor)
+            if restored:
+                return classify(conn, cid, self._import_result(restored), restored['period'][:4]) | {'original_restored': True, 'movements_preserved': True}
             existing = conn.execute("SELECT * FROM imports WHERE company_id=? AND identity_hash=?", (cid, identity)).fetchone()
             if existing:
                 from .permissions import import_access
@@ -1206,6 +1218,8 @@ class Core:
         expected_hash = text(payload.get("preview_hash"), "Hash da prévia", True, 100)
         with self.db.transaction() as conn:
             batch = select_one(conn, "imports", cid, item_id)
+            from .operational_settings import ensure_import_allowed
+            ensure_import_allowed(conn, cid, len(batch["original"]))
             from .import_package_cleanup import require_original
             require_original(conn, cid, item_id)
             company = company_row(conn, cid)

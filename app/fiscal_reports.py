@@ -4,8 +4,8 @@ from collections import defaultdict
 from .core import DomainError,company_row,iso_date,money,decimal_text
 from .fiscal_analytics import fiscal_posting_lines
 
-FISCAL_REPORTS={'fiscal-documents':'Documentos fiscais','fiscal-entries':'Livro auxiliar de entradas',
-'fiscal-outputs':'Livro auxiliar de saídas','fiscal-items':'Itens escriturados','fiscal-operations':'Operações por CFOP',
+FISCAL_REPORTS={'fiscal-documents':'Documentos fiscais','fiscal-entries':'Registro de entradas',
+'fiscal-outputs':'Registro de saídas','fiscal-items':'Itens escriturados','fiscal-operations':'Operações por CFOP',
 'fiscal-participants':'Operações por participante','fiscal-classifications':'Itens por NCM e CFOP',
 'fiscal-taxes':'Bases e tributos declarados','fiscal-inconsistencies':'Pendências de conferência',
 'fiscal-assessments':'Livro auxiliar de apuração'}
@@ -145,12 +145,26 @@ class FiscalReportsMixin:
                     if not d['cfop'] and d['model']!='NFSE':issues.append(('CFOP_REVIEW','Confira a classificação da operação no cabeçalho e nos itens.'))
                     if not d['partner_tax_id']:issues.append(('PARTNER_ID','Participante sem CPF/CNPJ; confira se a ausência é permitida neste documento.'))
                     if d['items']:
-                        try:
-                            item_total=sum(money(i.get('total'),'Total do item') for i in d['items'])
-                            if item_total!=d['total_cents']:issues.append(('ITEM_HEADER_DIFFERENCE','Itens e total documental diferem; confira frete, descontos e demais componentes. Não indica erro por si só.'))
-                        except DomainError:issues.append(('ITEM_VALUE','Há item sem total numérico válido.'))
-                    for code,message in issues:rows.append({'document_id':d['id'],'date':d['posting_date'],'document':d['number'],'partner_name':d['partner_name'],'status':d['status'],'code':code,'message':message})
-                totals={'documents':len(docs),'occurrences':len(rows)};note+=' Diagnósticos operacionais para revisão; não constituem conclusão tributária.'
+                        from .document_totals import document_total_issue
+                        issue=document_total_issue(d)
+                        if issue:issues.append(issue)
+                    for code,message in issues:rows.append({'document_id':d['id'],'date':d['posting_date'],'document':d['number'],'partner_name':d['partner_name'],'status':d['status'],'code':code,'message':message,'line_numbers':[],'next_step':'Confira o documento de origem e os componentes da operação.'})
+                    # Escrituração concluída não significa tratamento tributário
+                    # completo. Reúna a mesma crítica por documento e código,
+                    # conservando quais linhas do livro precisam de revisão.
+                    from .fiscal_review_messages import fiscal_review
+                    grouped = {}
+                    for index,line in enumerate(fiscal_posting_lines(d),1):
+                        if (cfop and line['cfop']!=cfop) or (ncm and ncm not in line.get('ncms',[])):continue
+                        for code in dict.fromkeys(line.get('pending', [])):
+                            grouped.setdefault(code, []).append(index)
+                    for code,line_numbers in grouped.items():
+                        rows.append({'document_id':d['id'],'date':d['posting_date'],'document':d['number'],
+                            'partner_name':d['partner_name'],'status':d['status'],
+                            **fiscal_review(code),'line_numbers':line_numbers})
+                totals={'documents':len(docs),'documents_with_findings':len({r['document_id'] for r in rows}),
+                    'occurrences':len(rows)}
+                note+=' Diagnósticos operacionais para revisão; não constituem conclusão tributária. Uma ocorrência reúne a mesma crítica de um documento e identifica as linhas afetadas. Documento escriturado pode ainda exigir revisão do tratamento fiscal; isso não altera seu estado de escrituração nem presume imposto devido ou crédito.'
             else:
                 for r in conn.execute('SELECT * FROM tax_ledgers WHERE company_id=? AND period BETWEEN ? AND ? AND reversed_at IS NULL ORDER BY period,tax',(cid,start[:7],end[:7])):
                     saved=json.loads(r['snapshot_json']);rows.append({'ledger_id':r['id'],'period':r['period'],'tax':r['tax'].upper(),'assessment_id':r['assessment_id'],

@@ -55,13 +55,13 @@ class ModuleImportsMixin:
     def preview_module_import(self,cid,payload,actor):
         layout=payload.get('layout');module=payload.get('module');year=integer(payload.get('year'),'Exercício',1900)
         if layout not in LAYOUTS or LAYOUTS[layout]['module']!=module or year>2199:raise DomainError('Leiaute ou exercício inválido.')
-        encoded=payload.get('content_base64','')
-        if not isinstance(encoded,str) or len(encoded)>28_000_000:raise DomainError('Arquivo maior que 20 MiB.')
-        try:raw=base64.b64decode(encoded,validate=True)
-        except ValueError:raise DomainError('Arquivo base64 inválido.')
+        from .operational_settings import decode_import_content, ensure_import_allowed
+        with self.db.read() as conn:
+            raw=decode_import_content(conn,cid,payload.get('content_base64'))
         records=parse_csv(raw,layout)
         with self.db.transaction() as conn:
             company_row(conn,cid);effect(conn,cid,module+'.imports','import')
+            ensure_import_allowed(conn,cid,len(raw))
             fingerprint=digest(raw)
             old=conn.execute('SELECT * FROM module_imports WHERE company_id=? AND module=? AND year=? AND layout=? AND fingerprint=?',(cid,module,year,layout,fingerprint)).fetchone()
             if old:return self._module_preview(conn,cid,old)
@@ -123,6 +123,9 @@ class ModuleImportsMixin:
     def confirm_module_import(self,cid,iid,payload,actor):
         with self.db.transaction() as conn:
             batch=select_one(conn,'module_imports',cid,iid)
+            from .operational_settings import ensure_import_allowed
+            original_size=conn.execute('SELECT length(content) FROM stored_files WHERE company_id=? AND id=?',(cid,batch['file_id'])).fetchone()
+            ensure_import_allowed(conn,cid,original_size[0] if original_size else 0)
             if batch['module']!=payload.get('module'):raise DomainError('Módulo de destino divergente.',403,'forbidden')
             effect(conn,cid,batch['module']+'.imports','import')
             if payload.get('fingerprint')!=batch['fingerprint']:raise DomainError('Prévia alterada.',409,'stale_preview')

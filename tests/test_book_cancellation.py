@@ -190,9 +190,9 @@ class BookCancellationTests(unittest.TestCase):
         text=' '.join(' '.join(p.extract_text().split()) for p in PdfReader(io.BytesIO(response.content)).pages)
         self.assertIn('campos ausentes permanecem em branco',text)
         for tax in ('ICMS','IPI','ISS','PIS','COFINS','IBS','CBS'):
-            self.assertIn('Documentos com '+tax+' 0',text)
+            self.assertIn(tax+' Não informado Não informado 0 / 1 0 / 1',text)
         self.assertIn('Livro sintético',text)
-        self.assertNotIn('1/1',text)
+        self.assertNotRegex(text,r'Não informado Não informado 1\s*/\s*1')
 
     def test_specialized_cancelled_book_pdfs_have_no_empty_final_page(self):
         from app.fiscal_report_models import fiscal_pdf

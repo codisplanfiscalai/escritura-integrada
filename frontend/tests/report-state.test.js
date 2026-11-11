@@ -49,7 +49,8 @@ test('componente: consultas interrompidas não substituem o contexto novo e expo
   .replace(/from ['"]vue['"]/g,`from '${vueUrl}'`)
   .replace(/import (\w+) from ['"][^'"]+\.vue['"];?/g,'const $1={};')
   .replace(/from ['"]\.\.\/lib\/workspace['"]/g,`from '${mock}'`)
-  .replace(/from ['"]\.\.\/lib\/(format|report-state)['"]/g,(_,name)=>`from '${new URL(`../src/lib/${name}.js`,import.meta.url).href}'`);
+  .replace(/from ['"]\.\.\/lib\/context-preferences\.js['"]/g,`from '${new URL('../src/lib/context-preferences.js',import.meta.url).href}'`)
+  .replace(/from ['"]\.\.\/lib\/(format|report-state|report-presentation)['"]/g,(_,name)=>`from '${new URL(`../src/lib/${name}.js`,import.meta.url).href}'`);
  const component=(await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default;
  let view;
  const original=component.setup;
@@ -83,10 +84,10 @@ test('componente: consultas interrompidas não substituem o contexto novo e expo
   view.model.value='internal';
   const third=view.run();view.kind.value='diary';await nextTick();
   pending[2].reject(new Error('old failure'));await third;assert.equal(view.error.value,'');
-  assert.equal(view.model.value,'internal');
+  assert.equal(view.model.value,'internal-diary');
   view.kind.value='fiscal-entries';await nextTick();assert.equal(view.model.value,'reference-entries-p1a-v1');
   view.kind.value='fiscal-outputs';await nextTick();assert.equal(view.model.value,'reference-outputs-p2a-v1');
-  view.kind.value='fiscal-items';await nextTick();assert.equal(view.model.value,'internal');
+  view.kind.value='fiscal-items';await nextTick();assert.equal(view.model.value,'internal-fiscal-items');
  }finally{app.unmount();delete globalThis.__reportTest;}
 });
 
@@ -103,4 +104,42 @@ test('CSS compilado da prévia maximizada prevalece sobre wide e limites globais
  assert.match(rule[1],/height:calc\(100dvh - 32px\)/);
  assert.match(rule[1],/max-width:none/);assert.match(rule[1],/max-height:none/);
  assert.match(compiled.code,/\.modal-overlay:has\(\.report-pdf-maximized\)\s*\{padding:16px/);
+});
+
+test('relatório operacional explica linhas fiscais e abre críticas do mesmo período gerado',async()=>{
+ const {parse,compileScript}=await import('@vue/compiler-sfc');
+ const {createRenderer,reactive,ref,nextTick}=await import('vue');
+ const {createRequire}=await import('node:module');const {pathToFileURL}=await import('node:url');
+ const require=createRequire(import.meta.url),vueUrl=pathToFileURL(require.resolve('vue/dist/vue.runtime.esm-bundler.js')).href;
+ const state=reactive({companyId:1,period:'2026-09',contextBusy:false,contextPreferences:{year:'2026',month:'09'}}),pending=[];
+ globalThis.__reportOperational={state,api:url=>new Promise((resolve,reject)=>pending.push({url,resolve,reject})),scope:(url,cid=1)=>`/companies/${cid}${url}`,useResource:(_load,initial=[])=>({data:ref(initial)}),notify:()=>{},can:()=>true,allowedApi:()=>Promise.resolve([])};
+ const mock=`data:text/javascript;base64,${Buffer.from('export const {state,api,scope,useResource,notify,can,allowedApi}=globalThis.__reportOperational;').toString('base64')}`;
+ const source=await readFile(new URL('../src/views/ReportsView.vue',import.meta.url),'utf8'),{descriptor}=parse(source);
+ let code=compileScript(descriptor,{id:'operational-report-test'}).content.replace(/from ['"]vue['"]/g,`from '${vueUrl}'`)
+  .replace(/import (\w+) from ['"][^'"]+\.vue['"];?/g,'const $1={};')
+  .replace(/from ['"]\.\.\/lib\/workspace['"]/g,`from '${mock}'`)
+  .replace(/from ['"]\.\.\/lib\/context-preferences\.js['"]/g,`from '${new URL('../src/lib/context-preferences.js',import.meta.url).href}'`)
+  .replace(/from ['"]\.\.\/lib\/(format|report-state|report-presentation)['"]/g,(_,name)=>`from '${new URL(`../src/lib/${name}.js`,import.meta.url).href}'`);
+ const component=(await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default;let view;
+ const original=component.setup;component.setup=(props,context)=>{view=original(props,context);return ()=>null;};
+ const renderer=createRenderer({createComment:()=>({}),insert:()=>{},remove:()=>{},parentNode:()=>null,nextSibling:()=>null}),app=renderer.createApp(component,{area:'fiscal'});app.mount({});
+ try{
+  view.kind.value='fiscal-outputs';await nextTick();assert.equal(view.model.value,'reference-outputs-p2a-v1');
+  assert.equal(view.start.value,'2026-09-01');assert.equal(view.end.value,'2026-09-30');
+  state.contextPreferences.month='02';await nextTick();
+  assert.equal(view.start.value,'2026-02-01');assert.equal(view.end.value,'2026-02-28');
+  assert.equal(view.model.value,'reference-outputs-p2a-v1','competência sugerida preserva o modelo de referência');
+  const rows=Array.from({length:5},(_,i)=>({document_id:i<2?1:i,document:String(100+i),total_cents:10000,book_icms_cents:null,pending:['FISCAL_TREATMENT_REQUIRED'],treatment:{},declared_classifications:[{rate:'7'}]}));
+  view.result.value={kind:'fiscal-outputs',row_scope:'analytical_posting_lines',company_id:1,start:'2026-09-01',end:'2026-09-30',filters:{cfop:'6202',direction:'outgoing',status:'booked'},rows,totals:{documents:4,lines:5,total_cents:50000,book_icms_cents:null,book_icms_informed_lines:0,lines_with_pending:5}};
+  assert.equal(view.reviewSummary.value.documents,4);assert.equal(view.reviewSummary.value.lines,5);
+  assert.equal(view.columns.value.includes('treatment'),false);assert.equal(view.columns.value.includes('declared_classifications'),false);
+  assert.match(view.display('pending',rows[0].pending),/Tratamento fiscal/);assert.doesNotMatch(view.display('pending',rows[0].pending),/FISCAL_TREATMENT_REQUIRED/);
+  view.showRowDetails(rows[0]);assert.ok(view.rowDetails.value.sections.length);
+  view.start.value='2026-10-01';view.end.value='2026-10-31';
+  const work=view.openReviewReport();await nextTick();await nextTick();
+  assert.equal(pending.length,1);assert.match(pending[0].url,/start=2026-09-01&end=2026-09-30/);assert.match(pending[0].url,/cfop=6202/);assert.match(pending[0].url,/direction=outgoing/);assert.match(pending[0].url,/status=booked/);
+  pending[0].resolve({kind:'fiscal-inconsistencies',company_id:1,rows:[],totals:{}});await work;
+  assert.equal(view.kind.value,'fiscal-inconsistencies');assert.equal(view.rowDetails.value,null);
+  assert.doesNotMatch(source,/Modelo Escritura genérico|JSON\.stringify\(origin\.data\.totals/);
+ }finally{app.unmount();delete globalThis.__reportOperational;}
 });

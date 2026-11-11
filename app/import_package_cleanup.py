@@ -1,7 +1,8 @@
 """Retire source packages, never movements or their normalized provenance.
 
-Tombstones retain import identity and prevent accidental reuse. Originals that
-are the only fiscal/audit evidence are deliberately ineligible.
+Tombstones retain import identity; matching source bytes can restore it without
+replaying movements. Company controls govern retention and fiscal-source
+protection; shared evidence and integrity remain protected.
 """
 import asyncio
 import hashlib
@@ -39,14 +40,49 @@ def require_original(conn, cid, iid):
 
 
 def reject_removed_upload(conn, cid, sha256):
+    # Other modules must not silently revive fiscal identities through store_file.
     if conn.execute('SELECT 1 FROM import_package_tombstones WHERE company_id=? AND sha256=?', (cid, sha256)).fetchone():
-        raise DomainError('Este arquivo pertence a um lote cujo original foi removido. O reenvio não restaura pacotes nesta versão. Para recuperar o original, restaure uma cópia de segurança anterior em uma pasta separada. Os movimentos existentes não serão recriados.', 410, 'removed_package_reupload')
+        raise DomainError('Reenvie o arquivo original em Importações para restaurar o lote existente sem recriar movimentos.', 409, 'removed_package_reupload')
+
+
+def restore_upload(conn, cid, raw, actor):
+    """Restore canonical bytes only, in the caller's write transaction."""
+    from .permissions import import_access
+    sha = hashlib.sha256(raw).hexdigest()
+    rows = conn.execute("""SELECT i.* FROM imports i WHERE i.company_id=? AND i.sha256=?
+        AND (EXISTS (SELECT 1 FROM import_package_tombstones t WHERE t.import_id=i.id)
+        OR EXISTS (SELECT 1 FROM audit a WHERE a.company_id=i.company_id AND a.entity='import'
+                   AND a.entity_id=CAST(i.id AS TEXT) AND a.action='restore-original')) ORDER BY i.id""", (cid, sha)).fetchall()
+    if not rows:
+        return None
+    for row in rows:
+        import_access(conn, cid, json.loads(row['parsed_json']), 'import')
+        tomb = conn.execute('SELECT * FROM import_package_tombstones WHERE company_id=? AND import_id=?', (cid, row['id'])).fetchone()
+        if not tomb:
+            continue
+        if tomb['sha256'] != sha or tomb['original_bytes'] != len(raw):
+            raise DomainError('A evidência removida não corresponde ao arquivo reenviado.', 409, 'original_integrity_mismatch')
+        for f in file_rows(conn, row):
+            removed = conn.execute('SELECT 1 FROM stored_file_tombstones WHERE file_id=?', (f['id'],)).fetchone()
+            if removed:
+                conn.execute('UPDATE stored_files SET content=? WHERE company_id=? AND id=?', (raw, cid, f['id']))
+                conn.execute('DELETE FROM stored_file_tombstones WHERE file_id=?', (f['id'],))
+            elif hashlib.sha256(f['content']).hexdigest() != sha:
+                raise DomainError('Integridade da cópia original comprometida.', 409, 'original_integrity_mismatch')
+        if tomb['history_hidden']:
+            conn.execute('INSERT OR IGNORE INTO import_package_history VALUES(?,?,?,?)', (row['id'], cid, tomb['removed_at'], tomb['removed_by']))
+        conn.execute('UPDATE imports SET original=? WHERE company_id=? AND id=?', (raw, cid, row['id']))
+        conn.execute('DELETE FROM import_package_tombstones WHERE company_id=? AND import_id=?', (cid, row['id']))
+        audit(conn, cid, actor, 'restore-original', 'import', row['id'], {'sha256': sha, 'bytes': len(raw), 'movements_preserved': True, 'removed_at': tomb['removed_at']})
+    return select_one(conn, 'imports', cid, rows[0]['id'])
 
 
 def settings(conn, cid):
     company_row(conn, cid)
     row = conn.execute('SELECT * FROM import_package_settings WHERE company_id=?', (cid,)).fetchone()
-    return DEFAULTS | (json.loads(row['payload_json']) | {'last_run': row['last_run']} if row else {})
+    from .operational_settings import get_settings
+    controls = get_settings(conn, cid)
+    return DEFAULTS | (json.loads(row['payload_json']) | {'last_run': row['last_run']} if row else {}) | {k: controls[k] for k in ('enforce_package_retention', 'protect_fiscal_source')}
 
 
 def authorize(conn, cid, action='delete'):
@@ -68,14 +104,15 @@ def describe(conn, row, cfg):
     try:
         created = datetime.fromisoformat(row['created_at'].replace('Z', '+00:00'))
         if created.tzinfo is None: created = created.replace(tzinfo=timezone.utc)
-        if created > datetime.now(timezone.utc) - timedelta(days=cfg['retention_days']): reasons.append('retention_period')
-    except ValueError: reasons.append('invalid_creation_date')
+        if cfg.get('enforce_package_retention', False) and created > datetime.now(timezone.utc) - timedelta(days=cfg['retention_days']): reasons.append('retention_period')
+    except ValueError:
+        if cfg.get('enforce_package_retention', False): reasons.append('invalid_creation_date')
     parsed = json.loads(row['parsed_json'])
     hashes = {d.get('source_hash') for d in parsed.get('documents', []) if d.get('source_hash')}
     linked = bool(json.loads(row['confirmation_json'] or '{}').get('document_ids'))
     for sha in hashes:
         linked = linked or bool(conn.execute('SELECT 1 FROM documents WHERE company_id=? AND source_hash=?', (row['company_id'], sha)).fetchone())
-    if linked: reasons.append('sole_fiscal_source_evidence')
+    if linked and cfg.get('protect_fiscal_source', False): reasons.append('sole_fiscal_source_evidence')
     files = file_rows(conn, row)
     for f in files:
         for table in ('module_imports', 'auditor_catalog_sources', 'auditor_auxiliary', 'auditor_attachments', 'auditor_reports'):
@@ -100,8 +137,11 @@ def preview(conn, cid, payload):
     authorize(conn, cid)
     ids = payload.get('ids')
     mode = payload.get('mode', 'hide_history')
-    if not isinstance(ids, list) or not ids or len(ids) > 500 or any(type(i) is not int or i < 1 for i in ids) or len(set(ids)) != len(ids) or mode not in MODES:
-        raise DomainError('Selecione de 1 a 500 pacotes distintos e um modo de limpeza válido.')
+    if not isinstance(ids, list) or not ids or any(type(i) is not int or i < 1 for i in ids) or len(set(ids)) != len(ids) or mode not in MODES:
+        raise DomainError('Selecione um ou mais pacotes distintos e um modo de limpeza válido.')
+    from .operational_settings import ensure_action_allowed, ensure_selection_allowed
+    ensure_action_allowed(conn, cid, 'block_package_cleanup')
+    ensure_selection_allowed(conn, cid, len(ids))
     cfg = settings(conn, cid)
     rows = [select_one(conn, 'imports', cid, iid) for iid in sorted(ids)]
     from .permissions import import_access
@@ -122,7 +162,7 @@ def preview(conn, cid, payload):
               'estimated_bytes': 0 if mode == 'hide_history' else sum(p['original_bytes'] + p['stored_bytes'] for p in eligible),
               'warnings': ['Remoção irreversível dos originais ativos; backups existentes não são alterados.',
                            'Movimentos, documentos, títulos, identidade, dados normalizados e auditoria serão preservados.',
-                           'O espaço físico do SQLite não diminui imediatamente. Evidências fiscais únicas são protegidas.']}
+                           'O espaço físico do SQLite não diminui imediatamente. A proteção das fontes fiscais segue os parâmetros da empresa.']}
     if mode == 'hide_history':
         result['warnings'] = ['Somente o histórico será ocultado. Arquivos evidenciais e movimentos mantidos; 0 bytes liberados. O histórico pode ser restaurado.']
     result['preview_hash'] = digest({'preview': result, 'settings': cfg, 'versions': [{k: r[k] for k in r.keys() if k != 'original'} for r in rows]})
@@ -173,12 +213,18 @@ def save_settings(conn, cid, payload, actor, uid):
 
 def run_due(db):
     from .permissions import require
+    from .operational_settings import get_settings
     with db.transaction() as conn:
         for row in conn.execute('SELECT * FROM import_package_settings').fetchall():
-            cfg = json.loads(row['payload_json']); cid = row['company_id']
+            cid = row['company_id']; cfg = settings(conn, cid)
             if not cfg['enabled']: continue
             if row['last_run'] and datetime.fromisoformat(row['last_run']) > datetime.now(timezone.utc) - timedelta(hours=cfg['interval_hours']): continue
             conn.execute('UPDATE import_package_settings SET last_run=? WHERE company_id=?', (now(), cid))
+            controls = get_settings(conn, cid)
+            if controls['block_package_cleanup']:
+                audit(conn, cid, 'scheduler', 'cleanup-skipped', 'import-packages', cid,
+                      {'reason': 'operational_restriction', 'parameter': 'block_package_cleanup'})
+                continue
             try:
                 require(conn, row['configured_by'], cid, 'fiscal.imports', 'delete')
             except DomainError as exc:
@@ -199,14 +245,15 @@ def run_due(db):
                     audit(conn, cid, 'scheduler', 'cleanup-skipped', 'import', candidate['id'],
                           {'reason': 'permission_revoked', 'configured_by': row['configured_by']})
                     continue
-                p = describe(conn, candidate, cfg)
+                p = describe(conn, candidate, cfg | {'enforce_package_retention': True})
                 reasons = p['blocked_reasons']
                 if cfg['mode'] == 'hide_history':
                     reasons = [r for r in reasons if r in {'retention_period', 'invalid_creation_date'}]
                     if p['history_hidden']: reasons.append('history_already_hidden')
-                if not reasons: ids.append(candidate['id'])
-                if len(ids) >= 500: break
-            # Up to 500 packages per run; the next interval drains remaining work.
+                if not reasons:
+                    ids.append(candidate['id'])
+                    if controls['limit_batch_selection'] and len(ids) >= controls['batch_selection_limit']:
+                        break  # Remaining packages are reconsidered at the next configured interval.
             if ids:
                 payload = {'ids': ids, 'mode': cfg['mode'], 'acknowledge_irreversible': True}
                 payload['preview_hash'] = preview(conn, cid, payload)['preview_hash']
@@ -242,7 +289,7 @@ def register(app, core, actor):
     @app.post('/api/companies/{cid}/import-packages/restore-history')
     def restore_history(cid: int, request: Request, payload: dict = Body(...)):
         ids = payload.get('ids')
-        if not isinstance(ids, list) or not ids or len(ids) > 500 or any(type(i) is not int or i < 1 for i in ids):
+        if not isinstance(ids, list) or not ids or any(type(i) is not int or i < 1 for i in ids):
             raise DomainError('Informe os pacotes a restaurar no histórico.')
         with db.transaction() as conn:
             authorize(conn, cid)

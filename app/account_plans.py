@@ -82,6 +82,8 @@ class AccountPlansMixin:
                 'state_hash':state_hash, 'to_create':created}
 
     def preview_account_plan(self, cid, payload, actor):
+        from .operational_settings import ensure_import_allowed
+        with self.db.read() as conn: ensure_import_allowed(conn, cid)
         from .account_plan_codec import decode_plan, PlanCodecError
         format = text(payload.get('format', 'native'), 'Formato', True, 30)
         options = payload.get('options', {})
@@ -103,6 +105,7 @@ class AccountPlansMixin:
         if not 1 <= len(plan['accounts']) <= 50000: raise DomainError('O plano deve conter de 1 a 50.000 contas.')
         with self.db.transaction() as conn:
             effect(conn, cid, 'accounting.accounts', 'read')
+            ensure_import_allowed(conn, cid, len(raw))
             result = self._plan_preview(conn, cid, plan, format == 'default', options.get('identity_mode') == 'access')
             fingerprint = digest({'raw':digest(raw), 'format':format, 'options':options, 'state':result['state_hash'], 'plan':plan})
             batch = conn.execute('INSERT INTO account_plan_batches(company_id,filename,format,sha256,original,options_json,plan_json,preview_hash,state_hash,status,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -116,6 +119,8 @@ class AccountPlansMixin:
         if payload.get('properties_reviewed') is not True: raise DomainError('Confirme a máscara, grupos e propriedades do plano.')
         with self.db.transaction() as conn:
             batch = select_one(conn,'account_plan_batches',cid,item_id)
+            from .operational_settings import ensure_import_allowed
+            ensure_import_allowed(conn, cid, len(batch['original']))
             if payload.get('preview_hash') != batch['preview_hash']: raise DomainError('A prévia informada não corresponde ao lote.',409,'stale_preview')
             if batch['status'] in {'confirmed','reference'}: return json.loads(batch['confirmation_json']) | {'duplicate':True}
             mode=payload.get('activation_mode','activate')

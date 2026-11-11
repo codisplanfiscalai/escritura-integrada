@@ -123,10 +123,17 @@ def main():
                         return payload
 
                     def confirm(delete=False):
+                        action = dialog.get_by_label(re.compile(r'^Operação')).input_value()
+                        assert delete == (action == 'delete')
+                        labels = {'update': 'Aplicar alteração', 'review': 'Marcar selecionados como conferidos',
+                                  'book': 'Escriturar selecionados'}
+                        button = dialog.get_by_role('button', name=re.compile(r'^Excluir definitivamente') if delete else labels[action], exact=not delete)
+                        expect(button).to_be_enabled()
                         with page.expect_response(lambda r: '/bulk-operations/confirm' in r.url and r.request.method == 'POST') as result:
-                            dialog.get_by_role('button', name=re.compile(r'^Excluir definitivamente') if delete else 'Confirmar operação', exact=not delete).click()
+                            button.click()
                         assert result.value.ok, result.value.text()
                         assert result.value.json()['completed']
+                        assert result.value.json()['action'] == action
                         expect(dialog).to_have_count(0)
                         expect(page.get_by_role('button', name='Operar selecionados', exact=True)).to_be_disabled()
 
@@ -170,6 +177,13 @@ def main():
                         cid = read('/api/session')['active_company_id']
                         other = next(c['id'] for c in read('/api/companies') if c['id'] != cid)
                         scope = f'/api/companies/{cid}'
+                        # This regression flow explicitly opts into strict monthly locks.
+                        policy = read(scope + '/operational-settings')
+                        configured = page.request.put(url + scope + '/operational-settings',
+                            data={'version': policy['version'], 'settings': policy['settings'] | {'enforce_period_locks': True}},
+                            headers={'X-CSRF-Token': read('/api/session')['csrf_token']})
+                        assert configured.ok, configured.text()
+                        page.reload()
                         other_before = snapshot(other)
                         original = snapshot(cid)
                         docs = [fixture(scope + '/documents', {

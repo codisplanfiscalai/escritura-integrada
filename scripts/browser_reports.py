@@ -267,14 +267,17 @@ def main():
                                 # Wait for asynchronous model catalog before taking options.
                                 expect(page.locator('.model-catalog')).to_be_visible()
                                 expected_models = [m for m in catalog if m['kind'] == value and m.get('supported', True)]
-                                expect(model.locator('option')).to_have_count(1 + len(expected_models))
-                                choices = model.locator('option').evaluate_all('(xs)=>xs.map(x=>x.value)')
-                                chosen = choices[-1]
-                                model.select_option('internal')
-                                expect(controls.get_by_role('spinbutton', name='Folha inicial', exact=True)).to_be_disabled()
-                                model.select_option(chosen)
-                                if chosen != 'internal':
+                                if expected_models:
+                                    expect(model.locator('option')).to_have_count(len(expected_models))
+                                    choices = model.locator('option').evaluate_all('(xs)=>xs.map(x=>x.value)')
+                                    assert 'internal' not in choices
+                                    chosen = choices[0]
+                                    model.select_option(chosen)
                                     expect(controls.get_by_role('spinbutton', name='Folha inicial', exact=True)).to_be_enabled()
+                                else:
+                                    expect(model).to_have_count(0)
+                                    chosen = 'internal'
+                                    expect(controls.get_by_role('spinbutton', name='Folha inicial', exact=True)).to_have_count(0)
                                 payload, report_url = run()
                                 assert payload['kind'] == value and payload['company_id'] == cid
                                 export('PDF', 'pdf')
@@ -336,6 +339,48 @@ def main():
                         assert payload['rows'][0]['document_state'] == 'cancelled' and payload['rows'][0]['status'] == 'booked'
                         assert payload['totals']['total_cents'] == 0
                         shot('fiscal-book-cancelled-filter.png')
+                        # Reproduce the operational distinction: four booked
+                        # documents, five book rows, no reviewed tax treatment.
+                        # This fixture is confined to this disposable demo server.
+                        assert Path(data).name.startswith('escritura-reports-ui-')
+                        for index in range(4):
+                            pieces=[('40.00','4.00'),('60.00','7.00')] if index==0 else [('100.00','7.00')]
+                            created=fixture_post('/documents', {
+                                'direction':'outgoing','model':'55','series':'1','number':str(91001+index),
+                                'issue_date':'2026-11-06','posting_date':'2026-11-06',
+                                'partner_name':'Tratamento sintético UI','partner_tax_id':'','cfop':'6202',
+                                'total':'100.00','taxes':{},
+                                'items':[{'number':str(i),'description':'Item sintético','cfop':'6202','total':amount,
+                                    'taxes':{'ICMS/ICMS00/pICMS':rate,'ICMS/ICMS00/vBC':amount,'ICMS/ICMS00/vICMS':'1.00'}}
+                                    for i,(amount,rate) in enumerate(pieces,1)]})
+                            created=fixture_post(f"/documents/{created['id']}/review", {'version':created['version'],'reason':'Conferência sintética'})
+                            fixture_post(f"/documents/{created['id']}/book", {'version':created['version'],'reason':'Escrituração sintética sem efeitos financeiros','generate_titles':False,'lines':[]})
+                        kind.select_option('fiscal-outputs')
+                        controls.get_by_role('textbox', name='Documento, participante ou histórico', exact=True).fill('Tratamento sintético UI')
+                        payload, requested=run()
+                        assert payload['totals']['documents']==4 and payload['totals']['lines']==5
+                        assert payload['totals']['lines_with_pending']==5
+                        assert all(r['status']=='booked' and r['book_icms_cents'] is None for r in payload['rows'])
+                        expect(output.locator('.report-review')).to_contain_text('5 linhas precisam de revisão fiscal em 4 documentos')
+                        visible_text=output.inner_text()
+                        for technical in ('document_total_cents','book_base_cents','lines_with_pending','FISCAL_TREATMENT_REQUIRED','[object Object]'):
+                            assert technical not in visible_text,technical
+                        output.get_by_role('button',name='Ver detalhes do registro 91001',exact=True).first.click()
+                        expect(page.get_by_role('heading',name='Detalhes do registro',exact=True)).to_be_visible()
+                        expect(page.locator('.report-detail-section').first).to_be_visible()
+                        assert '[object Object]' not in page.locator('.modal-dialog').inner_text()
+                        page.locator('.modal-dialog').get_by_role('button',name='Fechar',exact=True).last.click()
+                        shot('fiscal-book-needs-treatment.png')
+                        with page.expect_response(lambda response: '/business-reports/fiscal-inconsistencies?' in response.url and response.request.resource_type=='fetch') as finding_response:
+                            output.get_by_role('button',name='Ver pendências de conferência',exact=True).click()
+                        findings=finding_response.value.json()
+                        expect(kind).to_have_value('fiscal-inconsistencies')
+                        criticisms=[r for r in findings['rows'] if r['code']=='FISCAL_TREATMENT_REQUIRED']
+                        assert len(criticisms)==4 and sum(len(r['line_numbers']) for r in criticisms)==5
+                        expect(output).to_contain_text('Tratamento fiscal do livro não definido.')
+                        assert 'FISCAL_TREATMENT_REQUIRED' not in output.inner_text()
+                        shot('fiscal-treatment-findings.png')
+                        report['checks'].append('Four booked documents/five rows without tax treatment: operational labels, no raw objects/codes, readable detail and same-selection fiscal findings; no tax credit inferred')
                         kind.select_option('fiscal-assessments')
                         for label, role in [('Situação', 'combobox'), ('Operação', 'combobox'), ('CFOP', 'textbox'), ('NCM', 'textbox'), ('Documento, participante ou histórico', 'textbox')]:
                             expect(controls.get_by_role(role, name=label, exact=True)).to_have_count(0)

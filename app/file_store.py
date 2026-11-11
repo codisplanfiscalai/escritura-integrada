@@ -14,8 +14,10 @@ def store_file(db, conn, cid, year, category, filename, content, actor):
     if category not in CATEGORIES or not 1900 <= int(year) <= 2199:
         raise DomainError('Categoria ou exercício de arquivo inválido.')
     filename = Path(str(filename).replace('\\','/')).name
-    if not filename or len(filename)>255 or not content or len(content)>20*1024*1024:
-        raise DomainError('Arquivo inválido ou maior que 20 MiB.')
+    from .operational_settings import MAX_UPLOAD_BYTES
+    maximum = MAX_UPLOAD_BYTES if category == 'originals' else 20*1024*1024
+    if not filename or len(filename)>255 or not content or len(content)>maximum:
+        raise DomainError(f'Arquivo inválido ou maior que {maximum//(1024*1024)} MiB.')
     sha = hashlib.sha256(content).hexdigest()
     if category == 'originals':
         from .import_package_cleanup import reject_removed_upload

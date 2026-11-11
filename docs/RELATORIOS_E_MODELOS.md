@@ -2,7 +2,7 @@
 
 ## Operação
 
-Em Contábil ou Fiscal → Relatórios, selecione o relatório, o período e os filtros pertinentes. O campo **Modelo de impressão** oferece o modelo genérico Escritura e os modelos específicos disponíveis para aquele relatório. Informe a folha inicial e gere a consulta antes de exportar ou abrir a prévia.
+Em Contábil ou Fiscal → Relatórios, selecione o relatório, o período e os filtros pertinentes. O campo **Modelo de impressão** oferece somente os modelos específicos disponíveis para aquele relatório. Alternativas genéricas substituídas não aparecem na seleção. Informe a folha inicial e gere a consulta antes de exportar ou abrir a prévia.
 
 A tabela, os totalizadores e as ações de CSV, Excel, PDF e prévia ficam vinculados aos filtros da última consulta gerada. Alterar controles não muda silenciosamente o destino da exportação. Para aplicar os novos filtros, gere outra consulta. Trocar empresa, exercício ou relatório invalida a consulta anterior e fecha a prévia.
 
@@ -10,17 +10,17 @@ A tabela, os totalizadores e as ações de CSV, Excel, PDF e prévia ficam vincu
 
 ## Cobertura disponível
 
-Há 19 modelos específicos selecionáveis:
+Há 17 modelos específicos selecionáveis, após a retirada das duas alternativas auxiliares de livros já substituídas:
 
 - Contábeis: Diário Geral, Diário Consolidado, Razão Analítico Individual, Balancete, Movimentos por centro de custo, Balanço patrimonial e Demonstração do resultado.
-- Fiscais de referência: Registro de entradas P1/A e Registro de saídas P2/A, ambos limitados ao quadro ICMS, transportes e resumo por CFOP. São selecionados por padrão nesses livros, preservando a opção auxiliar.
-- Fiscais auxiliares: Documentos fiscais, Livro auxiliar de entradas, Livro auxiliar de saídas, Itens escriturados, Operações por CFOP, Operações por participante, Itens por NCM e CFOP, Bases e tributos declarados, Pendências de conferência e Livro auxiliar de apuração.
+- Fiscais de referência: Registro de entradas P1/A e Registro de saídas P2/A, ambos limitados ao quadro ICMS, transportes e resumo por CFOP. São selecionados por padrão nesses livros, preservando dados completos na consulta e no Excel.
+- Fiscais operacionais: Documentos fiscais, Itens escriturados, Operações por CFOP, Operações por participante, Itens por NCM e CFOP, Bases e tributos declarados, Pendências de conferência e Livro auxiliar de apuração.
 
 Os quadros P1/A e P2/A preservam a mesma seleção e as mesmas linhas analíticas. A impressão não cria divisões ou consolidações. A apresentação ordena por data de escrituração, número numérico e série, mantendo estáveis as linhas do mesmo documento. UF e IE provêm do participante documental e a IE da empresa provém do seu cadastro. Código contábil, isentas e outros campos sem origem permanecem em branco. Alíquota e imposto do livro não são confundidos com o destaque do XML: a coluna usa somente o tratamento fiscal explícito já vigente. Resumos incompletos ficam em branco, sem transformar dados ausentes em zero. Anexos IPI, quadros por UF/contribuinte e resumo de observações ainda não foram reproduzidos. Todos os quadros exibem **EM HOMOLOGAÇÃO**.
 
 Os modelos contábeis organizam as respectivas colunas, contas/grupos/centros e totalizadores. Campos complementares ficam em anexo de conferência ligado ao número original do registro, sem serem descartados. Os fiscais separam identificação documental, itens, tributos e memórias de apuração conforme a natureza da consulta, em vez de comprimir todos os campos em uma única grade. Folhas, cabeçalhos e continuação acompanham a paginação.
 
-O **Razão Analítico Individual** preserva o modelo baseado no PDF fornecido e sua comparação numérica histórica. Sua equivalência visual continua parcial: tipografia e quebras não são certificadas como idênticas. Os 16 modelos auxiliares são impressões específicas, **baseadas nos campos, sem homologação visual Prosoft**, identificadas assim no catálogo e nos PDFs. A matriz de fontes diretas, secundárias e lacunas está em [RELATORIOS_PROSOFT_REFERENCIAS.md](RELATORIOS_PROSOFT_REFERENCIAS.md).
+O **Razão Analítico Individual** preserva o modelo baseado no PDF fornecido e sua comparação numérica histórica. Sua equivalência visual continua parcial: tipografia e quebras não são certificadas como idênticas. Os demais modelos operacionais são impressões específicas, **baseadas nos campos, sem homologação visual Prosoft**, identificadas assim no catálogo e nos PDFs. A matriz de fontes diretas, secundárias e lacunas está em [RELATORIOS_PROSOFT_REFERENCIAS.md](RELATORIOS_PROSOFT_REFERENCIAS.md).
 
 ## Filtros, cálculos e cuidados
 
@@ -52,3 +52,5 @@ ESCRITURA_TEST_BROWSER=/usr/bin/chromium python scripts/browser_reports.py
 ```
 
 Os testes específicos cobrem compatibilidade modelo/relatório, folha inicial e limite de paginação, PDFs vazios e multipáginas, campos extensos e caracteres especiais, saldos do Razão pesquisado, filtros fiscais efetivos, formatos de exportação e estado concorrente da interface. A aceitação nativa Windows/macOS/Qt e a homologação fiscal com a Prosoft continuam etapas distintas da validação local Linux/Chromium.
+
+Fluxo operacional, tratamento de pendências e compatibilidade de URLs: [Relatórios de referência e conferência](RELATORIOS_REFERENCIA_E_CONFERENCIA.md).

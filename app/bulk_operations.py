@@ -58,8 +58,8 @@ def normalize(payload):
     if scope == 'company':
         if ids != []:
             raise DomainError('Limpeza da empresa não aceita seleção de IDs.')
-    elif not isinstance(ids, list) or not 1 <= len(ids) <= 5000 or any(type(i) is not int or not 1 <= i <= 9223372036854775807 for i in ids) or len(set(ids)) != len(ids):
-        raise DomainError('Selecione de 1 a 5000 identificadores inteiros distintos ou escolha limpar a empresa.')
+    elif not isinstance(ids, list) or not ids or any(type(i) is not int or not 1 <= i <= 9223372036854775807 for i in ids) or len(set(ids)) != len(ids):
+        raise DomainError('Selecione identificadores inteiros distintos ou escolha limpar a empresa.')
     changes = payload.get('changes', {})
     allowed = {'cfop'} if kind == 'documents' else {'history', 'document'}
     if not isinstance(changes, dict) or (action != 'update' and changes) or set(changes) - allowed or (action == 'update' and not changes):
@@ -75,10 +75,17 @@ class BulkOperations:
         self.core, self.db = core, core.db
 
     def _authorize(self, conn, cid, uid, req):
+        from .operational_settings import ensure_action_allowed, ensure_selection_allowed
+        if req['action'] == 'delete': ensure_action_allowed(conn, cid, 'block_movement_deletion')
+        ensure_selection_allowed(conn, cid, len(req['ids']))
         module = 'fiscal' if req['kind'] == 'documents' else 'accounting'
         routine = module + ('.documents' if module == 'fiscal' else '.journals')
         require(conn, uid, cid, routine, 'read')
         require(conn, uid, cid, routine, {'review': 'edit', 'update': 'edit'}.get(req['action'], req['action']))
+        if req['kind'] == 'documents' and req['action'] == 'book':
+            pending = conn.execute("SELECT 1 FROM documents WHERE company_id=? AND status='pending' AND id IN (SELECT value FROM json_each(?)) LIMIT 1", (cid, pack(req['ids']))).fetchone()
+            if pending:
+                require(conn, uid, cid, 'fiscal.documents', 'edit')
         if req.get('include_linked_journals'):
             require(conn, uid, cid, 'accounting.journals', 'read')
             require(conn, uid, cid, 'accounting.journals', 'delete')
@@ -117,6 +124,8 @@ class BulkOperations:
         """
         all_rows = [dict(r) for r in conn.execute(
             f"SELECT * FROM {req['kind']} WHERE company_id=? ORDER BY id", (cid,))]
+        from .operational_settings import ensure_selection_allowed
+        ensure_selection_allowed(conn, cid, len(all_rows))
         candidates = {r['id'] for r in all_rows}
         preserved = {}
         inspections = []
@@ -192,7 +201,9 @@ class BulkOperations:
                     if row['status'] != 'pending' and not (row['status'] == 'booked' and pending):
                         block('invalid_status', 'Somente pendente ou escrituração importada aguardando conferência pode ser conferido.', rid)
                 if action == 'book':
-                    if row['status'] != 'reviewed':
+                    from .operational_settings import get_settings
+                    combined = row['status'] == 'pending' and not get_settings(conn, cid)['require_separate_document_review']
+                    if row['status'] != 'reviewed' and not combined:
                         block('invalid_status', 'Confira o documento antes de escriturá-lo.', rid)
                     try:
                         doc = self.core._document(conn, cid, rid)
@@ -278,7 +289,8 @@ class BulkOperations:
             warnings.append('Originais/importações, snapshots de apuração e Auditor, exportações, operações históricas, trilha de auditoria e arquivos compartilhados/materializados permanecem. São evidências históricas, não movimentos ativos; cópias exportadas e backups não são alterados.')
         if action == 'book':
             warnings.append('Escrituração exclusivamente fiscal: não gera lançamentos, títulos ou parcelas.')
-        fingerprint = digest({'request': req, 'rows': rows, 'children': children, 'blockers': blockers, 'retained': retained, 'linked_preview': linked_preview})
+        from .operational_settings import get_settings
+        fingerprint = digest({'operational_settings': get_settings(conn, cid), 'request': req, 'rows': rows, 'children': children, 'blockers': blockers, 'retained': retained, 'linked_preview': linked_preview})
         if linked_preview:
             warnings.append(f"Inclui explicitamente {len(linked_ids)} lançamento(s) contábil(is): {', '.join(map(str, linked_ids))}.")
         phrase = f"EXCLUIR DEFINITIVAMENTE {len(original_ids)} REGISTROS DA EMPRESA {cid} EM {req['period']}" if action == 'delete' else f"CONFIRMAR {len(original_ids)} REGISTROS DA EMPRESA {cid} EM {req['period']}"

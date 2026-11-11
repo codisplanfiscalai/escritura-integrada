@@ -15,6 +15,7 @@ import unicodedata
 import zipfile
 import zlib
 from collections import Counter
+from copy import deepcopy
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import PurePosixPath
@@ -378,6 +379,46 @@ def _flatten(element, prefix=""):
     return values
 
 
+def _xml_snapshot(element, *, exclude=()):
+    """Preserve declared XML values, order, attributes and repeated groups.
+
+    This is documentary evidence, not an object of fiscal defaults. The XML
+    reader's existing size/depth/entity limits apply before this function runs.
+    """
+    if element is None:
+        return None
+    result = {"tag": _local(element.tag)}
+    if element.attrib:
+        result["attributes"] = dict(element.attrib)
+    if element.text and element.text.strip():
+        result["text"] = element.text.strip()
+    children = [_xml_snapshot(child) for child in element if _local(child.tag) not in exclude]
+    if children:
+        result["children"] = children
+    return result
+
+
+def _flatten_repeated(element, prefix=""):
+    """Expose every leaf in repeatable product/party groups without data loss."""
+    if element is None:
+        return {}
+    values, counts, seen = {}, Counter(_local(child.tag) for child in element), Counter()
+    for child in element:
+        name = _local(child.tag)
+        if counts[name] > 1 and name not in {'DI', 'adi', 'detExport', 'rastro', 'arma', 'nRECOPI'}:
+            raise ImportProblem("XML_DUPLICATE_FIELD", f"Campo cadastral ou de produto duplicado: {prefix}/{name}.")
+        seen[name] += 1
+        name = f"{name}[{seen[name]}]" if counts[name] > 1 else name
+        key = f"{prefix}/{name}".lstrip("/")
+        # Attributes live in declared_xml. Keep the historical flat item
+        # semantics stable when an already-imported XML is read again.
+        if len(child):
+            values.update(_flatten_repeated(child, key))
+        else:
+            values[key] = (child.text or "").strip()
+    return values
+
+
 def _party(element):
     party = {"name": _text(element, "xNome"), "tax_id": _tax_id(_text(element, "CNPJ") or _text(element, "CPF")), "foreign_id": _text(element, "idEstrangeiro")}
     if element is None:
@@ -385,12 +426,14 @@ def _party(element):
     address_tag = {"emit": "enderEmit", "dest": "enderDest", "rem": "enderReme",
                    "exped": "enderExped", "receb": "enderReceb", "toma4": "enderToma"}.get(_local(element.tag))
     address = _node(element, address_tag) if address_tag else None
-    for key, tag in {"trade_name": "xFant", "ie": "IE", "im": "IM", "email": "email", "phone": "fone"}.items():
+    for key, tag in {"trade_name": "xFant", "ie": "IE", "im": "IM", "email": "email", "phone": "fone", "cnae": "CNAE", "crt": "CRT",
+                     "ie_indicator": "indIEDest", "suframa": "ISUF", "ie_substitute": "IEST"}.items():
         value = _text(element, tag)
         if value:
             party[key] = value
     for key, tag in {"address": "xLgr", "number": "nro", "district": "xBairro", "city": "xMun",
-                     "state": "UF", "postal_code": "CEP", "ibge": "cMun", "phone": "fone"}.items():
+                     "state": "UF", "postal_code": "CEP", "ibge": "cMun", "phone": "fone",
+                     "complement": "xCpl", "country_code": "cPais", "country": "xPais"}.items():
         value = _text(address, tag)
         if value:
             party[key] = value
@@ -400,6 +443,7 @@ def _party(element):
             value = _text(element, tag)
             if value:
                 party[key] = value
+    party["declared_fields"] = _flatten_repeated(element)
     return party
 
 
@@ -484,6 +528,8 @@ def _xml_document(filename, data, company, result, digest):
     options = _options(company)
     posting_date = _date(options["posting_date"]) if options.get("posting_date") else issue_date
     doc = {"direction": direction, "document_type": "goods" if nfe else "transport", "number": number, "series": _text(info, "ide/serie"), "model": model, "issue_date": issue_date, "posting_date": posting_date, "posting_date_proposed": not bool(options.get("posting_date")), "partner_name": partner["name"] or ("Consumidor não identificado" if model == "65" else ""), "partner_tax_id": partner["tax_id"], "key": key, "cfop": "", "total": total, "taxes": taxes, "items": [], "invoices": [], "source": source, "source_hash": digest, "company_tax_id": own, "issuer": issuer, "recipient": recipient, "review_required": True, "environment": _text(info, "ide/tpAmb"), "signature_verified": False, "schema_validated": False, "tax_rules_applied": False}
+    doc["declared_xml"] = _xml_snapshot(root)
+    doc["declared_document_fields"] = _xml_snapshot(info, exclude=("det",))
     _required(doc["partner_name"], "nome do participante")
     # The declared goods movement date is evidence, not an automatic posting
     # rule. Do not fabricate it from issue_date when the XML omits the field.
@@ -501,7 +547,7 @@ def _xml_document(filename, data, company, result, digest):
                 raise ImportProblem("XML_ITEM_MISSING", "Item fiscal sem grupo prod.")
             cfop = _text(product, "CFOP")
             declared_cfops.append(cfop)
-            doc["items"].append({"number": det.get("nItem", str(index)), "code": _text(product, "cProd"), "description": _text(product, "xProd"), "ncm": _text(product, "NCM"), "cest": _text(product, "CEST"), "unit": _text(product, "uCom"), "quantity": _decimal(_required(_text(product, "qCom"), "qCom")), "unit_price": _decimal(_required(_text(product, "vUnCom"), "vUnCom")), "total": _decimal(_required(_text(product, "vProd"), "vProd"), money=True, allow_negative=False), "cfop": cfop if own == issuer["tax_id"] else "", "source_cfop": cfop, "taxes": _flatten(_node(det, "imposto")), "declared_product_fields": _flatten(product), "source": _source(filename, f"det[{index}]", item=det.get("nItem", str(index)))})
+            doc["items"].append({"number": det.get("nItem", str(index)), "code": _text(product, "cProd"), "description": _text(product, "xProd"), "ncm": _text(product, "NCM"), "cest": _text(product, "CEST"), "unit": _text(product, "uCom"), "quantity": _decimal(_required(_text(product, "qCom"), "qCom")), "unit_price": _decimal(_required(_text(product, "vUnCom"), "vUnCom")), "total": _decimal(_required(_text(product, "vProd"), "vProd"), money=True, allow_negative=False), "cfop": cfop if own == issuer["tax_id"] else "", "source_cfop": cfop, "taxes": _flatten(_node(det, "imposto")), "declared_product_fields": _flatten_repeated(product), "source": _source(filename, f"det[{index}]", item=det.get("nItem", str(index)))})
             barcode = _text(product, "cEAN")
             if barcode and barcode.upper() != "SEM GTIN":
                 doc["items"][-1]["barcode"] = barcode
@@ -530,6 +576,7 @@ def _xml_document(filename, data, company, result, digest):
         raise ImportProblem("XML_PROTOCOL_AMBIGUOUS", "XML contém mais de um protocolo; não é possível associá-lo de forma inequívoca.")
     if protocols:
         protocol = protocols[0]
+        doc["declared_protocol"] = _xml_snapshot(protocol)
         protocol_key = _text(protocol, "chNFe" if nfe else "chCTe")
         if protocol_key != key:
             raise ImportProblem("XML_PROTOCOL_KEY_MISMATCH", "Chave do protocolo diverge da chave do documento.")
@@ -541,6 +588,10 @@ def _xml_document(filename, data, company, result, digest):
     if doc["environment"] == "2":
         _issue(result, "HOMOLOGATION_DOCUMENT", "Documento identificado como ambiente de homologação; não representa operação de produção.", source, "warning")
     _issue(result, "DOCUMENT_REVIEW_REQUIRED", "Valores declarados foram extraídos. Confira classificação e data de escrituração; XSD, assinatura, eventos posteriores e regras fiscais não foram validados.", source, "warning")
+    # Keep the normalized source separate from fields the operator may revise.
+    # The tree itself is stored once; documentary taxes never follow later edits.
+    doc["declared_source"] = {k: deepcopy(doc[k]) for k in
+        ("issuer", "recipient", "transport", "billing", "authorization", "taxes", "items") if k in doc}
     result["documents"].append(doc)
     return "nfe" if nfe else "cte"
 
@@ -979,8 +1030,10 @@ def _parse(filename, data, company, result, state, depth):
     digest = hashlib.sha256(data).hexdigest()
     source_info = {"file": filename, "sha256": digest, "size": len(data), "format": "unknown"}
     result["sources"].append(source_info)
-    if len(data) > MAX_FILE_BYTES:
-        raise ImportProblem("FILE_SIZE", "Arquivo excede o limite de 20 MiB; divida o lote.")
+    from .operational_settings import MAX_UPLOAD_BYTES
+    maximum = MAX_UPLOAD_BYTES if depth == 0 else MAX_FILE_BYTES
+    if len(data) > maximum:
+        raise ImportProblem("FILE_SIZE", f"Arquivo excede a proteção técnica de {maximum // (1024 * 1024)} MiB; divida o lote.")
     if not data:
         raise ImportProblem("EMPTY_FILE", "Arquivo vazio.")
     suffix = PurePosixPath(filename.lower()).suffix
