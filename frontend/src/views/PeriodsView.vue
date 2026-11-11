@@ -1,5 +1,5 @@
 <script setup>
-import {ref,computed,watch,onUnmounted} from 'vue';
+import {ref,computed,watch,onUnmounted,nextTick} from 'vue';
 import BaseModal from '../components/BaseModal.vue';import Icon from '../components/Icon.vue';
 import {state,company,api,scope,notify,changed,activate,can,moduleNames} from '../lib/workspace';
 import {dateTime} from '../lib/format';
@@ -16,7 +16,19 @@ async function create(){if(interactionBlocked.value)return;busy.value=true;claim
 async function select(m){if(interactionBlocked.value||!m.enabled)return;try{if(await activate(state.companyId,m.period,props.module))notify(`Competência ${m.period.split('-').reverse().join('/')} selecionada para ${moduleNames[props.module]}.`);}catch(e){notify(e.message,'error');}}
 function open(m){if(interactionBlocked.value||!m.enabled)return;selected.value={...m};reason.value='';error.value='';context.value={id:state.companyId,name:company.value.name,module:props.module};show.value=true;claimEditor('Situação da competência');}
 function close(){if(!busy.value){show.value=false;releaseEditor();}}
-async function save(){if(busy.value||state.contextBusy||!show.value||!selected.value||!reason.value.trim())return;busy.value=true;error.value='';try{const m=selected.value;await api(scope('/periods/'+(m.closed?'reopen':'close'),context.value.id),{method:'POST',body:{module:context.value.module,period:m.period,version:m.version,reason:reason.value}});show.value=false;changed();await load();notify('Situação da competência atualizada e auditada.');}catch(e){error.value=e.message;}finally{busy.value=false;if(!show.value)releaseEditor();}}
+async function save(){
+ if(busy.value||state.contextBusy||!show.value||!selected.value||!reason.value.trim())return;
+ busy.value=true;error.value='';
+ try{
+  const m=selected.value;
+  await api(scope('/periods/'+(m.closed?'reopen':'close'),context.value.id),{method:'POST',body:{module:context.value.module,period:m.period,version:m.version,reason:reason.value}});
+  changed();
+  // Let the refresh watchers run first so the awaited load owns the latest sequence.
+  await nextTick();await load();
+  show.value=false;releaseEditor();
+  notify('Situação da competência atualizada e auditada.');
+ }catch(e){error.value=e.message;}finally{busy.value=false;}
+}
 onUnmounted(()=>{seq++;releaseEditor();});
 </script>
 <template><div class="view"><header class="view-heading"><div><div class="eyebrow">{{company?.code}} · {{company?.name}}</div><h1>Competências · {{moduleNames[module]}}</h1><p>Cadastrar um exercício disponibiliza os doze meses. Selecionar um mês não altera seu bloqueio.</p></div><span class="badge neutral">Ativa: {{state.period.split('-').reverse().join('/')}}</span></header>

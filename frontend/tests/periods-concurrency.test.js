@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
 import {parse,compileScript} from '@vue/compiler-sfc';
-import {createRenderer,createSSRApp,reactive,ref,nextTick} from 'vue';
+import {createRenderer,createSSRApp,reactive,ref,nextTick,watch} from 'vue';
 import {renderToString} from '@vue/server-renderer';
 
 const require=createRequire(import.meta.url);
@@ -104,9 +104,34 @@ test('persistência é única, mantém contexto protegido durante recarga e pres
   request.reject(new Error('Versão alterada. Recarregue.'));await saving;
   assert.equal(v.busy.value,false);assert.equal(v.show.value,true);assert.equal(v.reason.value,'Revisão sintética autorizada');assert.match(v.error.value,/Versão alterada/);
   const retry=v.save();h.requests.at(-1).resolve({});await flush();
-  assert.equal(v.show.value,false);assert.equal(v.busy.value,true);assert.equal(h.state.editor,editor,'context stays protected until fresh calendar is ready');
+  assert.equal(v.show.value,true);assert.equal(v.busy.value,true);assert.equal(h.state.editor,editor,'visible busy modal explains the context protection until the calendar is ready');
   v.open(january);await v.create();await v.select(january);assert.equal(h.activations.length,0);
-  await h.resolveReads();await retry;assert.equal(v.busy.value,false);assert.equal(h.state.editor,null);assert.equal(v.interactionBlocked.value,false);
+  const reads=h.requests.filter(r=>!r.options?.method&&!r.resolved);
+  assert.equal(reads.length,4,'refresh watcher and explicit load both run');
+  for(const r of reads.slice(0,2)){r.resolved=true;r.resolve(r.url.includes('/history?')?[]:calendar);}
+  await flush();assert.equal(v.show.value,true);assert.equal(v.busy.value,true);assert.equal(v.loading.value,true);assert.equal(h.state.editor,editor,'older watcher load cannot dismiss the modal');
+  const observed=[];const stop=watch(()=>v.show.value,shown=>{if(!shown)observed.push({busy:v.busy.value,editor:h.state.editor,loading:v.loading.value});},{flush:'post'});
+  reads[2].resolved=true;reads[2].resolve({...calendar,months:[{...january,closed:false,version:4}]});
+  await flush();assert.equal(v.show.value,true,'calendar and history must both finish');
+  reads[3].resolved=true;reads[3].resolve([]);
+  await retry;await flush();stop();
+  assert.equal(v.show.value,false);assert.equal(v.busy.value,false);assert.equal(h.state.editor,null);assert.equal(v.interactionBlocked.value,false);
+  assert.deepEqual(observed,[{busy:false,editor:null,loading:false}],'the rendered modal disappearance and editor release are atomic');
+  assert.equal(v.data.value.months[0].closed,false);assert.equal(v.data.value.months[0].version,4);
+ }finally{h.close();}
+});
+
+test('resposta antiga da recarga não reverte competência depois que o modal foi liberado',async()=>{
+ const h=await harness(),v=h.view;
+ try{
+  await h.resolveReads();v.open(january);v.reason.value='Reabertura sintética';
+  const saving=v.save();h.requests.at(-1).resolve({});await flush();
+  const reads=h.requests.filter(r=>!r.options?.method&&!r.resolved);assert.equal(reads.length,4);
+  const fresh={...calendar,months:[{...january,closed:false,version:4}]};
+  reads[2].resolve(fresh);reads[3].resolve([]);await saving;await flush();
+  assert.equal(v.show.value,false);assert.equal(h.state.editor,null);assert.equal(v.busy.value,false);assert.equal(v.loading.value,false);
+  reads[0].resolve(calendar);reads[1].resolve([]);await flush();
+  assert.equal(v.data.value.months[0].closed,false);assert.equal(v.data.value.months[0].version,4);assert.equal(h.state.editor,null);
  }finally{h.close();}
 });
 
