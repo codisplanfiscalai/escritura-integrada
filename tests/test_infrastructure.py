@@ -151,7 +151,8 @@ class InfrastructureTests(unittest.TestCase):
                     self.assertEqual(service["networks"], ["internal"])
                     self.assertNotIn("ports", service)
             self.assertEqual(count, 1)
-            self.assertIn("127.0.0.1", data["services"]["app"]["ports"][0]["host_ip"])
+            self.assertIsInstance(data["services"]["app"]["ports"][0], str)
+            self.assertTrue(data["services"]["app"]["ports"][0].startswith("${ESCRITURA_BIND:-127.0.0.1}:"))
             self.assertTrue(data["services"]["app"]["read_only"])
 
     def test_stage_projects_and_ports_differ_and_volumes_are_not_global(self):
@@ -164,6 +165,21 @@ class InfrastructureTests(unittest.TestCase):
                 self.assertNotIn("name", volume)
                 self.assertNotIn("external", volume)
         self.assertEqual((ROOT / "compose.yaml").read_bytes(), (ROOT / "deploy/production/compose.yaml").read_bytes())
+
+    def test_dockge_ports_use_short_syntax_with_the_same_loopback_and_tcp_mapping(self):
+        # Dockge's card parser calls split('/') on each port. Long-form objects
+        # are valid Compose, but can hide the app card in affected Dockge versions.
+        for environment, default_port in (("production", "8000"), ("develop", "8001")):
+            data = json.loads((ROOT / "deploy" / environment / "compose.yaml").read_text())
+            ports = data["services"]["app"]["ports"]
+            port_variable = "${ESCRITURA_PORT:-" + default_port + "}"
+            self.assertEqual(ports, ["${ESCRITURA_BIND:-127.0.0.1}:" + port_variable + ":8000/tcp"])
+            for published_port in (default_port, "48001"):
+                with self.subTest(environment=environment, published_port=published_port):
+                    resolved = ports[0].replace("${ESCRITURA_BIND:-127.0.0.1}", "127.0.0.1").replace(port_variable, published_port)
+                    address, protocol = resolved.split("/")
+                    self.assertEqual(address.split(":"), ["127.0.0.1", published_port, "8000"])
+                    self.assertEqual(protocol, "tcp")
 
     def test_optional_credentials_do_not_block_compose_interpolation(self):
         for environment in ("production", "develop"):
@@ -223,6 +239,11 @@ class InfrastructureTests(unittest.TestCase):
                                      {"compose.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "THIRD-PARTY.md"})
                     for name in archive.namelist():
                         self.assertNotIn(poison, archive.read(name))
+                    compose_name = next(name for name in archive.namelist() if Path(name).name == "compose.yaml")
+                    bundled_compose = json.loads(archive.read(compose_name))
+                    template = json.loads((root / "deploy" / entry["environment"] / "compose.yaml").read_text())
+                    self.assertEqual(bundled_compose, template)
+                    self.assertIsInstance(bundled_compose["services"]["app"]["ports"][0], str)
                 self.assertTrue((output / (entry["file"] + ".sha256")).is_file())
 
     def test_save_stream_is_valid_gzip_and_failure_removes_partial(self):

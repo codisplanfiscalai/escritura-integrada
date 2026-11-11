@@ -44,6 +44,21 @@ No `.env`, ajuste `ESCRITURA_PORT` quando necessário. `ESCRITURA_BIND` controla
 
 O Compose da raiz equivale ao de produção e exige `ESCRITURA_IMAGE`. Para partir do repositório, copie `deploy/production/.env.example` para `.env` e substitua a tag indicada por uma release publicada. Os exemplos não afirmam que uma tag ainda não publicada já existe; os ZIPs da release usam o manifesto efetivo do GHCR.
 
+### Cartão da aplicação no Dockge
+
+Os templates usam a forma curta de `ports`, como texto. O parser do cartão do [Dockge 1.4.2](https://github.com/louislam/dockge/blob/1.4.2/common/util-common.ts) espera esse formato. A forma longa, com `target`, `published`, `host_ip` e `protocol`, é válida no Compose, mas pode causar `input.split is not a function` no navegador e impedir a exibição do cartão `app`, mesmo com o container iniciado.
+
+Para corrigir um Compose antigo de desenvolvimento, substitua somente a entrada de porta por:
+
+```yaml
+ports:
+  - "${ESCRITURA_BIND:-127.0.0.1}:${ESCRITURA_PORT:-8001}:8000/tcp"
+```
+
+Em produção e no Compose da raiz, o padrão de `ESCRITURA_PORT` é `8000`, não `8001`. O valor já configurado no `.env` continua prevalecendo. Essa troca de sintaxe preserva o endereço de publicação, a porta e o protocolo; não requer mudar redes, volumes ou expor o servidor em todas as interfaces. Os ZIPs de deploy futuros usam os mesmos templates. Alterar o código-fonte não modifica pacotes já publicados nem stacks já instaladas, e o ajuste do Compose não exige recompilar a imagem.
+
+Para distinguir o painel de um problema na aplicação, consulte `docker compose ps app` e teste `http://127.0.0.1:<porta-configurada>/api/health` no próprio host Docker. Um endereço `127.0.0.1` aberto em outro computador aponta para esse outro computador; acesso remoto requer o proxy ou túnel autorizado para a instalação. Os cartões dos serviços opcionais podem continuar inativos enquanto seus perfis não estiverem habilitados.
+
 ## GHCR público ou autenticado
 
 Uma publicação bem-sucedida e um pull anônimo são verificações diferentes. O [GitHub documenta](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry) a publicação, a autenticação e os metadados de vínculo ao repositório. A [visibilidade do pacote](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility) pode exigir alteração por um administrador nas configurações do pacote, mesmo quando o repositório de fontes é público.
