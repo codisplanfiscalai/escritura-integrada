@@ -5,6 +5,7 @@ import copy
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -83,6 +84,10 @@ class FakeRegistry:
 
 class ImageAliasTests(unittest.TestCase):
     def setUp(self):
+        # Unit fixtures must not inherit the real runner's branch/SHA.
+        environment = patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.output = Path(self.tmp.name) / 'report.json'
@@ -224,6 +229,14 @@ class ImageAliasTests(unittest.TestCase):
         self.assertNotIn('scripts.ci.release prepare', workflow)
         self.assertNotIn('scripts.ci.release sync-develop', workflow)
         self.assertNotIn('contents: write', workflow)
+
+    def test_runner_rejects_wrong_branch_or_superseded_operational_head(self):
+        with patch.dict(os.environ, {'GITHUB_ACTIONS': 'true', 'GITHUB_REF': 'refs/heads/ops/ghcr-aliases', 'GITHUB_SHA': SOURCE}):
+            aliases.check_head(self.gh, self.plan, 'develop')
+            with patch.dict(os.environ, {'GITHUB_SHA': 'b' * 40}), self.assertRaisesRegex(RuntimeError, 'superado'):
+                aliases.check_head(self.gh, self.plan, 'develop')
+            with patch.dict(os.environ, {'GITHUB_REF': 'refs/heads/main'}), self.assertRaisesRegex(RuntimeError, 'operacional'):
+                aliases.check_head(self.gh, self.plan, 'develop')
 
     def test_registry_only_treats_404_as_missing(self):
         registry = aliases.Registry()
