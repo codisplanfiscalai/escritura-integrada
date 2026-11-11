@@ -1,9 +1,12 @@
 """Gates de distribuição e retenção: fixtures locais, sem GitHub ou Docker reais."""
 from datetime import datetime, timedelta, timezone
 import json
+import re
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 from scripts.ci.artifacts import archive_source, assemble
@@ -35,6 +38,14 @@ class ArtifactGatesTests(unittest.TestCase):
         write_json(browser_dir / 'report.json', dict(common, checks=['fixture'] * 12, screenshots=screenshots, console_errors=[]))
         for name in screenshots:
             (browser_dir / name).write_bytes(b'fixture-screenshot-for-gate-test')
+        tabs_dir = self.reports / 'browser-workspace-tabs'
+        tabs_dir.mkdir()
+        tabs_screenshots = [f'tabs-{width}.png' for width in (1920, 1440, 1024, 768, 390, 320)]
+        tabs_screenshots += ['confirm-close-others.png', 'overview-permanent.png', 'context-february-editable.png']
+        write_json(tabs_dir / 'report.json', dict(common, checks=['fixture'] * 9,
+                   screenshots=tabs_screenshots, console_errors=[]))
+        for name in tabs_screenshots:
+            (tabs_dir / name).write_bytes(b'fixture-screenshot-for-gate-test')
         self.windows_zip = self.windows / (self.prefix + 'windows-x64.zip')
         with zipfile.ZipFile(self.windows_zip, 'w') as output:
             output.writestr('fixture.txt', 'Test fixture; not a Windows executable.')
@@ -128,6 +139,90 @@ class ArtifactGatesTests(unittest.TestCase):
         (self.reports / 'browser' / 'mobile.png').unlink()
         with self.assertRaisesRegex(ReleaseError, 'Captura'):
             self.assemble('browser-missing')
+
+    def test_workflow_download_preserves_multi_directory_upload_layout(self):
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/release.yml').read_text()
+        upload = re.search(r'name: browser-evidence\n          path: \|\n((?:            .+\n)+)', workflow)
+        self.assertIsNotNone(upload)
+        paths = [Path(line.strip()) for line in upload[1].splitlines()]
+        self.assertEqual(paths, [Path('artifacts/browser'), Path('artifacts/browser-workspace-tabs')])
+        download = re.search(r'name: browser-evidence\n(?:          #.*\n)*          path: (artifacts/[^\n]+)', workflow)
+        self.assertIsNotNone(download)
+        upload_zip = self.root / 'browser-evidence.zip'
+        # upload-artifact uses artifacts/ (the least common ancestor) as ZIP root.
+        with zipfile.ZipFile(upload_zip, 'w') as bundle:
+            for directory in paths:
+                for source in (self.reports / directory.name).iterdir():
+                    bundle.write(source, arcname=str(directory.relative_to('artifacts') / source.name))
+        for directory in paths:
+            shutil.rmtree(self.reports / directory.name)
+        destination = self.reports / Path(download[1]).relative_to('artifacts/reports')
+        with zipfile.ZipFile(upload_zip) as bundle:
+            self.assertIn('browser/report.json', bundle.namelist())
+            self.assertIn('browser-workspace-tabs/report.json', bundle.namelist())
+            bundle.extractall(destination)
+        result = self.assemble()
+        self.assertTrue(result['gates']['browser_workspace_tabs'])
+        with zipfile.ZipFile(self.root / 'final' / (self.prefix + 'browser-evidence.zip')) as bundle:
+            self.assertIn('report.json', bundle.namelist())
+            for directory, prefix in [('browser', ''), ('browser-workspace-tabs', 'browser-workspace-tabs/')]:
+                report = json.loads((self.reports / directory / 'report.json').read_text())
+                for name in ['report.json', *report['screenshots']]:
+                    self.assertEqual(bundle.read(prefix + name), (self.reports / directory / name).read_bytes())
+
+    def test_browser_reports_fail_closed_for_both_suites(self):
+        for suite in ('browser', 'browser-workspace-tabs'):
+            path = self.reports / suite / 'report.json'
+            original = path.read_bytes()
+            cases = [None, b'{corrupt', b'', {'ok': False}, {'version': '0.0.0'},
+                     {'source_sha': 'e' * 40}, {'checks': []}, {'screenshots': []},
+                     {'console_errors': ['Unhandled error']}]
+            for index, change in enumerate(cases):
+                with self.subTest(suite=suite, change=change):
+                    path.write_bytes(original)
+                    if change is None:
+                        path.unlink()
+                    elif isinstance(change, bytes):
+                        path.write_bytes(change)
+                    else:
+                        self.mutate(path, **change)
+                    output = f'reject-{suite}-{index}'
+                    with self.assertRaises((ReleaseError, ValueError)):
+                        self.assemble(output)
+                    self.assertFalse(list((self.root / output).iterdir()))
+            path.write_bytes(original)
+
+    def test_browser_captures_fail_closed_for_both_suites(self):
+        for suite in ('browser', 'browser-workspace-tabs'):
+            directory = self.reports / suite
+            report = json.loads((directory / 'report.json').read_text())
+            path = directory / report['screenshots'][0]
+            original = path.read_bytes()
+            for state in ('missing', 'empty'):
+                with self.subTest(suite=suite, state=state):
+                    path.unlink()
+                    if state == 'empty':
+                        path.touch()
+                    with self.assertRaisesRegex(ReleaseError, 'Captura'):
+                        self.assemble(f'reject-{suite}-{state}')
+                    path.write_bytes(original)
+            # Windows runners need no symlink creation privilege to exercise this guard.
+            is_symlink = Path.is_symlink
+            with patch.object(Path, 'is_symlink', lambda candidate: candidate == path or is_symlink(candidate)):
+                with self.assertRaisesRegex(ReleaseError, 'Captura'):
+                    self.assemble(f'reject-{suite}-symlink')
+
+    def test_browser_capture_lists_reject_duplicates_and_unsafe_paths(self):
+        for suite in ('browser', 'browser-workspace-tabs'):
+            path = self.reports / suite / 'report.json'
+            original = path.read_bytes()
+            screenshots = json.loads(original)['screenshots']
+            for index, invalid in enumerate(('../outside.png', '/absolute.png', 'report.json', None, screenshots[1])):
+                with self.subTest(suite=suite, invalid=invalid):
+                    self.mutate(path, screenshots=[invalid, *screenshots[1:]])
+                    with self.assertRaisesRegex(ReleaseError, 'Captura'):
+                        self.assemble(f'reject-{suite}-path-{index}')
+                    path.write_bytes(original)
 
     def test_modified_windows_or_offline_payload_is_rejected_before_copy(self):
         original = self.windows_zip.read_bytes()

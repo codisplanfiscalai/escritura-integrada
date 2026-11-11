@@ -69,6 +69,28 @@ def validate_images(path, plan, *, published):
     return data
 
 
+def validate_browser_evidence(directory, plan, *, checks, captures):
+    report = directory / 'report.json'
+    if report.is_symlink() or not report.is_file():
+        raise ReleaseError('Relatório do navegador ausente ou inválido: ' + str(report))
+    browser = require_report(report, plan)
+    screenshots = browser.get('screenshots', [])
+    completed = browser.get('checks', [])
+    if (not isinstance(completed, list) or len(completed) < checks
+            or not isinstance(screenshots, list) or len(screenshots) < captures
+            or browser.get('console_errors') != []):
+        raise ReleaseError('Gate do navegador não completou os fluxos e capturas: ' + directory.name)
+    for name in screenshots:
+        if not isinstance(name, str) or Path(name).name != name or not name.endswith('.png'):
+            raise ReleaseError('Captura do navegador ausente ou inválida.')
+        path = directory / name
+        if path.is_symlink() or not path.is_file() or path.stat().st_size < 1:
+            raise ReleaseError('Captura do navegador ausente ou inválida.')
+    if len(set(screenshots)) != len(screenshots):
+        raise ReleaseError('Capturas do navegador duplicadas.')
+    return screenshots
+
+
 def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_dir, output_dir, macos_dir=None):
     validate_plan(plan)
     root, windows_dir, reports_dir, deploy_dir, output_dir = map(Path, (root, windows_dir, reports_dir, deploy_dir, output_dir))
@@ -80,13 +102,9 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
     if linux.get('tests_run', 0) < 1:
         raise ReleaseError('Gate Linux não executou testes.')
     browser_dir = reports_dir / 'browser'
-    browser = require_report(browser_dir / 'report.json', plan)
-    screenshots = browser.get('screenshots', [])
-    if len(browser.get('checks', [])) < 12 or len(screenshots) < 3 or browser.get('console_errors'):
-        raise ReleaseError('Gate do navegador não completou os fluxos e capturas.')
-    for name in screenshots:
-        if not isinstance(name, str) or Path(name).name != name or not name.endswith('.png') or not (browser_dir / name).is_file():
-            raise ReleaseError('Captura do navegador ausente ou inválida.')
+    screenshots = validate_browser_evidence(browser_dir, plan, checks=12, captures=3)
+    tabs_dir = reports_dir / 'browser-workspace-tabs'
+    tabs_screenshots = validate_browser_evidence(tabs_dir, plan, checks=9, captures=9)
     windows = require_report(windows_dir / 'windows-build.json', plan)
     smoke = require_report(windows_dir / 'windows-smoke.json', plan, source=False)
     if windows.get('smoke_executed') is not True or windows.get('smoke_ok') is not True or not smoke.get('packaged') or not smoke.get('shutdown_complete'):
@@ -159,13 +177,15 @@ def assemble(plan, *, root, windows_dir, reports_dir, images_manifest, deploy_di
             if path.is_symlink() or path.stat().st_size < 1:
                 raise ReleaseError('Evidência do navegador inválida: ' + name)
             bundle.write(path, arcname=name)
+        for name in ['report.json', *tabs_screenshots]:
+            bundle.write(tabs_dir / name, arcname='browser-workspace-tabs/' + name)
     archive_source(root, plan, output_dir / (prefix + 'source.zip'))
     files = sorted(path for path in output_dir.iterdir() if path.is_file())
     for path in files:
         if path.stat().st_size >= MAX_ASSET_BYTES:
             raise ReleaseError('Asset excede o limite de upload: ' + path.name)
     manifest = {'schema_version': 1, 'application': 'Escritura Integrada', 'version': plan['version'], 'channel': plan['channel'], 'repository': plan['repository'], 'source_sha': plan['source_sha'], 'tag': plan['tag'], 'run_id': plan['run_id'], 'run_number': plan['run_number'], 'created_at': datetime.now(timezone.utc).isoformat(), 'gates': {'linux': True, 'windows_packaged': True, 'docker_validation': True, 'docker_published_smoke': True, 'offline_load': True}, 'images': images['images'], 'public_pullable': images.get('public_pullable'), 'platforms': ['windows/x64', 'macos/arm64', 'macos/x64', 'linux/amd64'], 'assets': [{'name': path.name, 'size': path.stat().st_size, 'sha256': file_hash(path)} for path in files]}
-    manifest['gates'].update(browser_flows=True,windows_installer=True,macos_arm64=True,macos_x64=True)
+    manifest['gates'].update(browser_flows=True,browser_workspace_tabs=True,windows_installer=True,macos_arm64=True,macos_x64=True)
     write_json(output_dir / (prefix + 'manifest.json'), manifest)
     checksums = ''.join(file_hash(path) + '  ' + path.name + '\n' for path in sorted(output_dir.iterdir()) if path.is_file())
     (output_dir / (prefix + 'SHA256SUMS.txt')).write_text(checksums, encoding='ascii')
