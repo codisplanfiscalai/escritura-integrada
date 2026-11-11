@@ -1,0 +1,89 @@
+name: Recuperação única dev.21
+run-name: Recuperar dev.21 com os artefatos aprovados
+
+on:
+  push:
+    branches: [ops/recover-release-dev21]
+
+permissions:
+  contents: read
+
+# Same lock as normal release mutations, held through publication AND alias.
+concurrency:
+  group: escritura-release-mutations
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Recuperar assets dev.21
+    if: github.repository == 'codisplanfiscalai/escritura-integrada' && github.ref == 'refs/heads/ops/recover-release-dev21'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - name: Testar guardas da recuperação
+        run: python -m unittest tests.test_recover_dev21 tests.test_recovery_alias_dev21 tests.test_image_aliases -v
+      - name: Conferir origem, seis gates, backup e latest
+        run: python -m scripts.ci.recover_dev21 check
+      - name: Obter exatamente o commit testado, sem patch nem version bump
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 1c686036d7e337632a7eb7b204b016063f6df32f
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Reutilizar ZIPs por ID e SHA-256 e regenerar apenas Compose e offline
+        run: python -m scripts.ci.recover_dev21 recover --source source
+      - name: Publicar com scripts originais e conferir todos os assets remotos
+        run: python -m scripts.ci.recover_dev21 publish --source source
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: dev21-recovery-receipts
+          path: |
+            source/artifacts/publication.json
+            source/artifacts/recovery-proof.json
+            source/artifacts/release/*manifest.json
+            source/artifacts/release/*SHA256SUMS.txt
+          retention-days: 90
+          if-no-files-found: warn
+
+  promote-develop:
+    name: Promover somente develop após recuperação
+    needs: recover
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GHCR_ACTOR: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - name: Promover digest existente e verificar pulls anônimos, sem tocar latest
+        run: python -m scripts.ci.recovery_alias_dev21 --output artifacts/recovery-alias.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: dev21-recovery-alias
+          path: artifacts/recovery-alias.json
+          retention-days: 90
+          if-no-files-found: error

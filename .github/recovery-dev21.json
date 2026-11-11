@@ -1,0 +1,350 @@
+{
+  "repository": "codisplanfiscalai/escritura-integrada",
+  "version": "0.8.0-dev.21",
+  "source_sha": "1c686036d7e337632a7eb7b204b016063f6df32f",
+  "trigger_sha": "b4f99fe1bb8752a10170c3563811041dfda0451e",
+  "original_run_id": 42978878696,
+  "image_digest": "sha256:e875f7402e474717340e73d6a1e6bbc95fbc6d72d34320dd0ced133b05b45c76",
+  "latest_digest_unchanged": "sha256:1c3dc4deb644ac735fa5c49d3d8ca7e410143659a7cb51a2acb2fa0e64e66c59",
+  "artifacts": [
+    {
+      "id": 13839190256,
+      "name": "publication-reports",
+      "size_in_bytes": 2997,
+      "digest": "sha256:22e3728348c858d51edce06952a0c49b8b0a5486504363e04feafff645524597"
+    },
+    {
+      "id": 13838206789,
+      "name": "windows-dist",
+      "size_in_bytes": 518928212,
+      "digest": "sha256:59c20ede5e50d70ca86c594e763ee1574880292c0fa6eb87fdad2243b1e4236d"
+    },
+    {
+      "id": 13837601552,
+      "name": "macos-x64-dist",
+      "size_in_bytes": 274434424,
+      "digest": "sha256:0423c37d31dfbc5cbfde62f3560fc3ada35f0339296d6ce303f1e4335005c7eb"
+    },
+    {
+      "id": 13837575888,
+      "name": "macos-arm64-dist",
+      "size_in_bytes": 252799072,
+      "digest": "sha256:95f76bba7a48bb3111401417908a2306a0f39ba8deff20b8e88774702020d662"
+    },
+    {
+      "id": 13837421194,
+      "name": "docker-validation",
+      "size_in_bytes": 2533,
+      "digest": "sha256:01406a728bb202f3e33c7744371621a7294941ae40bdaffd1bdd01d46789ab14"
+    },
+    {
+      "id": 13836907004,
+      "name": "frontend-dist",
+      "size_in_bytes": 283341,
+      "digest": "sha256:90901a97565a39eff3fceed2c945e31543bf4fb11c6fac20280eca91ae5aec0c"
+    },
+    {
+      "id": 13836787729,
+      "name": "linux-report",
+      "size_in_bytes": 22166,
+      "digest": "sha256:290f295712ca9e2f74588ec23f60ddb032244e5139612f459149740b73e04e49"
+    },
+    {
+      "id": 13836681735,
+      "name": "ci-plan",
+      "size_in_bytes": 520,
+      "digest": "sha256:35071fe56c70a925e56bdfcaa640690358879b26d29fa7a17d3ab9c935a91d09"
+    },
+    {
+      "id": 13836603709,
+      "name": "browser-evidence",
+      "size_in_bytes": 7416812,
+      "digest": "sha256:0e33b462217b2fc96c83de14b9da87c76f560322fe42b2da056c341b9e69a803"
+    }
+  ],
+  "schema_version": 1,
+  "main_sha": "2ab5d4ea49858b1f9e8716fe46bb478e2d848c88",
+  "original_run_attempt": 2,
+  "previous_release": {
+    "release_id": 437255150,
+    "release_url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/tag/develop",
+    "target": "31d16a4b8b67b7b630dd9e0f625e7071c9b1e754",
+    "assets": [
+      {
+        "id": 734190438,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-browser-evidence.zip",
+        "size": 6195915,
+        "digest": "sha256:e262f9d1d8863cc3d20c719bae237be59f4680137f25298f0b2f8975fbed49f9",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-browser-evidence.zip"
+      },
+      {
+        "id": 734190478,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-deploy-manifest.json",
+        "size": 645,
+        "digest": "sha256:a0d49a21fbf8389e2a29699f61a19379e116822d8e41710c2d6f26158c0e534d",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-deploy-manifest.json"
+      },
+      {
+        "id": 734190500,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-develop-deploy.zip",
+        "size": 15861,
+        "digest": "sha256:90b78698830845aa00c9ce6bdefe9993cf1a876072730a45555b9bbe9b067287",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-develop-deploy.zip"
+      },
+      {
+        "id": 734190527,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-develop-deploy.zip.sha256",
+        "size": 117,
+        "digest": "sha256:c90dbcb333db3ff34af845dc33257fd323a52a5c26e76839b57e93e12ce45464",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-develop-deploy.zip.sha256"
+      },
+      {
+        "id": 734190545,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-images-validated.json",
+        "size": 4757,
+        "digest": "sha256:b22d3fca2943df6802c9e9a1ca1d4b835947ac21dcc3650aaa1406aa1ebbb8eb",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-images-validated.json"
+      },
+      {
+        "id": 734190560,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-images.json",
+        "size": 5535,
+        "digest": "sha256:56014f3de44dbb52df7dc86c3985ca618055571b66c28e5e7e8f3328136cc670",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-images.json"
+      },
+      {
+        "id": 734190584,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-linux-amd64-images.tar.gz",
+        "size": 553628257,
+        "digest": "sha256:522fd8757492a8d8b1a68c755802a03c3156eac501bffc1da848bcf2f4906efd",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-linux-amd64-images.tar.gz"
+      },
+      {
+        "id": 734191372,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-linux-amd64-images.tar.gz.manifest.json",
+        "size": 5505,
+        "digest": "sha256:0fa46c9d89c7e3198a361899a17e664085e37724ea85cf58c5831f789cae01fc",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-linux-amd64-images.tar.gz.manifest.json"
+      },
+      {
+        "id": 734191393,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-linux-amd64-images.tar.gz.sha256",
+        "size": 124,
+        "digest": "sha256:e0499941fde00d4974f96e426712a221cbff72678a663afadc95f5e621bed613",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-linux-amd64-images.tar.gz.sha256"
+      },
+      {
+        "id": 734191409,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-linux-amd64-images.tar.load-smoke.json",
+        "size": 1195,
+        "digest": "sha256:ac6a0fbf7e40eb8211e8f020d9cf2756348b62b528c791bc09a507e243fc196c",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-linux-amd64-images.tar.load-smoke.json"
+      },
+      {
+        "id": 734191424,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-linux-checks.json",
+        "size": 1018,
+        "digest": "sha256:554e60db267d744951dc50ed2d9f71c0b6515e620faba49c3cde106dcff76340",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-linux-checks.json"
+      },
+      {
+        "id": 734191442,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-linux-checks.log",
+        "size": 97667,
+        "digest": "sha256:a7d1f8f71c090773b8f0e00490bc4d0a6047eeb16f483006b1ee934d6653edb3",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-linux-checks.log"
+      },
+      {
+        "id": 734191469,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-macos-arm64-build.json",
+        "size": 1215,
+        "digest": "sha256:25e703c8232261b441daac90365057595c7d05a66e01246bce1d07fcedf3b9f3",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-macos-arm64-build.json"
+      },
+      {
+        "id": 734191497,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-macos-arm64-smoke-app-auditor-pdf.png",
+        "size": 72483,
+        "digest": "sha256:462f1c6066f5cffff034a15e34f0f47d0749f4c6912a229e4f26904bcc3a4b93",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-macos-arm64-smoke-app-auditor-pdf.png"
+      },
+      {
+        "id": 734191528,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-macos-arm64-smoke.json",
+        "size": 7263,
+        "digest": "sha256:de3f756ecbd5675ecff9f30d591684bb9ff7ced4e7ddb9e24b23dead2b045a4b",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-macos-arm64-smoke.json"
+      },
+      {
+        "id": 734191570,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-macos-arm64-smoke.png",
+        "size": 125172,
+        "digest": "sha256:353fb1c2764d83807a20c01d1e8dea6f63b5d8b97fb9937864d9ac6525f54264",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-macos-arm64-smoke.png"
+      },
+      {
+        "id": 734191609,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-macos-arm64.pkg",
+        "size": 252109280,
+        "digest": "sha256:9cc7a413fa82a64b68340aa58de8c450ab6023698e780228fb90637987ea0453",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-macos-arm64.pkg"
+      },
+      {
+        "id": 734191971,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-macos-x64-build.json",
+        "size": 1215,
+        "digest": "sha256:11c529beae70304718a0e880d41a48d91d6bc5d7fa754c5195535fcefc01ea29",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-macos-x64-build.json"
+      },
+      {
+        "id": 734191985,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-macos-x64-smoke-app-auditor-pdf.png",
+        "size": 80066,
+        "digest": "sha256:7769e3f1789a0ed930c188794e3d7765bd06ec8d25ae0bc71cfe884c546c0f75",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-macos-x64-smoke-app-auditor-pdf.png"
+      },
+      {
+        "id": 734192001,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-macos-x64-smoke.json",
+        "size": 7261,
+        "digest": "sha256:883607918c6148142d68bb04e275ad416cecc094f24341c5d105e7ff56b4cc40",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-macos-x64-smoke.json"
+      },
+      {
+        "id": 734192011,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-macos-x64-smoke.png",
+        "size": 212037,
+        "digest": "sha256:e4b25dd5f7179672561bfc93d9dd94e98df321aba4c2ac23ba6494fb86c14d64",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-macos-x64-smoke.png"
+      },
+      {
+        "id": 734192038,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-macos-x64.pkg",
+        "size": 273565610,
+        "digest": "sha256:f108d446805d664ed39095060359a4f8c65b6e584b9d2731c143bab093112d5c",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-macos-x64.pkg"
+      },
+      {
+        "id": 734192485,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-manifest.json",
+        "size": 11681,
+        "digest": "sha256:326dbfb26fc8958ce9b5e766dd60a7447c5f8fc691c822ca3e549b63645392c4",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-manifest.json"
+      },
+      {
+        "id": 734192506,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-production-deploy.zip",
+        "size": 15913,
+        "digest": "sha256:859b6abe97b00dafc995e1ae6b79b59e09e5dce3bc05231365584edb2a8c5905",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-production-deploy.zip"
+      },
+      {
+        "id": 734192521,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-production-deploy.zip.sha256",
+        "size": 120,
+        "digest": "sha256:9988be2b9cf377498c63c6aefed393770f57ca63501d17c32457c0be369f2e47",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-production-deploy.zip.sha256"
+      },
+      {
+        "id": 734190425,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-SHA256SUMS.txt",
+        "size": 4613,
+        "digest": "sha256:5ca98d6b2e1c37d1161d3fd775f37bfdec4f0d3ab9fbeace0cd219e4f0c37333",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-SHA256SUMS.txt"
+      },
+      {
+        "id": 734192539,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-source.zip",
+        "size": 2021704,
+        "digest": "sha256:8251863d13ca9860678230b9f1b32faf44f92602cddc47c7187565698b9a0246",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-source.zip"
+      },
+      {
+        "id": 734192552,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-build.json",
+        "size": 3067,
+        "digest": "sha256:c45fa6e9927178ddd768c6fd240c53f7a6e07e68b7af2c28616dcffbbbc0361f",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-build.json"
+      },
+      {
+        "id": 734192566,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-installed-gui.json",
+        "size": 6728,
+        "digest": "sha256:0d5a2c0b4ac6cd71dbef082f3ce5ad1dbf861765aca07c96e7fc2940716ee1be",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-installed-gui.json"
+      },
+      {
+        "id": 734192578,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-installed-gui.png",
+        "size": 100732,
+        "digest": "sha256:3719d4726758b6fbcb6638261b81eb13d770a2173491c74bbba3c49468ad4c26",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-installed-gui.png"
+      },
+      {
+        "id": 734192611,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-installer-build.json",
+        "size": 1593,
+        "digest": "sha256:e346981abd6faf9f4525214320a1e9963fae19d27f32b5e14a83ee472ec4b59b",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-installer-build.json"
+      },
+      {
+        "id": 734192619,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-installer-smoke.json",
+        "size": 902,
+        "digest": "sha256:77c58c725704b3dc6a3b8f934c2fe29e970c6e3245d781157769a5a9551bec24",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-installer-smoke.json"
+      },
+      {
+        "id": 734192638,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-smoke-app-auditor-pdf.png",
+        "size": 68332,
+        "digest": "sha256:1b9145a1baf9dbbd4025016e805d89dbc8a1026112e7259fe8f28141766c8c78",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-smoke-app-auditor-pdf.png"
+      },
+      {
+        "id": 734192654,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-smoke-app.json",
+        "size": 6079,
+        "digest": "sha256:559e7195c9cf997e5a8f049b713c9aec257e3ad12967277f35936a2aa5b97228",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-smoke-app.json"
+      },
+      {
+        "id": 734192684,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-smoke-logs.log",
+        "size": 636,
+        "digest": "sha256:bd613bc3981704598f75cf0e2dcf1409b1106324db2b53568b7028f0ae2557c7",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-smoke-logs.log"
+      },
+      {
+        "id": 734192705,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-smoke.json",
+        "size": 6721,
+        "digest": "sha256:873cadb143dc235b654e2d4d7a20bf42b52c98cd8c8b59ba4422d1bd357005d0",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-smoke.json"
+      },
+      {
+        "id": 734192721,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-smoke.png",
+        "size": 100661,
+        "digest": "sha256:a90b1fb6d273963b3c527e7ec285396e7176aacf9ea723e097e19f8a6dd424fc",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-smoke.png"
+      },
+      {
+        "id": 734192731,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-x64-setup.exe",
+        "size": 263774389,
+        "digest": "sha256:4a501b978407427843ea0c577047ee87059a6608e1da5577e047873d807185a8",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-x64-setup.exe"
+      },
+      {
+        "id": 734193013,
+        "name": "EscrituraIntegrada-0.8.0-dev.20-windows-x64.zip",
+        "size": 254381190,
+        "digest": "sha256:258a931011f71ef1887527bd658be30aafef5a36f25e5ec529e464eda4d5d188",
+        "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.20-windows-x64.zip"
+      }
+    ],
+    "durable_backup_restored_verified": true,
+    "backup_archive_sha256": "47cb6509991303955bac5603ab3104010c6b8abb5b8d81cd82f4c00d8ff685a6"
+  }
+}
