@@ -43,6 +43,12 @@ class CoreApiTests(unittest.TestCase):
     def create_company(self, code, base):
         response = self.client.post('/api/companies', json={'code': code, 'name': f'{code} (dados fictícios)', 'tax_id': base + cnpj_digits(base), 'regime': 'outros', 'state': 'SP', 'create_default_accounts': True})
         self.assertEqual(201, response.status_code, response.text)
+        # Legacy invariants explicitly exercise the opt-in strict period policy.
+        # Dedicated operational-settings tests cover the real unrestricted defaults.
+        if not getattr(self, 'operational_defaults', False):
+            from app.operational_settings import save_settings
+            with self.core.db.transaction() as conn:
+                save_settings(conn, response.json()['id'], {'version': 0, 'settings': {'enforce_period_locks': True, 'require_separate_document_review': True, 'require_extra_confirmations': True}}, 'synthetic-test-fixture')
         return response.json()
 
     def journal(self, key='test-journal', amount='123.45', day='2026-11-06', center=None):

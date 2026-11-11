@@ -1,6 +1,6 @@
 # Escritura Integrada
 
-Aplicação única de escrituração fiscal, contábil e financeira para o escritório. Empresa ativa e exercício por módulo acompanham documentos, partidas, títulos, conciliação e relatórios. A competência é escolhida na operação, respeitando os bloqueios mensais.
+Aplicação única de escrituração fiscal, contábil e financeira para o escritório. Empresa ativa e exercício por módulo acompanham documentos, partidas, títulos, conciliação e relatórios. A competência é escolhida na operação. Bloqueios mensais e demais restrições operacionais são opcionais por empresa e começam desativados.
 
 [Releases estáveis](https://github.com/codisplanfiscalai/escritura-integrada/releases/latest) · [Pré-release contínua](https://github.com/codisplanfiscalai/escritura-integrada/releases/tag/develop) · [Builds](https://github.com/codisplanfiscalai/escritura-integrada/actions) · [Documentação de deploy](docs/DEPLOY.md)
 
@@ -67,7 +67,7 @@ Versionamento, concorrência, recuperação de falhas, caches e comandos de manu
 
 ## Recursos do aplicativo
 
-As tabelas fiscal e contábil oferecem seleção individual/múltipla e operações em lote com prévia: exclusão física, conferência/escrituração fiscal e alterações restritas. Períodos fechados e dependências não autorizadas bloqueiam o conjunto. Consulte [segurança, retenção das fontes e limites](docs/OPERACOES_EM_LOTE.md).
+As tabelas fiscal e contábil oferecem seleção individual/múltipla e operações em lote com prévia: exclusão física, conferência/escrituração fiscal e alterações restritas. Dependências não autorizadas bloqueiam o conjunto; períodos fechados bloqueiam apenas quando essa opção está ativada na empresa. Consulte [segurança, retenção das fontes e limites](docs/OPERACOES_EM_LOTE.md).
 
 Contabilidade → **Plano de contas** oferece biblioteca global versionada, vínculo compartilhado sem cópia integral ou duplicação própria opcional por empresa, preservando contas distintas com classificadores repetidos. O intercâmbio JSON/Prosoft conserva o original e exige prévia. O modelo genérico independente de 73 contas permanece separado do plano real fornecido pelo escritório. Cargas incompatíveis com o plano ativo podem ser guardadas integralmente como referência. Consulte [formatos, revisão das propriedades e limites](docs/PLANO_CONTAS_INTERCAMBIO.md).
 
@@ -86,14 +86,21 @@ Na linha 0.8 em desenvolvimento, Fiscal → **CFOP e associações** oferece a r
 | Financeiro | Pagar/receber, parcelas, baixas parciais/totais com juros, multa e desconto; estorno de baixa e renegociação reversível |
 | Conciliação | Vínculos individuais ou rateados; baixa somente mediante escolha explícita; consulta de títulos e pagamentos por participante |
 | Exercícios e acessos | Doze meses por exercício/empresa/módulo; bloqueios independentes; grupos, concessões/bloqueios individuais, auditoria e permissões efetivas |
-| Relatórios | Diário, Diário Consolidado por dia, Razão, Balancete, centros de custo, Balanço/DRE por classificação, fiscal, títulos, caixa e participantes; 19 modelos específicos com evidências e limites, prévia PDF maximizável, CSV/Excel/PDF |
+| Relatórios | Diário, Diário Consolidado por dia, Razão, Balancete, centros de custo, Balanço/DRE por classificação, fiscal, títulos, caixa e participantes; 17 modelos específicos com evidências e limites, prévia PDF maximizável, CSV/Excel/PDF |
 | Parâmetros | CFOP, NCM, receitas, serviços, regras com vigência/versões e modelos reutilizáveis |
 | Pré-apuração | Bases revisadas, regras versionadas por tributo, ajustes, memória de cálculo e identificação de alterações posteriores |
 | Prosoft | Prévia e exportação CTBLCTOS LC1/LC2, com mapeamentos, validação de posições/tamanhos e confirmação |
 | Competências | Fechamento fiscal e contábil independentes, com reabertura motivada |
 | Acesso | Administrador, operador e consulta, com permissões por empresa |
 
-As guias compartilham a empresa e preservam o exercício de cada módulo. O mês ou intervalo é definido na operação. Editar outra empresa não a ativa. Modais preservam seu destino, e o servidor confere novamente contexto, propriedade dos registros e bloqueios dentro da transação.
+As guias compartilham a empresa e preservam o exercício de cada módulo. **Fixar contexto / F8** permite escolher ou limpar a empresa, fixar um ano opcional e sugerir uma competência de 01 a 12. Sem ano fixado, permanece a seleção por empresa/módulo. A competência preenche início/fim nos relatórios e no Auditor, respeitando o último dia do mês; o intervalo continua editável e não muda as datas dos lançamentos. As preferências permanecem nesta aba do navegador e podem ser limpas. Limpar a empresa remove apenas a seleção da sessão, sem excluir dados. Editar outra empresa não a ativa. Modais preservam seu destino, e o servidor confere novamente contexto, propriedade dos registros e bloqueios dentro da transação.
+
+**Visão geral** é a guia permanente e não tem botão de fechar. A faixa não mostra barras de rolagem: use as setas estreitas nas pontas, o gesto horizontal ou o teclado (←/→, Home/End e Enter). Delete fecha uma guia comum. Duplo clique em **Visão geral** ou Shift+Delete com ela em foco oferece fechar as demais guias, sempre com confirmação. Cancelar preserva as guias e rascunhos; confirmar descarta somente o estado ainda não salvo dessas telas, sem excluir registros já salvos.
+
+
+## Parâmetros operacionais
+
+Em **Empresas → Operação**, configure restrições opcionais e modelos reutilizáveis. Todas começam desligadas. O reenvio do mesmo original recupera lotes limpos sem duplicar movimentos. Limpar lote nunca exclui lançamentos. [Opções, recuperação e proteções técnicas](docs/PARAMETROS_OPERACIONAIS.md).
 
 ## Limites que permanecem explícitos
 

@@ -22,7 +22,8 @@ class PartyFieldTests(unittest.TestCase):
         for key, value in expected.items():
             self.assertEqual(value, issuer[key])
         recipient = result['documents'][0]['recipient']
-        self.assertEqual({'name', 'tax_id', 'foreign_id'}, set(recipient))
+        self.assertEqual({'name', 'tax_id', 'foreign_id', 'declared_fields'}, set(recipient))
+        self.assertEqual('12345678000195', recipient['declared_fields']['CNPJ'])
         self.assertEqual({'name': '', 'tax_id': '', 'foreign_id': ''}, _party(None))
 
     def test_cte_address_groups_keep_their_own_fields(self):

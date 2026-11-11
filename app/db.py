@@ -211,6 +211,8 @@ class Database:
             migrate(conn)
             from .import_package_cleanup import migrate as migrate_package_cleanup
             migrate_package_cleanup(conn)
+            from .operational_settings import migrate as migrate_operational_settings
+            migrate_operational_settings(conn)
             from .migration_third_parties import migrate_third_parties
             migrate_third_parties(conn)
             from .migration_fiscal_library import migrate as migrate_fiscal_library

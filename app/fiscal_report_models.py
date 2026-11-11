@@ -112,7 +112,7 @@ def fiscal_pdf(result, first_page=1, show_numbers=False):
         company_header.drawOn(canvas, margin, height - 54 - company_height)
         canvas.setFont('Helvetica', 7)
         canvas.drawString(margin, 18, 'Escritura Integrada | Relatório auxiliar | Layout de referência não homologado Prosoft')
-        canvas.drawRightString(width - margin, 18, FISCAL_MODEL_IDS[kind])
+        canvas.drawRightString(width - margin, 18, title)
         canvas.restoreState()
 
     doc = SimpleDocTemplate(out, pagesize=page_size, leftMargin=margin, rightMargin=margin,

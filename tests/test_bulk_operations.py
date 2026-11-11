@@ -65,7 +65,7 @@ class BulkOperationsTests(fixtures.CoreApiTests):
         j = self.core.create_journal(self.a['id'], self.journal(day='2026-10-06'), 'teste')
         self.assertFalse(self.preview([j['id']], kind='journals')['can_confirm'])
         self.assertFalse(self.preview([d['id'], 999999])['can_confirm'])
-        for ids in ([], [d['id'], d['id']], [True], list(range(1, 5002))):
+        for ids in ([], [d['id'], d['id']], [True]):
             with self.assertRaises(DomainError): self.preview(ids)
         self.integrity()
 

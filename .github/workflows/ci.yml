@@ -64,6 +64,9 @@ jobs:
           python scripts/smoke_browser.py
           python scripts/browser_account_plans.py
           python scripts/browser_bulk_operations.py
+      - name: Validar guias fixas, navegação e fechamento confirmado
+        if: success() || failure()
+        run: python scripts/browser_workspace_tabs.py
       - name: Validar revisão e documentos auxiliares da importação
         if: success() || failure()
         run: python scripts/browser_import_review.py
@@ -82,6 +85,7 @@ jobs:
             artifacts/browser/
             artifacts/browser-account-plans/
             artifacts/browser-bulk-operations/
+            artifacts/browser-workspace-tabs/
             artifacts/browser-reports/
             artifacts/browser-import-review/
             artifacts/browser-fiscal-library/

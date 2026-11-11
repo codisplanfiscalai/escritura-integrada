@@ -155,6 +155,8 @@ class GlobalAccountPlansMixin:
         if not isinstance(mode,str) or mode not in {'shared', 'own'}: raise DomainError('Escolha plano compartilhado ou próprio.')
         scope=copy_scope(payload) if mode=='own' else 'all'
         with self.db.transaction() as conn:
+            from .operational_settings import ensure_import_allowed
+            ensure_import_allowed(conn, cid)
             effect(conn, cid, 'accounting.accounts', 'read')
             row = global_plan(conn, item_id); result = self._global_account_preview(conn, cid, row, mode, scope)
             fingerprint = digest({'global_plan_id': item_id, 'sha256': row['sha256'], 'state': result['state_hash'], 'mode': mode,'copy_scope':scope})
@@ -166,6 +168,8 @@ class GlobalAccountPlansMixin:
         reason = text(payload.get('reason'), 'Motivo', True, 1000)
         if payload.get('properties_reviewed') is not True: raise DomainError('Confirme a revisão da estrutura, características e propriedades do plano.')
         with self.db.transaction() as conn:
+            from .operational_settings import ensure_import_allowed
+            ensure_import_allowed(conn, cid)
             effect(conn, cid, 'accounting.accounts', 'create')
             preview = select_one(conn, 'global_account_plan_previews', cid, preview_id)
             if payload.get('preview_hash') != preview['preview_hash']: raise DomainError('A prévia mudou.', 409, 'stale_preview')

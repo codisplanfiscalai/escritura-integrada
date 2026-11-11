@@ -6,12 +6,12 @@ const props=defineProps({kind:{type:String,required:true},records:{type:Array,de
 const emit=defineEmits(['update:selectedIds','busy']);
 const show=ref(false),action=ref('delete'),field=ref('history'),value=ref(''),linked=ref(false),reversalPairs=ref(false),preview=ref(null),reason=ref(''),selectionScope=ref('selection'),busy=ref(false),error=ref(''),now=ref(Date.now());
 const routine=computed(()=>props.kind==='documents'?'fiscal.documents':'accounting.journals');
-const actions=computed(()=>props.kind==='documents'?[['delete','Excluir definitivamente','delete'],['review','Registrar conferência fiscal','edit'],['book','Escriturar somente no fiscal','book'],['update','Alterar CFOP','edit']]:[['delete','Excluir definitivamente','delete'],['update','Alterar histórico / documento','edit']]);
+const actions=computed(()=>props.kind==='documents'?[['delete','Excluir definitivamente','delete'],['review','Registrar conferência fiscal','edit'],['book',state.session?.operational_settings?.require_separate_document_review?'Escriturar somente no fiscal':'Conferir e escriturar no fiscal','book'],['update','Alterar CFOP','edit']]:[['delete','Excluir definitivamente','delete'],['update','Alterar histórico / documento','edit']]);
 const permission=computed(()=>actions.value.find(a=>a[0]===action.value)?.[2]);
-const permitted=computed(()=>can(routine.value,'read')&&can(routine.value,permission.value)&&(!(props.kind==='documents'&&action.value==='delete'&&linked.value)||(can('accounting.journals','read')&&can('accounting.journals','delete'))));
+const permitted=computed(()=>can(routine.value,'read')&&can(routine.value,permission.value)&&(!(props.kind==='documents'&&action.value==='book'&&selected.value.some(d=>d.status==='pending'))||can('fiscal.documents','edit'))&&(!(props.kind==='documents'&&action.value==='delete'&&linked.value)||(can('accounting.journals','read')&&can('accounting.journals','delete'))));
 const selected=computed(()=>props.records.filter(r=>props.selectedIds.includes(r.id)));
 const periods=computed(()=>[...new Set(selected.value.map(r=>r.period||String(r.posting_date||r.date||'').slice(0,7)))]);
-const selectionIssue=computed(()=>selectionScope.value==='company'?'':!selected.value.length?'Selecione ao menos um registro.':selected.value.length!==props.selectedIds.length?'A seleção contém registros fora da tabela visível. Selecione novamente.':selected.value.length>5000?'Selecione até 5.000 registros ou use Limpar tudo neste módulo.':periods.value.length!==1?'Selecione registros de uma única competência. Lotes com competências diferentes são bloqueados.':!/^\d{4}-\d{2}$/.test(periods.value[0])?'Competência inválida. Atualize a consulta.':periods.value[0].slice(0,4)!==state.period.slice(0,4)?'Selecione uma competência do exercício ativo da empresa.':'');
+const selectionIssue=computed(()=>selectionScope.value==='company'?'':!selected.value.length?'Selecione ao menos um registro.':selected.value.length!==props.selectedIds.length?'A seleção contém registros fora da tabela visível. Selecione novamente.':periods.value.length!==1?'Selecione registros de uma única competência. Lotes com competências diferentes são bloqueados.':!/^\d{4}-\d{2}$/.test(periods.value[0])?'Competência inválida. Atualize a consulta.':periods.value[0].slice(0,4)!==state.period.slice(0,4)?'Selecione uma competência do exercício ativo da empresa.':'');
 const changes=computed(()=>action.value!=='update'?{}:props.kind==='documents'?{cfop:value.value.trim()}:{[field.value]:value.value.trim()});
 const canPrepare=computed(()=>!busy.value&&!props.loading&&!state.contextBusy&&state.companyId&&permitted.value&&!selectionIssue.value&&(action.value!=='update'||value.value.trim().length>0));
 const expiry=computed(()=>typeof preview.value?.expires_at==='number'?preview.value.expires_at*1000:Date.parse(preview.value?.expires_at));
@@ -25,7 +25,7 @@ watch([selectionScope,action,field,value,linked,reversalPairs,()=>JSON.stringify
 watch([()=>props.resetKey,()=>state.companyId,()=>state.period,()=>state.module,()=>JSON.stringify(props.records),()=>props.loading],reset,{flush:'sync'});
 const timer=setInterval(()=>now.value=Date.now(),1000);
 onUnmounted(()=>{sequence++;requestOwner++;clearInterval(timer);emit('busy',false);});
-function selectVisible(){if(busy.value||props.loading)return;emit('update:selectedIds',props.records.slice(0,5000).map(r=>r.id));}
+function selectVisible(){if(busy.value||props.loading)return;emit('update:selectedIds',props.records.map(r=>r.id));}
 function open(all=false){if((!all&&!selected.value.length)||busy.value)return;invalidate();selectionScope.value=all?'company':'selection';action.value='delete';linked.value=false;reversalPairs.value=false;reason.value='';show.value=true;prepare();}
 function close(){if(busy.value)return;invalidate();reason.value='';show.value=false;}
 async function prepare(){
@@ -45,8 +45,8 @@ const countLabels={documents:'Documentos fiscais',journals:'Lançamentos contáb
 </script>
 <template>
 <div class="bulk-toolbar" aria-label="Operações nos registros selecionados">
- <span aria-live="polite">{{selectedIds.length}} selecionado(s) · até 5.000 por seleção</span>
- <button class="button small" :disabled="busy||loading||!records.length||!can(routine,'read')" @click="selectVisible">Selecionar somente os {{Math.min(records.length,5000)}} visíveis</button>
+ <span aria-live="polite">{{selectedIds.length}} selecionado(s)</span>
+ <button class="button small" :disabled="busy||loading||!records.length||!can(routine,'read')" @click="selectVisible">Selecionar somente os {{records.length}} visíveis</button>
  <button class="button small" :disabled="busy||!selectedIds.length" @click="reset">Limpar seleção</button>
  <button class="button outline small" :disabled="busy||loading||!selectedIds.length" @click="open(false)">Operar selecionados</button>
  <button class="button danger small" :disabled="busy||loading||state.contextBusy||!can(routine,'read')||!can(routine,'delete')" @click="open(true)">Limpar tudo neste módulo</button>
@@ -61,7 +61,7 @@ const countLabels={documents:'Documentos fiscais',journals:'Lançamentos contáb
  <fieldset class="plain-fieldset" :disabled="busy">
   <label v-if="selectionScope!=='company'">Operação<select v-model="action"><option v-for="a in actions" :key="a[0]" :value="a[0]" :disabled="!can(routine,'read')||!can(routine,a[2])">{{a[1]}}{{!can(routine,a[2])?' · sem permissão':''}}</option></select></label>
   <template v-if="action==='update'"><label v-if="kind==='journals'">Campo a substituir<select v-model="field"><option value="history">Histórico</option><option value="document">Documento / referência</option></select></label><label>{{kind==='documents'?'Novo CFOP':'Novo conteúdo'}}<input v-model="value" :maxlength="kind==='documents'?4:field==='history'?1000:100" :inputmode="kind==='documents'?'numeric':'text'"/></label></template>
-  <p v-if="action==='book'">Escrituração somente fiscal, sem gerar lançamentos contábeis nem títulos financeiros.</p>
+  <p v-if="action==='book'">Escrituração somente fiscal, sem gerar lançamentos contábeis nem títulos financeiros. {{state.session?.operational_settings?.require_separate_document_review?'Exige conferência prévia.':'Documentos pendentes serão conferidos e escriturados juntos.'}}</p>
   <template v-if="action==='delete'">
    <label v-if="kind==='documents'" class="check-label"><input type="checkbox" v-model="linked"/>Incluir lançamentos contábeis vinculados</label>
    <label v-if="kind==='journals'||linked" class="check-label"><input type="checkbox" v-model="reversalPairs"/>Incluir pares de estorno</label>
@@ -78,7 +78,7 @@ const countLabels={documents:'Documentos fiscais',journals:'Lançamentos contáb
   <p v-if="action==='delete'" class="message warning">A exclusão é definitiva e não pode ser desfeita nesta tela.</p>
   <details class="operation-details">
    <summary>Detalhes da operação</summary>
-   <p>Cadastros e outras empresas não serão apagados. Períodos fechados e dependências permanecem protegidos. O servidor revalida o conjunto na confirmação.</p>
+   <p>Cadastros e outras empresas não serão apagados. Dependências e apurações finalizadas permanecem protegidas. Bloqueios mensais seguem os parâmetros da empresa. O servidor revalida o conjunto na confirmação.</p>
    <p>Permissões: {{routine}}.read e {{routine}}.{{permission}}<span v-if="linked">; accounting.journals.read e accounting.journals.delete</span>.</p>
    <p>Prévia #{{preview.id}} · Validade: {{Number.isFinite(expiry)?new Date(expiry).toLocaleString('pt-BR'):'não informada'}}</p>
    <h4>Quantidades afetadas</h4><dl class="bulk-counts"><template v-for="(count,key) in preview.affected_counts" :key="key"><dt>{{countLabels[key]||key}}</dt><dd>{{count}}</dd></template></dl>
@@ -90,7 +90,7 @@ const countLabels={documents:'Documentos fiscais',journals:'Lançamentos contáb
    <label>Observação (opcional)<textarea v-model="reason" :disabled="busy" rows="2" maxlength="1000"/></label>
   </details>
  </section>
- <template #footer><button class="button" :disabled="busy" @click="close">Cancelar</button><button class="button" :class="action==='delete'?'danger':'primary'" :disabled="!canConfirm" @click="confirm">{{busy?'Processando…':action==='delete'?`Excluir definitivamente ${preview?.selected_count??''} registros`:'Confirmar operação'}}</button></template>
+ <template #footer><button class="button" :disabled="busy" @click="close">Cancelar</button><button class="button" :class="action==='delete'?'danger':'primary'" :disabled="!canConfirm" @click="confirm">{{busy?'Processando…':action==='delete'?`Excluir definitivamente ${preview?.selected_count??''} registros`:action==='book'?'Escriturar selecionados':action==='review'?'Marcar selecionados como conferidos':'Aplicar alteração'}}</button></template>
 </BaseModal>
 </template>
 <style scoped>

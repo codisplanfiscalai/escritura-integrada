@@ -10,8 +10,12 @@ from .tax_ledger import ensure_unfinalized
 
 class ImportReprocessingMixin:
     def _reprocess_plan(self, conn, cid, item_id, payload):
+        from .operational_settings import ensure_import_allowed
+        ensure_import_allowed(conn, cid)
         from .import_payables import requested_payables
         create_payables = requested_payables(payload)
+        preserve_fiscal = payload.get('preserve_fiscal', False)
+        if type(preserve_fiscal) is not bool: raise DomainError('Preservar escrituração deve ser uma escolha booleana.')
         effect(conn, cid, 'fiscal.imports', 'import')
         effect(conn, cid, 'fiscal.documents', 'edit')
         batch = select_one(conn, 'imports', cid, item_id)
@@ -35,6 +39,12 @@ class ImportReprocessingMixin:
         if (not isinstance(selected, list) or not selected or
                 any(not isinstance(x, str) or x not in valid for x in selected) or len(set(selected)) != len(selected)):
             raise DomainError('Seleção de documentos inválida.')
+        if preserve_fiscal:
+            if not create_payables or generated_options['enabled']:
+                raise DomainError('Preservar escrituração está disponível para gerar somente a cobrança XML original.')
+            if any(payload.get(k) for k in ('document_overrides', 'cfop_mappings', 'purchase_destination', 'total_review')):
+                raise DomainError('Geração de cobrança com escrituração preservada não aceita alterações fiscais.')
+            return self._reprocess_billing_plan(conn, cid, batch, parsed, selected, 'selected' in payload)
         overrides = payload.get('document_overrides', {})
         if not isinstance(overrides, dict): raise DomainError('Revisões inválidas.')
         effective = deepcopy(payload)
@@ -83,8 +93,10 @@ class ImportReprocessingMixin:
                     doc['billing'] = {'present': True, 'installments': [], 'financial_rules_pending': True, 'issues': [{'message': 'Original indisponível para recuperar cobrança legada.'}]}
                 if 'total_review' in revision and revision['total_review'] is None:
                     doc.pop('total_review', None)
-                elif 'total_review' not in revision and 'total_review' not in payload and old.get('total_review'):
-                    effective['document_overrides'].setdefault(key, {})['total_review'] = deepcopy(old['total_review'])
+                elif 'total_review' not in revision and 'total_review' not in payload:
+                    previous_total = old.get('total_review') or old.get('import_posting', {}).get('total_review') or old.get('import_posting', {}).get('document_revision', {}).get('total_review')
+                    if previous_total:
+                        effective['document_overrides'].setdefault(key, {})['total_review'] = deepcopy(previous_total)
                 doc['posting_date_proposed'] = False
                 doc.pop('_import_revision', None)
                 doc.pop('import_posting', None)
@@ -92,18 +104,16 @@ class ImportReprocessingMixin:
                     if field in revision and revision[field] is None:
                         doc.pop(field, None)
                         effective['document_overrides'][key].pop(field)
-                # Re-run rules from preserved issuer classification, retaining all manual amounts and product links.
+                # Keep current decisions unless an explicit new mapping/destination overrides them.
                 originals = {str(i['number']): i for i in raw['items']}
                 for item in doc['items']:
                     source = originals[str(item['number'])]
                     if item.get('source_cfop') != source.get('source_cfop'):
                         raise DomainError('CFOP de origem divergente; revisão individual necessária.')
-                    item['cfop'] = source.get('source_cfop') or source.get('cfop', '')
-                doc['cfop'] = raw.get('cfop', '')
                 seeded['documents'][index] = doc
             except DomainError as exc:
                 blocked[key] = exc.detail
-        prepared = self._prepare_fiscal_import(conn, cid, dict(batch, parsed_json=pack(seeded)), effective)
+        prepared = self._prepare_fiscal_import(conn, cid, dict(batch, parsed_json=pack(seeded)), effective, preserve_item_cfops=True)
         rows = []
         for index, proposed in enumerate(prepared['documents']):
             key = valid[index]
@@ -163,6 +173,63 @@ class ImportReprocessingMixin:
         return {'import_id': item_id, 'reprocess_hash': fingerprint, 'documents': rows,
                 'can_confirm': all(r['eligible'] for r in rows if r['selected'])}
 
+    def _reprocess_billing_plan(self, conn, cid, batch, parsed, selected, explicit_selection):
+        """Plan XML receivables without reclassifying or updating any fiscal row."""
+        effect(conn, cid, 'financial.titles', 'create')
+        rows = []
+        for index, raw in enumerate(parsed['documents']):
+            key = f'documents:{index}'
+            row = conn.execute('SELECT * FROM documents WHERE company_id=? AND business_key=?', (cid, original_business_key(raw))).fetchone()
+            old = self._document(conn, cid, row['id']) if row else None
+            proposed = deepcopy(old or raw)
+            reason = ''
+            try:
+                if not old: raise DomainError('Documento não existe; a cobrança não recria a escrituração.')
+                if old['status'] != 'booked' or old.get('book_cancellation'):
+                    raise DomainError('Escolha uma nota já escriturada e não cancelada.')
+                if not raw.get('source_hash') or not any(s['source_hash'] == raw['source_hash'] for s in old['sources']):
+                    raise DomainError('Origem não corresponde ao documento existente.')
+                if any(old.get(k) != raw.get(k) for k in ('key', 'direction', 'model')):
+                    raise DomainError('Identidade original divergente; revisão individual necessária.')
+                if 'billing' not in proposed and 'billing' in raw:
+                    proposed['billing'] = deepcopy(raw['billing'])
+                    proposed['invoices'] = deepcopy(raw.get('invoices', []))
+                    proposed['_billing_enriched'] = True
+                plan = self._payables_plan(conn, cid, proposed, True)
+                proposed['financial_posting'] = plan
+                if plan['status'] == 'not_applicable':
+                    raise DomainError('Esta nota não possui cobrança XML de compra para gerar.')
+                if not plan['eligible']: raise DomainError(plan['reason'])
+            except DomainError as exc:
+                reason = exc.detail
+            chosen = key in selected and (explicit_selection or not reason)
+            rows.append({'index': index, '_selection': key, 'id': old['id'] if old else None,
+                         'version': old['version'] if old else None, 'selected': chosen,
+                         'eligible': not bool(reason), 'reason': reason, 'before': {}, 'after': {},
+                         'diffs': {}, 'posting_lines': proposed.get('posting_lines', []),
+                         'document': proposed, '_update': {}})
+        selected_rows = [r for r in rows if r['selected']]
+        from .import_payables import billing_signature
+        grouped = {}
+        for row in selected_rows:
+            grouped.setdefault(row['id'], []).append(row)
+        unique = {}
+        for document_id, copies in grouped.items():
+            first = unique[document_id] = copies[0]
+            if len({billing_signature(r['document']) for r in copies}) > 1:
+                for row in copies:
+                    row['eligible'] = False
+                    row['reason'] = 'Cópias da mesma nota contêm cobranças divergentes. Confira a origem e selecione apenas uma versão.'
+            for row in copies[1:]: row['duplicate_of'] = first['_selection']
+        installments = [p for r in unique.values() for p in r['document'].get('financial_posting', {}).get('installments', [])]
+        from .operational_settings import get_settings
+        fingerprint = digest({'batch': batch['preview_hash'], 'preserve_fiscal': True, 'rows': rows,
+                              'operational_settings': get_settings(conn, cid)})
+        return {'import_id': batch['id'], 'preserve_fiscal': True, 'reprocess_hash': fingerprint,
+                'documents': rows, 'can_confirm': bool(selected_rows) and all(r['eligible'] for r in selected_rows),
+                'billing_summary': {'documents': len(unique), 'installments': len(installments),
+                                    'amount_cents': sum(p['amount_cents'] for p in installments)}}
+
     def reprocess_import_preview(self, cid, item_id, payload):
         with self.db.read(snapshot=True) as conn:
             plan = self._reprocess_plan(conn, cid, item_id, payload)
@@ -183,7 +250,7 @@ class ImportReprocessingMixin:
             if previous:
                 for doc_id in previous['document_ids']:
                     doc = select_one(conn, 'documents', cid, doc_id)
-                    if doc['status'] == 'booked': effect(conn, cid, 'fiscal.documents', 'book')
+                    if doc['status'] == 'booked' and not payload.get('preserve_fiscal'): effect(conn, cid, 'fiscal.documents', 'book')
                 return previous
             plan = self._reprocess_plan(conn, cid, item_id, payload)
             if payload.get('reprocess_hash') != plan['reprocess_hash']:
@@ -193,6 +260,11 @@ class ImportReprocessingMixin:
             ids, titles = [], []
             for row in plan['documents']:
                 if not row['selected'] or row['id'] in ids: continue
+                if plan.get('preserve_fiscal'):
+                    # Pass the verified source enrichment without rewriting the fiscal row.
+                    titles.extend(self._create_import_payables(conn, cid, row['document'], row['document'], actor))
+                    ids.append(row['id'])
+                    continue
                 self.update_document(cid, row['id'], dict(row['_update'], reason=reason), actor, _conn=conn)
                 saved = select_one(conn, 'documents', cid, row['id'])
                 extras = json.loads(saved['extra_json'])
@@ -207,7 +279,7 @@ class ImportReprocessingMixin:
                 if generated_options['enabled']:
                     titles.extend(self._create_generated_payables(conn, cid, self._document(conn, cid, row['id']), row['document'], generated_options, actor))
                 ids.append(row['id'])
-            result = {'import_id': item_id, 'document_ids': ids, 'documents_updated': len(ids), 'documents_created': 0}
+            result = {'import_id': item_id, 'document_ids': ids, 'documents_updated': 0 if plan.get('preserve_fiscal') else len(ids), 'documents_created': 0, 'fiscal_preserved': bool(plan.get('preserve_fiscal'))}
             result.update(create_payables=payload.get('create_payables', False), generated_payables=generated_options, title_ids=[t['id'] for t in titles], titles_created=sum(not t.get('duplicate', False) for t in titles), titles_duplicate=sum(bool(t.get('duplicate')) for t in titles))
             audit(conn, cid, actor, 'reprocess', 'import', item_id, {'reason': reason, 'reprocess_hash': plan['reprocess_hash'], 'document_ids': ids})
             self._record_operation(conn, cid, scope, key, hashed, result)

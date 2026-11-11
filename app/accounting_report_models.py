@@ -115,7 +115,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
              p('Empresa: ' + str(result.get('company_code', '')) + ' | CNPJ: ' + str(result.get('company_tax_id', ''))),
              p('Período: ' + val('date', result['start']) + ' a ' + val('date', result['end'])),
              p(NOTICE), p(result.get('scope_note', '')),
-             p('Filtros: ' + (json.dumps(filters, ensure_ascii=False, sort_keys=True) if filters else 'Sem filtros adicionais.')),
+             p('Filtros: ' + ('; '.join({'account_id':'Conta','cost_center_id':'Centro de custo','query':'Pesquisa','direction':'Operação','status':'Situação'}.get(key,LABELS.get(key,key.replace('_',' ').capitalize()))+': '+str(display(key,value)) for key,value in filters.items() if value not in (None,'')) or 'Sem filtros adicionais.')),
              p('Valores em reais. Saldos: D = devedor; C = credor. Resultado positivo = lucro; negativo = prejuízo.'), Spacer(1, 8)]
     rows = result.get('rows', [])
     sections = OrderedDict()

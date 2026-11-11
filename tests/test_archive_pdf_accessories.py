@@ -110,7 +110,7 @@ class ArchivePdfAccessoryTests(unittest.TestCase):
             self.assert_blocked(self.parse(files), "ARCHIVE_MEMBERS")
         with patch("app.importers.MAX_EXPANDED_BYTES", len(XML) + len(PDF) - 1):
             self.assert_blocked(self.parse(files), "ARCHIVE_EXPANSION")
-        with patch("app.importers.MAX_FILE_BYTES", 100):
+        with patch("app.operational_settings.MAX_UPLOAD_BYTES", 100):
             self.assert_blocked(self.parse(files), "FILE_SIZE")
         bomb = PDF + b"A" * 300000
         self.assert_blocked(self.parse([("nota.pdf", bomb)], compression=zipfile.ZIP_DEFLATED), "ARCHIVE_EXPANSION")

@@ -48,6 +48,8 @@ def create_app(data_dir=None, demo=False):
     application.state.demo = demo
     from .import_package_cleanup import register as register_package_cleanup
     register_package_cleanup(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .operational_settings import register as register_operational_settings
+    register_operational_settings(application, core, actor=lambda request: request.state.session['user']['username'])
     from .fiscal_library_api import register_fiscal_library_routes
     register_fiscal_library_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .fiscal_api import register_fiscal_routes
@@ -93,7 +95,7 @@ def create_app(data_dir=None, demo=False):
         if path.startswith("/api/"):
             if mutating:
                 content_length = request.headers.get("content-length")
-                if content_length and (not content_length.isdigit() or int(content_length) > 30_000_000):
+                if content_length and (not content_length.isdigit() or int(content_length) > (180_000_000 if re.fullmatch(r"/api/companies/\d+/(imports/preview|module-imports/preview)", path) else 30_000_000)):
                     return JSONResponse({"detail": "Requisição excede o limite de tamanho.", "code": "request_too_large"}, 413)
                 origin = request.headers.get("origin")
                 if origin and urlsplit(origin).netloc != request.headers.get("host"):
@@ -137,7 +139,9 @@ def create_app(data_dir=None, demo=False):
                         return JSONResponse({"detail": "Confirmação de sessão inválida. Atualize a página.", "code": "invalid_csrf"}, 403)
                     expected = {"token_hash": digest(token.encode()), "user_id": session["user"]["id"], "write": writing, "admin": privileged, "permission_company_id": permission_cid, "routine": routine, "action": action or 'read'}
                     match = re.match(r"^/api/companies/(\d+)/", path)
-                    if match:
+                    # Company administration targets the opened registration, not movements.
+                    # Permissions are still revalidated for that exact company in the transaction.
+                    if match and not re.fullmatch(r"/api/companies/\d+/operational-settings(?:/(?:templates|apply-template))?", path):
                         cid = int(match.group(1))
                         if session["active_company_id"] != cid:
                             return JSONResponse({"detail": "A empresa ativa mudou. Reabra o lançamento no contexto correto.", "code": "stale_context"}, 409)

@@ -170,6 +170,13 @@ def main():
                         cid = read('/api/session')['active_company_id']
                         other = next(c['id'] for c in read('/api/companies') if c['id'] != cid)
                         scope = f'/api/companies/{cid}'
+                        # This regression flow explicitly opts into strict monthly locks.
+                        policy = read(scope + '/operational-settings')
+                        configured = page.request.put(url + scope + '/operational-settings',
+                            data={'version': policy['version'], 'settings': policy['settings'] | {'enforce_period_locks': True}},
+                            headers={'X-CSRF-Token': read('/api/session')['csrf_token']})
+                        assert configured.ok, configured.text()
+                        page.reload()
                         other_before = snapshot(other)
                         original = snapshot(cid)
                         docs = [fixture(scope + '/documents', {

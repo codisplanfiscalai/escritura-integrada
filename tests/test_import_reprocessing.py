@@ -241,3 +241,23 @@ class ImportReprocessingTests(unittest.TestCase):
         blocked = self.plan(batch, **options)
         self.assertFalse(blocked['can_confirm'], blocked)
         self.assertIn('vNF', blocked['documents'][0]['reason'])
+
+    def test_partial_item_destination_preserves_other_items_decisions(self):
+        import re
+        raw=self.xml()
+        original=re.search(rb'<det .*?</det>',raw).group()
+        first=original.replace(b'<vProd>100.00</vProd>',b'<vProd>50.00</vProd>').replace(b'<qCom>2.0000</qCom>',b'<qCom>1.0000</qCom>')
+        raw=raw.replace(original,first+first.replace(b'nItem="1"',b'nItem="2"'))
+        batch=self.preview(raw)
+        initial=self.prepared(batch,document_overrides={'documents:0':{'cfop':'1556','posting_date':'2026-11-08'}})
+        self.confirm(batch,initial)
+        old=self.core.documents(self.a['id'])[0]
+        with self.core.db.transaction() as conn:
+            items=json.loads(conn.execute('SELECT items_json FROM documents WHERE id=?',(old['id'],)).fetchone()[0])
+            for item in items:item['purchase_destination']='consumption'
+            conn.execute('UPDATE documents SET items_json=? WHERE id=?',(json.dumps(items),old['id']))
+        self.post('/fiscal-import-mappings',{'direction':'incoming','model':'55','source_cfop':'5102','target_cfop':'1102','purchase_destination':'resale','valid_from':'2026-01-01','valid_to':'','reason':'Teste','responsible':'Teste'})
+        plan=self.plan(batch,document_overrides={'documents:0':{'item_destinations':{'1':'resale'}}})
+        self.assertTrue(plan['can_confirm'],plan)
+        items=plan['documents'][0]['document']['items']
+        self.assertEqual([('1102','resale'),('1556','consumption')],[(i['cfop'],i['purchase_destination']) for i in items])

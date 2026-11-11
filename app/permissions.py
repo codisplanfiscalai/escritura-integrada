@@ -138,6 +138,8 @@ def route_policy(path, method, query, payload, session):
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
+    if root == 'operational-settings':
+        return ('system.companies', 'edit', True) if write else (None, 'read', False)
     if root == 'bulk-operations':
         # The stored preview owns the action. The service checks its permission
         # again inside the committing transaction; middleware still guards read,

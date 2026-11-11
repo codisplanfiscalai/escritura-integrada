@@ -32,6 +32,16 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
     @app.get('/api/companies/{cid}/masters/{kind}')
     def masters(cid:int,kind:str):return core.masters(cid,kind)
 
+    @app.get('/api/companies/{cid}/masters/{kind}/{item_id}/evidence')
+    def master_source_evidence(cid:int,kind:str,item_id:int,offset:int=0,limit:int=25):
+        from .master_evidence import master_evidence
+        return master_evidence(core,cid,kind,item_id,offset=offset,limit=limit)
+
+    @app.get('/api/companies/{cid}/documents/{item_id}/xml-details')
+    def document_source_details(cid:int,item_id:int):
+        from .master_evidence import document_xml_details
+        return document_xml_details(core,cid,item_id)
+
     @app.post('/api/companies/{cid}/masters/{kind}',status_code=201)
     def create_master(cid:int,kind:str,request:Request,payload:dict[str,Any]=Body(...)):
         return core.save_master(cid,kind,payload,actor(request))
@@ -92,8 +102,10 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
         check_period(request,start[:7]);check_period(request,end[:7])
         from .fiscal_reports import FISCAL_REPORTS
         result=core.fiscal_report(cid,kind,start,end,query,status,direction,cfop,ncm) if kind in FISCAL_REPORTS else core.business_report(cid,kind,start,end,account_id,cost_center_id,query,status,direction)
-        if model!='internal':
-            from .report_models import CATALOG,report_model_pdf
+        from .report_models import CATALOG,report_model_pdf,resolve_model_id
+        resolved_model=resolve_model_id(kind,model)
+        if resolved_model is not None:
+            model=resolved_model
             selected=next((m for m in CATALOG if m['id']==model and m['kind']==kind and m.get('supported',True)),None)
             if selected is None:raise DomainError('Modelo incompatível com o relatório.')
             if not 1<=first_page<=99999:raise DomainError('Folha inicial deve estar entre 1 e 99999.')

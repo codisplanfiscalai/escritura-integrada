@@ -2,7 +2,7 @@
 
 Somente apresentação: não calcula incidência, não modifica partições e não
 preenche códigos contábeis, isenções ou cadastros ausentes. O quadro principal
-é de ICMS; os anexos auxiliares continuam disponíveis separadamente.
+é de ICMS; detalhes e lacunas permanecem na consulta e na exportação Excel.
 """
 from collections import OrderedDict
 from decimal import Decimal
@@ -10,6 +10,7 @@ from io import BytesIO
 import re
 
 from .core import DomainError
+from .fiscal_review_messages import pending_message
 
 BOOK_MODELS = {'reference-entries-p1a-v1': 'fiscal-entries',
                'reference-outputs-p2a-v1': 'fiscal-outputs'}
@@ -46,6 +47,40 @@ def _book_values(row):
             'tax': row.get('book_icms_cents'), 'other': row.get('book_other_cents'),
             'exempt': None, 'code': code, 'operation': operation,
             'rate': '' if cancelled else rate}
+
+
+def _book_observations(row):
+    """Present existing decisions on the same line, without deriving tax amounts."""
+    parts = []
+    cancelled = row.get('document_state') == 'cancelled'
+    if cancelled:
+        parts.append('***CANCELADA***')
+        for key,label in [('cancellation_source','Fonte'),('cancellation_responsible','Responsável'),('cancellation_reason','Motivo')]:
+            if row.get(key):parts.append(label+': '+str(row[key]))
+    treatment = row.get('treatment')
+    ipi = row.get('declared_ipi_cents')
+    coverage = row.get('declared_tax_coverage', {}).get('ipi')
+    pending = row.get('pending') or []
+    if (not cancelled and isinstance(treatment, dict)
+            and treatment.get('book_mode') == 'other_excluding_ipi'
+            and 'INVALID_FISCAL_TREATMENT' not in pending
+            and 'DECLARED_IPI_INCOMPLETE' not in pending
+            and (coverage is None or coverage.get('complete') is True)
+            and ipi is not None and ipi > 0 and row.get('book_ipi_cents') == 0):
+        parts.append('IPI não creditado: ' + _money(ipi))
+    if pending:
+        parts.append('Conferir: ' + ' '.join(dict.fromkeys(pending_message(code) for code in pending)))
+    return ' '.join(parts)
+
+
+def _cfop_wording(code, start, end, group=False):
+    """Use only catalog wording covering the entire selected period."""
+    from .cfop import reference, reference_index
+    candidates = ([r for r in reference()['groups'] if r['code'] == code]
+                  if group else reference_index().get(code, []))
+    candidates = [r for r in candidates if r['wording_valid_from'] <= start
+                  and (not r['wording_valid_to'] or end <= r['wording_valid_to'])]
+    return candidates[0]['title'] if len(candidates) == 1 else ''
 
 
 def fiscal_book_pdf(result, model_id, first_page=1):
@@ -90,7 +125,7 @@ def fiscal_book_pdf(result, model_id, first_page=1):
         if align == 'right' and re.fullmatch(r'-?[\d.,]+', str(value or '')):
             font='Times-Bold' if bold else 'Times-Roman'
             while size>4 and stringWidth(str(value),font,size)>b-a-4:size=round(size-.25,2)
-            if stringWidth(str(value),font,size)>b-a-4:raise DomainError('Valor excede a coluna do livro; consulte o modelo auxiliar sem truncamento.')
+            if stringWidth(str(value),font,size)>b-a-4:raise DomainError('Valor excede a coluna do livro; consulte os detalhes da consulta ou a exportação Excel sem truncamento.')
             text(x,top,value,size,bold,align)
             return
         for n,part in enumerate(wrapped(value,b-a-4,size)):
@@ -114,17 +149,19 @@ def fiscal_book_pdf(result, model_id, first_page=1):
         name_size=8
         while name_size>6 and len(wrapped(name,365,name_size))>2:name_size-=1
         name_lines=wrapped(name,365,name_size)
-        if len(name_lines)>2:raise DomainError('Nome da empresa excede o cabeçalho do livro; consulte o modelo auxiliar sem truncamento.')
+        if len(name_lines)>2:raise DomainError('Nome da empresa excede o cabeçalho do livro; consulte os detalhes da consulta ou a exportação Excel sem truncamento.')
         for i,part in enumerate(name_lines):text(left+61,69+i*8,part,name_size,True)
         text(502 if incoming else 495,72,'CNPJ: '+_tax_id(result.get('company_tax_id')),8)
         text(left+2,89,'Inscrição Estadual: '+str(result.get('company_ie') or ''),8)
         text(448,89,'Período: '+_date(result['start'])+' a '+_date(result['end']),8)
+        if any(r.get('document_state')=='cancelled' for r in result.get('rows',[])):
+            text(left,544,'Canceladas conforme livro validado: sem validação eletrônica/SEFAZ.',6)
         text(left,553,'EM HOMOLOGAÇÃO - Quadro ICMS. Campos em branco: não informados. Agrupamentos preservados.',6)
         active = ', '.join(f'{k}={v}' for k,v in filters.items() if v and k not in {'direction','status'})
         selection=wrapped('Seleção: '+active,right-left,6) if active else []
-        if len(selection)>1:raise DomainError('Filtros excedem o rodapé do livro; consulte o modelo auxiliar sem truncamento.')
+        if len(selection)>1:raise DomainError('Filtros excedem o rodapé do livro; consulte os detalhes da consulta ou a exportação Excel sem truncamento.')
         if selection:text(left,562,selection[0],6)
-        text(left,571,'Anexos IPI/UF/observações não reproduzidos. Dados detalhados no modelo auxiliar. Não comprova aceite Prosoft.',6)
+        text(left,571,'Resumos UF/observações não reproduzidos. Confira detalhes na consulta ou no Excel. Não comprova aceite Prosoft.',6)
         if not summary:table_header()
     def table_header():
         line(left,101,right);line(left,156,right)
@@ -184,12 +221,10 @@ def fiscal_book_pdf(result, model_id, first_page=1):
         number=number.zfill(10) if number.isascii() and number.isdigit() else number
         scalar_cells=[(15,row.get('series','')),(31,number),(30,_date(row.get('issue_date'))),(39,_date(row.get('date')))] if incoming else [(27,row.get('series','')),(33,number),(9,row.get('partner_state',''))]
         scalar_height=max(len(wrapped(v,w))*7.2 for w,v in scalar_cells)
-        cancelled=row.get('document_state')=='cancelled'
-        observations='***CANCELADA***' if cancelled else ''
-        if row.get('pending'):observations += (' ' if observations else '')+'Pendências: '+', '.join(row['pending'])
+        observations=_book_observations(row)
         obs_lines=wrapped(observations,180 if incoming else 237)
         row_height=max((len(name_lines)+len(identity_lines))*7.2 if incoming else 7.2,len(obs_lines)*7.2,scalar_height)
-        if row_height > 350:raise DomainError('Texto do registro excede o quadro do livro; consulte o modelo auxiliar sem truncamento.')
+        if row_height > 350:raise DomainError('Texto do registro excede o quadro do livro; consulte os detalhes da consulta ou a exportação Excel sem truncamento.')
         if top+row_height > 516:
             total_row(523,'A Transportar');c.showPage();page+=1;header();total_row(160,'De Transporte');top=174
         species={'55':'NF-E','65':'NFC-e','57':'CT-e'}.get(str(row.get('model')),str(row.get('model') or ''))
@@ -211,24 +246,45 @@ def fiscal_book_pdf(result, model_id, first_page=1):
         group=groups.setdefault(row.get('cfop') or '',{k:[0,0,0] for k in keys});accumulate(group,values)
         top+=row_height
     total_row(min(top+7,523),'TOTAL GERAL')
-    # A distinct summary does not change the book's analytical partitions.
+    # Summaries aggregate existing analytical partitions; they never regroup items.
     if rows:
-        c.showPage();page+=1;header(summary=True)
-        text((left+right)/2,114,'RESUMO POR CFOP - VALORES DO LIVRO',10,True,'center')
-        text(left,130,'Somente seleção efetiva. Totais em branco quando houver valores não informados.',7)
-        columns=[left,left+60,left+195,left+320,left+420,left+550,right]
-        def summary_columns(continuation=False):
-            if continuation:
-                text((left+right)/2,114,'RESUMO POR CFOP - CONTINUAÇÃO',10,True,'center')
-            for i,label in enumerate(['CFOP','Valor Contábil','Base de Cálculo','Imposto','Isentas / Não Tributadas','Outras']):cell(columns[i],columns[i+1],150,label,7,True)
+        columns=[left,left+300,left+390,left+480,left+565,left+655,right]
+        def summary_header(continuation=False):
+            header(summary=True)
+            text((left+right)/2,112,'RESUMO MENSAL DE OPERAÇÕES E PRESTAÇÕES POR CÓDIGO FISCAL',8,True,'center')
+            text(left,128,'RESUMO POR CFOP'+(' - CONTINUAÇÃO' if continuation else '')+' - Valores não informados permanecem em branco.',6)
+            for i,label in enumerate(['Código Fiscal','Valor Contábil','Base de Cálculo','Imposto Creditado' if incoming else 'Imposto Debitado','Isentas / Não Tributadas','Outras']):
+                cell(columns[i],columns[i+1],145,label,6,True)
             line(left,163,right)
-        summary_columns();y=170
-        for cfop,group in groups.items():
-            if y>516:
-                c.showPage();page+=1;header(summary=True);summary_columns(continuation=True);y=170
-            cell(columns[0],columns[1],y,cfop,7)
-            for i,k in enumerate(keys,1):cell(columns[i],columns[i+1],y,_money(known(group,k)),7,align='right')
-            y+=14
-        line(left,y,right);cell(columns[0],columns[1],y+5,'TOTAL GERAL',7,True)
-        for i,k in enumerate(keys,1):cell(columns[i],columns[i+1],y+5,_money(known(totals,k)),7,True,'right')
+        c.showPage();page+=1;summary_header();y=170
+        def reserve(height):
+            nonlocal y,page
+            if y+height>516:
+                c.showPage();page+=1;summary_header(True);y=170
+        def summary_row(label, amounts, bold=False):
+            nonlocal y
+            height=max(14,len(wrapped(label,296,6))*7.2+4)
+            reserve(height)
+            cell(columns[0],columns[1],y,label,6,bold,'left')
+            for i,k in enumerate(keys,1):
+                cell(columns[i],columns[i+1],y,_money(known(amounts,k)),6,bold,'right')
+            y+=height
+        sections=OrderedDict()
+        for cfop,amounts in sorted(groups.items()):
+            prefix=cfop[0]+'000' if re.fullmatch(r'[123567]\d{3}',str(cfop)) else ''
+            sections.setdefault(prefix,[]).append((cfop,amounts))
+        for prefix,items in sections.items():
+            title=_cfop_wording(prefix,result['start'],result['end'],True) if prefix else ''
+            label=(prefix+' - '+title) if title else 'Código fiscal sem grupo identificado'
+            height=max(14,len(wrapped(label,right-left-4,6))*7.2+4)
+            reserve(height+28);cell(left,right,y,label,6,True,'left');y+=height
+            subtotal={k:[0,0,0] for k in keys}
+            for cfop,amounts in items:
+                title=_cfop_wording(str(cfop),result['start'],result['end'])
+                label=str(cfop or 'Não informado')+(' - '+title if title else '')
+                summary_row(label,amounts)
+                for k in keys:
+                    for i in range(3):subtotal[k][i]+=amounts[k][i]
+            summary_row('SUB-TOTAL',subtotal,True)
+        reserve(18);line(left,y-2,right);summary_row('TOTAL GERAL',totals,True)
     c.save();return out.getvalue(),'application/pdf'

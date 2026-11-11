@@ -44,9 +44,11 @@ class AccountingModelTests(unittest.TestCase):
         ids=[m['id'] for m in CATALOG]
         self.assertEqual(len(ids),len(set(ids)))
         for kind in list(COLUMNS)+list(FISCAL_REPORTS):
-            model=next(m for m in CATALOG if m['id']=='internal-'+kind)
+            model=next(m for m in CATALOG if m['kind']==kind)
             self.assertTrue(model['supported'])
-            self.assertEqual(model['status'],'field_based_not_homologated')
+            self.assertEqual(model['status'],'reference_layout_partial_not_homologated' if kind in {'fiscal-entries','fiscal-outputs'} else 'field_based_not_homologated')
+        self.assertNotIn('internal-fiscal-entries',ids)
+        self.assertNotIn('internal-fiscal-outputs',ids)
 
     def test_invalid_selection_and_page(self):
         for page in [0,100000,True,1.5,'2']:

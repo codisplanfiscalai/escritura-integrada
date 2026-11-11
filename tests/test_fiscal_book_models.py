@@ -80,7 +80,7 @@ class FiscalBookModelTests(unittest.TestCase):
         row.update(document_state='cancelled',treatment='Cancelada conforme livro validado; sem evento eletrônico',total_cents=0,book_base_cents=0,book_icms_cents=0,book_other_cents=0)
         _,text=render(result)
         self.assertIn('***CANCELADA***',text);self.assertIn('0,00',text)
-        self.assertNotIn('18,0000',text);self.assertNotIn('SEFAZ',text)
+        self.assertNotIn('18,0000',text);self.assertIn('sem validação eletrônica/SEFAZ',text)
 
     def test_print_order_is_date_numeric_number_series_and_stable_lines(self):
         result=sample(False,3)
