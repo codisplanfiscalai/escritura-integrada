@@ -54,7 +54,7 @@ def check_book_cancellation(page, url, scope, report):
     expect(consult.get_by_label('Número *', exact=True)).to_be_disabled()
     expect(consult.get_by_role('button', name='Salvar documento', exact=True)).to_have_count(0)
     consult.get_by_role('button', name='Fechar', exact=True).click()
-    row.get_by_role('button', name='Conferir', exact=True).click()
+    row.get_by_role('button', name='Marcar conferido', exact=True).click()
     review = page.get_by_role('dialog', name='Registrar conferência', exact=True)
     review.get_by_label('Observação da conferência', exact=True).fill('Conferência sintética UI do livro')
     review.get_by_role('button', name='Marcar como conferido', exact=True).click()
@@ -70,7 +70,7 @@ def check_book_cancellation(page, url, scope, report):
     expect(row.get_by_text('Conferido', exact=True)).to_be_visible()
     row.get_by_role('button', name='Escriturar', exact=True).click()
     book.get_by_label('Observação da escrituração *', exact=True).fill('Registro sintético de linha cancelada')
-    book.get_by_role('button', name='Confirmar escrituração', exact=True).click()
+    book.get_by_role('button', name='Escriturar documento', exact=True).click()
     expect(book).to_have_count(0)
     expect(row.get_by_text('Escriturado', exact=True)).to_be_visible()
     page.get_by_label('Filtrar estado fiscal', exact=True).select_option('cancelled')
@@ -131,6 +131,24 @@ def main():
                 expect(page.get_by_role('heading', name='Visão geral', exact=True)).to_be_visible()
                 session = page.request.get(url+'/api/session').json(); cid = session['active_company_id']
                 scope = f'/api/companies/{cid}'
+                # This acceptance suite explicitly exercises the optional extra
+                # confirmation and cancellation flows, not the default UX.
+                settings_response = page.request.get(url+scope+'/operational-settings')
+                assert settings_response.ok, settings_response.text()
+                settings = settings_response.json()
+                configured = dict(settings['settings'], require_extra_confirmations=True)
+                saved = page.request.put(url+scope+'/operational-settings', data={
+                    'version': settings['version'], 'settings': configured},
+                    headers={'X-CSRF-Token': session['csrf_token']})
+                assert saved.ok, saved.text()
+                assert saved.json()['settings'] == configured
+                assert saved.json()['version'] == settings['version'] + 1
+                with page.expect_response(url+'/api/session') as refreshed:
+                    page.reload()
+                assert refreshed.value.ok, refreshed.value.text()
+                assert refreshed.value.json()['operational_settings']['require_extra_confirmations'] is True
+                expect(page.get_by_role('navigation', name='Navegação principal')).to_be_visible()
+                report['checks'].append('Optional extra confirmations enabled through versioned company settings; remaining rules preserved and session reloaded')
                 company = next(c for c in page.request.get(url+'/api/companies').json() if c['id']==cid)
                 # Complete printable synthetic fixture; production marker enables
                 # direct-booking checks but does not turn this into a real XML.
@@ -193,9 +211,13 @@ def main():
                 page.get_by_role('button', name='Nova importação', exact=True).click()
                 page.get_by_role('dialog', name='Deixar esta conferência?', exact=True).get_by_role('button', name='Voltar', exact=True).click()
                 expect(date).to_have_value('16/11/2026')
+                before_cancel = page.request.get(url+scope+'/documents?year=2026')
+                assert before_cancel.ok, before_cancel.text()
+                before_cancel = before_cancel.json()
                 page.get_by_label('Confirmar importação', exact=True).click()
                 page.get_by_role('dialog', name='Confirmar importação?', exact=True).get_by_role('button', name='Voltar', exact=True).click()
                 expect(date).to_have_value('16/11/2026')
+                assert page.request.get(url+scope+'/documents?year=2026').json() == before_cancel
                 page.get_by_label('Confirmar importação', exact=True).click()
                 page.get_by_role('dialog').get_by_role('button', name='Importar registros', exact=True).click()
                 expect(page.get_by_text('Importação confirmada', exact=True)).to_be_visible()

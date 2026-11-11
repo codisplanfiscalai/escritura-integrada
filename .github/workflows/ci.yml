@@ -57,13 +57,21 @@ jobs:
           RELEASE_VERSION: ${{ steps.plan.outputs.version }}
           SOURCE_SHA: ${{ steps.plan.outputs.source_sha }}
         run: python -m scripts.ci.checks --version "$RELEASE_VERSION" --source-sha "$SOURCE_SHA"
-      - name: Validar fluxos no Chromium e capturar resoluções
+      - name: Preparar Chromium para os cenários reais
         run: |
           python -m pip install playwright==1.62.0
           python -m playwright install --with-deps chromium
-          python scripts/smoke_browser.py
-          python scripts/browser_account_plans.py
-          python scripts/browser_bulk_operations.py
+      - name: Validar fluxos no Chromium e capturar resoluções
+        run: python scripts/smoke_browser.py
+      - name: Validar planos de contas no Chromium
+        if: success() || failure()
+        run: python scripts/browser_account_plans.py
+      - name: Validar operações em lote no Chromium
+        if: success() || failure()
+        run: python scripts/browser_bulk_operations.py
+      - name: Validar cadastros e consulta XML no Chromium
+        if: success() || failure()
+        run: python scripts/browser_master_evidence.py
       - name: Validar guias fixas, navegação e fechamento confirmado
         if: success() || failure()
         run: python scripts/browser_workspace_tabs.py
@@ -85,6 +93,7 @@ jobs:
             artifacts/browser/
             artifacts/browser-account-plans/
             artifacts/browser-bulk-operations/
+            artifacts/browser-master-evidence/
             artifacts/browser-workspace-tabs/
             artifacts/browser-reports/
             artifacts/browser-import-review/

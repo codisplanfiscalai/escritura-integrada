@@ -6,6 +6,12 @@ from playwright.sync_api import expect
 
 def run(page, url, cid, nav, check, shot):
     root = Path(__file__).resolve().parents[1]
+    settings_response = page.request.get(url+f'/api/companies/{cid}/operational-settings')
+    assert settings_response.ok, settings_response.text()
+    assert settings_response.json()['settings']['require_extra_confirmations'] is False
+    session_response = page.request.get(url+'/api/session')
+    assert session_response.ok, session_response.text()
+    assert session_response.json()['operational_settings']['require_extra_confirmations'] is False
     company = next(c for c in page.request.get(url+'/api/companies').json() if c['id'] == cid)
     before_journals = len(page.request.get(url+f'/api/companies/{cid}/journals?year=2026').json())
     before_titles = len(page.request.get(url+f'/api/companies/{cid}/titles').json())
@@ -70,10 +76,14 @@ def run(page, url, cid, nav, check, shot):
         expect(page.get_by_label('Selecionar documento 84008', exact=True)).to_be_checked()
         expect(page.get_by_role('combobox', name='Modo de escrituração da importação', exact=True)).to_have_value('book')
         expect(page.get_by_text('Pronto para escrituração fiscal direta', exact=False)).to_be_visible()
-        page.get_by_role('button', name='Confirmar importação', exact=True).click()
-        page.get_by_role('button', name='Importar registros', exact=True).click()
+        with page.expect_response('**/imports/*/confirm') as confirmed:
+            page.get_by_role('button', name='Confirmar importação', exact=True).click()
+        assert confirmed.value.ok, confirmed.value.text()
+        expect(page.get_by_role('dialog')).to_have_count(0)
         expect(page.get_by_role('button', name='Abrir escrituração', exact=True)).to_be_visible()
-    upload('nfe-direta-sintetica.xml')
+        return confirmed.value.json()
+    first_import = upload('nfe-direta-sintetica.xml')
+    assert first_import['documents_booked'] == 1 and first_import['documents_duplicate'] == 0
     shot('fiscal-importacao-escriturada-1440.png')
     page.get_by_role('button', name='Abrir escrituração', exact=True).click()
     page.get_by_label('Competência da consulta', exact=True).select_option('')
@@ -96,16 +106,49 @@ def run(page, url, cid, nav, check, shot):
     assert doc['import_posting']['review_pending'] and doc['reviewed_by'] is None
     assert len(page.request.get(url+f'/api/companies/{cid}/journals?year=2026').json())==before_journals
     assert len(page.request.get(url+f'/api/companies/{cid}/titles').json())==before_titles
-    nav('Importações fiscais');upload('mesmo-xml-sintetico-renomeado.xml')
+    nav('Importações fiscais');duplicate_import = upload('mesmo-xml-sintetico-renomeado.xml')
+    assert duplicate_import['documents_booked'] == 0 and duplicate_import['documents_duplicate'] == 1
     page.get_by_role('button', name='Abrir escrituração', exact=True).click()
     row = page.locator('tbody tr').filter(has_text='84008')
     expect(row).to_have_count(1);expect(row).to_contain_text('1101')
-    row.get_by_role('button', name='Conferir', exact=True).click()
-    page.get_by_label('Observação da conferência', exact=True).fill('Conferência sintética da correção')
-    page.get_by_role('button', name='Marcar como conferido', exact=True).click()
-    expect(row.get_by_role('button', name='Conferir', exact=True)).to_have_count(0)
+    before_review_journals = page.request.get(url+f'/api/companies/{cid}/journals?year=2026').json()
+    before_review_titles = page.request.get(url+f'/api/companies/{cid}/titles').json()
+    with page.expect_response(f'**/documents/{doc["id"]}/review') as reviewed:
+        row.get_by_role('button', name='Marcar conferido', exact=True).click()
+    assert reviewed.value.ok, reviewed.value.text()
+    expect(page.get_by_role('dialog')).to_have_count(0)
+    expect(row.get_by_role('button', name='Marcar conferido', exact=True)).to_have_count(0)
+    reviewed_document = reviewed.value.json()
+    assert reviewed_document['status'] == 'booked' and reviewed_document['reviewed_by']
+    assert reviewed_document['import_posting']['review_pending'] is False
+    for field in ('id', 'total_cents', 'issue_date', 'posting_date', 'cfop', 'items', 'source_hash'):
+        assert reviewed_document[field] == doc[field], (field, reviewed_document[field], doc[field])
+    assert page.request.get(url+f'/api/companies/{cid}/journals?year=2026').json() == before_review_journals
+    assert page.request.get(url+f'/api/companies/{cid}/titles').json() == before_review_titles
     shot('fiscal-escrituracao-editavel-1440.png')
     check('Fiscal: CFOP oficial e associação por empresa; XML importado já escriturado, edição motivada, reimportação sem desfazer correções e conferência posterior, sem títulos/partidas implícitos')
+    check('Padrão sem confirmações extras: importação e conferência posterior executam em um clique sem diálogos; dados fiscais e efeitos vinculados preservados')
+    # Enable the optional mode only for the following cancellation checks.
+    # Keep strict month policy and every other company setting unchanged.
+    session_response = page.request.get(url+'/api/session')
+    assert session_response.ok, session_response.text()
+    session = session_response.json()
+    settings_response = page.request.get(url+f'/api/companies/{cid}/operational-settings')
+    assert settings_response.ok, settings_response.text()
+    settings = settings_response.json()
+    configured = dict(settings['settings'], require_extra_confirmations=True)
+    saved = page.request.put(url+f'/api/companies/{cid}/operational-settings', data={
+        'version': settings['version'], 'settings': configured},
+        headers={'X-CSRF-Token': session['csrf_token']})
+    assert saved.ok, saved.text()
+    assert saved.json()['settings'] == configured
+    assert saved.json()['version'] == settings['version'] + 1
+    with page.expect_response(url+'/api/session') as refreshed:
+        page.reload()
+    assert refreshed.value.ok, refreshed.value.text()
+    assert refreshed.value.json()['operational_settings']['require_extra_confirmations'] is True
+    expect(page.get_by_role('navigation', name='Navegação principal')).to_be_visible()
+    check('Confirmações extras habilitadas explicitamente pela API versionada para testar cancelamento financeiro, preservando as demais regras')
     _purchase_payables(page, url, cid, nav, check, shot, company)
 
 
@@ -175,10 +218,14 @@ def _purchase_payables(page, url, cid, nav, check, shot, company):
             expect(page.get_by_role('heading', name='Parcela proposta pela regra do usuário (não consta no XML)', exact=True)).to_be_visible()
             if not repeat:
                 shot('fiscal-parcela-opcional-revisada-1440.png')
+                before_cancel_docs = page.request.get(scope+'/documents?year=2026').json()
+                before_cancel_titles = page.request.get(scope+'/titles').json()
                 confirm.click()
                 page.get_by_role('dialog', name='Confirmar importação?', exact=True).get_by_role('button', name='Voltar', exact=True).click()
                 expect(arrival).to_have_value('10/04/2026')
                 expect(page.get_by_role('combobox', name='Base do vencimento', exact=True)).to_have_value('receipt')
+                assert page.request.get(scope+'/documents?year=2026').json() == before_cancel_docs
+                assert page.request.get(scope+'/titles').json() == before_cancel_titles
         confirm.click()
         page.get_by_role('dialog').get_by_role('button', name='Importar registros', exact=True).click()
         expect(page.get_by_role('button', name='Abrir escrituração', exact=True)).to_be_visible()
