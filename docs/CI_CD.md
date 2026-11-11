@@ -86,6 +86,16 @@ O pacote de fontes lê somente blobs rastreados no commit; arquivos locais, cred
 
 As seis imagens pertencem a `ghcr.io/codisplanfiscalai/escritura-integrada` e aos sufixos `-base`, `-redis`, `-postgres`, `-mysql` e `-minio`. O app usa a SemVer; base/serviços usam versões e identificadores derivados do conteúdo e dos upstreams fixados no catálogo. A imagem principal e o Windows compartilham as versões do backend no `docker/runtime.lock`. A segunda instalação de dependências de teste/desktop usa constraints sem hashes derivadas desse lock, preservando marcadores específicos do Windows.
 
+### Promoção separada dos aliases GHCR
+
+O workflow `image-aliases.yml` promove apenas os aliases da aplicação: `develop` recebe pré-release da branch `develop`; `latest` recebe somente versão estável da `main`. O script recusa misturar esses canais. Os cinco serviços/base auxiliares e as tags SemVer permanecem intactos.
+
+Para uma promoção, atualize o plano correspondente `.github/ghcr-aliases-develop.json` ou `.github/ghcr-aliases-latest.json` na branch operacional `ops/ghcr-aliases`, com versão, SHA de origem, digest e ID da execução original da release. Um push que altera um desses planos inicia o workflow. A execução manual também fica disponível depois que o workflow existir na branch padrão, sempre selecionando a branch operacional. Mudar somente código/testes do fluxo não inicia promoção automaticamente.
+
+Antes de escrever no registro, o fluxo exige a release publicada com marcador da mesma versão/SHA/execução, a tag Git e o head de origem correspondentes, todos os gates originais aprovados (incluindo ambas as arquiteturas macOS), a tag OCI versionada com o digest esperado e pull com labels/ID/plataforma corretos. Um plano operacional superado por novo commit também é recusado. Usa a mesma trava `escritura-release-mutations` da publicação e o token temporário de Actions com `packages: write`, sem criar credenciais persistentes.
+
+O PUT no Registry v2 copia os bytes originais do manifesto, preservando o digest. Cada alias registra digest anterior, estado da escrita, confirmação remota, consulta anônima e pull real. A operação é idempotente quando o alias já está correto. Os dois aliases são trabalhos independentes, não uma transação atômica; os relatórios `ghcr-alias-promotion-develop` e `ghcr-alias-promotion-latest` permitem conferir falha ou publicação parcial antes de repetir. Não há reconstrução, incremento de versão, merge em main/develop ou mudança de assets da release neste fluxo.
+
 A publicação autenticada no GHCR não muda automaticamente a visibilidade de um package. `public_pullable=false` não invalida um binário ou uma imagem autenticada já conferida: o manifest registra a condição e o deploy orienta autenticação, ajuste de visibilidade pelo proprietário ou uso do bundle offline. Não há chamada de API inventada para tornar packages públicos.
 
 O backend permanece em SQLite. Redis, PostgreSQL, MySQL e MinIO são perfis opcionais de infraestrutura, com testes de inicialização e credenciais; ativá-los não implementa integração nem migra o banco da aplicação. Os gates de distribuição também não homologam regras fiscais, declarações SPED ou integração Prosoft. O README e a documentação funcional delimitam essas capacidades.

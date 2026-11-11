@@ -46,6 +46,19 @@ O Compose da raiz equivale ao de produção e exige `ESCRITURA_IMAGE`. Para part
 
 ## GHCR público ou autenticado
 
+### Tags versionadas e aliases
+
+A imagem da aplicação também pode ser promovida para dois aliases móveis:
+
+- `ghcr.io/codisplanfiscalai/escritura-integrada:develop`: pré-release aprovada da branch `develop`.
+- `ghcr.io/codisplanfiscalai/escritura-integrada:latest`: versão estável aprovada da branch `main`. Nunca recebe pré-release.
+
+Esses aliases são promovidos por um fluxo separado, após a release ter concluído todos os testes. O fluxo copia exatamente o manifesto publicado por digest, sem reconstruir a aplicação, e verifica o manifesto público e o pull de cada alias. A SemVer e o digest continuam sendo as referências recomendadas para atualizações controladas e rollback. Os pacotes Compose da release permanecem fixados na SemVer.
+
+Um alias móvel não atualiza automaticamente um container existente. Após backup consistente e conferência do destino, preserve o projeto/volume e execute `docker compose pull app` seguido de `docker compose up -d app`. O Compose usa `pull_policy: missing`, portanto `up` sozinho pode continuar usando uma imagem já baixada.
+
+Se aparecer `manifest unknown`, confira `docker compose config --images`: o resultado mostra a referência realmente usada, inclusive variáveis do terminal que prevalecem sobre o `.env`. Use uma SemVer publicada ou um alias cuja promoção já tenha concluído. Tags Docker não têm o prefixo `v` das tags Git estáveis. Não use literalmente `SUBSTITUA_PELA_TAG_DA_RELEASE` e não remova volumes para corrigir uma referência de imagem.
+
 Uma publicação bem-sucedida e um pull anônimo são verificações diferentes. O [GitHub documenta](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry) a publicação, a autenticação e os metadados de vínculo ao repositório. A [visibilidade do pacote](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility) pode exigir alteração por um administrador nas configurações do pacote, mesmo quando o repositório de fontes é público.
 
 O manifesto registra `public_pullable` para cada imagem. A sonda anônima consulta o manifesto no Registry v2 sem usar o token do workflow. O pipeline também executa pull autenticado por digest, conferência do ID e smoke das imagens. Uma sonda anônima negativa não cancela o bundle offline nem afirma que o push falhou.
