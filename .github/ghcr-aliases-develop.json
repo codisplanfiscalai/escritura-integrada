@@ -1,10 +1,12 @@
 {
   "schema_version": 1,
-  "request_id": "channels-20261111-2",
+  "request_id": "develop-0.8.0-dev.22",
   "repository": "codisplanfiscalai/escritura-integrada",
-  "version": "0.8.0-dev.19",
-  "source_sha": "5947dfde5d975bcd42f892907b1e678aee648760",
-  "digest": "sha256:42ec53a82f05718ac3441b03d9473d11f79d9c83f6ea56f5e2e15007a5c565f6",
-  "release_run_id": 42935465795,
-  "aliases": ["develop"]
+  "version": "0.8.0-dev.22",
+  "source_sha": "420d35a4cf4b0e259c75a3d2822c36861b10e283",
+  "digest": "sha256:7e681712285d39a9116803eec805cfd7cb4375a6de4220db2d401331091f3d3e",
+  "release_run_id": 43017869682,
+  "aliases": [
+    "develop"
+  ]
 }

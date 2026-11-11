@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        alias: [develop, latest]
+        alias: [develop]
     permissions:
       contents: read
       actions: read
@@ -37,11 +37,47 @@ jobs:
           python-version: '3.12'
       - name: Testar guardas e publicação parcial
         run: python -m unittest discover -s tests -p test_image_aliases.py -v
+      - name: Conferir main e latest antes da promoção
+        id: invariants_before
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          from scripts.ci.github_api import GitHub
+          from scripts.ci.image_aliases import Registry
+
+          gh = GitHub()
+          if gh.commit_sha(gh.ref('heads/main')) != '2ab5d4ea49858b1f9e8716fe46bb478e2d848c88':
+              raise RuntimeError('main mudou; promoção develop bloqueada.')
+          registry = Registry()
+          registry.authenticate()
+          if registry.manifest('latest')['digest'] != 'sha256:1c3dc4deb644ac735fa5c49d3d8ca7e410143659a7cb51a2acb2fa0e64e66c59':
+              raise RuntimeError('latest mudou; esperado o digest estável da main.')
+          print('main e latest preservados.')
+          PY
       - name: Copiar manifesto aprovado e conferir pulls
         env:
           GH_TOKEN: ${{ github.token }}
           GHCR_ACTOR: ${{ github.actor }}
         run: python -m scripts.ci.image_aliases --plan .github/ghcr-aliases-${{ matrix.alias }}.json --output artifacts/image-aliases.json
+      - name: Conferir main e latest após a tentativa
+        if: always() && steps.invariants_before.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          from scripts.ci.github_api import GitHub
+          from scripts.ci.image_aliases import Registry
+
+          gh = GitHub()
+          if gh.commit_sha(gh.ref('heads/main')) != '2ab5d4ea49858b1f9e8716fe46bb478e2d848c88':
+              raise RuntimeError('main mudou; promoção develop bloqueada.')
+          registry = Registry()
+          registry.authenticate()
+          if registry.manifest('latest')['digest'] != 'sha256:1c3dc4deb644ac735fa5c49d3d8ca7e410143659a7cb51a2acb2fa0e64e66c59':
+              raise RuntimeError('latest mudou; esperado o digest estável da main.')
+          print('main e latest preservados.')
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
