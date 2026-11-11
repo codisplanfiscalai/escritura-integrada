@@ -188,24 +188,41 @@ def main():
                         page.get_by_role('button',name='Cadastrar exercício',exact=True).click()
                         expect(page.locator('.month-card')).to_have_count(12)
                         expect(page.get_by_label('Exercício do módulo')).to_have_value('2028')
+                        def select_month(card, label, period):
+                            with page.expect_response(lambda r: r.url.endswith('/api/context') and r.request.method=='POST') as selected:
+                                card.get_by_role('button',name=label,exact=True).click()
+                            assert selected.value.ok,selected.value.text()
+                            assert selected.value.json()['period']==period
+                            expect(page.locator('#active-period')).to_have_value(period[:4])
+                            # Context activation also refreshes locks after the POST.
+                            # Wait for its real busy state, not an arbitrary delay.
+                            expect(page.locator('#active-period')).to_be_enabled()
+                            expect(card.get_by_role('button',name='Selecionada',exact=True)).to_be_enabled()
+                            selected_session=page.request.get(url+'/api/session').json()
+                            assert selected_session['period']==period and selected_session['active_company_id']==cid
+                            assert selected_session['module']=='fiscal'
                         january=page.locator('.month-card').filter(has=page.get_by_role('heading',name='Janeiro',exact=True))
-                        january.get_by_role('button',name='Selecionar / consultar',exact=True).click()
-                        expect(page.locator('#active-period')).to_have_value('2028')
+                        select_month(january,'Selecionar / consultar','2028-01')
                         january.get_by_role('button',name='Fechar',exact=True).click()
                         page.get_by_label('Justificativa *',exact=True).fill('Conferência anual sintética')
                         page.get_by_role('button',name='Confirmar fechamento',exact=True).click()
                         expect(january.get_by_text('Bloqueada',exact=True)).to_be_visible()
                         shot('competencias-1440.png')
                         assert page.request.get(url+f'/api/companies/{cid}/periods?period=2028-01').json()['accounting']['closed'] is False
-                        january.get_by_role('button',name='Selecionada',exact=True).click()
+                        select_month(january,'Selecionada','2028-01')
+                        expect(january.get_by_text('Bloqueada',exact=True)).to_be_visible()
                         january.get_by_role('button',name='Reabrir',exact=True).click()
-                        page.get_by_label('Justificativa *',exact=True).fill('Revisão sintética autorizada')
-                        page.get_by_role('button',name='Confirmar reabertura',exact=True).click()
+                        reopen=page.get_by_role('dialog',name='Reabrir competência',exact=True)
+                        expect(reopen).to_be_visible()
+                        reopen.get_by_label('Justificativa *',exact=True).fill('Revisão sintética autorizada')
+                        with page.expect_response(lambda r: '/periods/reopen' in r.url and r.request.method=='POST') as reopened:
+                            reopen.get_by_role('button',name='Confirmar reabertura',exact=True).click()
+                        assert reopened.value.ok,reopened.value.text()
+                        expect(reopen).to_have_count(0)
                         expect(january.get_by_text('Aberta',exact=True)).to_be_visible()
                         page.get_by_label('Exercício do módulo').select_option('2026')
                         november=page.locator('.month-card').filter(has=page.get_by_role('heading',name='Novembro',exact=True))
-                        november.get_by_role('button',name='Selecionar / consultar',exact=True).click()
-                        expect(page.locator('#active-period')).to_have_value('2026')
+                        select_month(november,'Selecionar / consultar','2026-11')
                         check('Exercício 2028 com 12 meses, seleção, fechamento/reabertura justificados e independência contábil')
                         # Group and user administration through the actual UI.
                         nav('Grupos de usuários')
