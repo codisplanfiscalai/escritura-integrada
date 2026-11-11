@@ -1,6 +1,6 @@
 """Browser acceptance of complete fiscal source details; disposable synthetic DB only."""
 from pathlib import Path
-import json, os, socket, subprocess, sys, tempfile, time, traceback, urllib.request
+import json, os, re, socket, subprocess, sys, tempfile, time, traceback, urllib.request
 from playwright.sync_api import sync_playwright, expect
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
@@ -76,8 +76,10 @@ def main():
                         fields.fill('vUnTrib');expect(modal.get_by_text('400.0000000000',exact=True)).to_be_visible()
                         page.screenshot(path=str(OUT/'xml-source.png'),full_page=True)
                         modal.get_by_role('button',name='Itens e tributos',exact=True).click()
-                        modal.locator('summary').filter(has_text='Item 1').click()
-                        expect(modal.get_by_text('400.0000000000',exact=True).first).to_be_visible()
+                        item=modal.locator('.fiscal-xml-details > details > summary').filter(has_text=re.compile(r'^Item 1 ·'))
+                        expect(item).to_have_count(1)
+                        item.click()
+                        expect(modal.locator('.fiscal-xml-details').get_by_text('400.0000000000',exact=True).first).to_be_visible()
                         modal.get_by_role('button',name='Cancelar',exact=True).click()
                         expect(page.get_by_role('dialog')).to_have_count(0)
                         report['checks'].append('Complete XML and item detail retain lexical precision; closing read-only consultation causes no save/discard prompt')
@@ -119,8 +121,10 @@ def main():
                         modal.locator('summary').filter(has_text=f"Documento {doc['number']}").click()
                         modal.get_by_role('button',name='Consultar XML original e detalhes completos',exact=True).click()
                         expect(modal.get_by_text('Origem preservada na importação.',exact=True)).to_be_visible()
-                        modal.locator('summary').filter(has_text='Item 1').click()
-                        expect(modal.get_by_text('400.0000000000',exact=True).first).to_be_visible()
+                        item=modal.locator('.fiscal-xml-details > details > summary').filter(has_text=re.compile(r'^Item 1 ·'))
+                        expect(item).to_have_count(1)
+                        item.click()
+                        expect(modal.locator('.fiscal-xml-details').get_by_text('400.0000000000',exact=True).first).to_be_visible()
                         page.screenshot(path=str(OUT/'product-history.png'),full_page=True)
                         modal.get_by_role('button',name='Fechar',exact=True).click()
                         expect(page.get_by_role('dialog')).to_have_count(0)
