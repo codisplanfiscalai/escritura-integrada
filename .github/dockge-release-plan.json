@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "repository": "codisplanfiscalai/escritura-integrada",
+  "releases": [
+    {
+      "id": 439163428,
+      "tag": "v0.7.3",
+      "version": "0.7.3",
+      "source_sha": "2ab5d4ea49858b1f9e8716fe46bb478e2d848c88",
+      "assets": [
+        {
+          "id": 727580069,
+          "name": "EscrituraIntegrada-0.7.3-develop-deploy.zip",
+          "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/v0.7.3/EscrituraIntegrada-0.7.3-develop-deploy.zip",
+          "sha256": "d375135feffda0398d6932c275c809302844203b2bdc7af7f49e6d9003d087af",
+          "size": 15134,
+          "environment": "develop"
+        },
+        {
+          "id": 727590319,
+          "name": "EscrituraIntegrada-0.7.3-production-deploy.zip",
+          "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/v0.7.3/EscrituraIntegrada-0.7.3-production-deploy.zip",
+          "sha256": "f41af94c5a0688918d79ae0fb8570f9016469b8b733512870f61759bbe76c1df",
+          "size": 15186,
+          "environment": "production"
+        }
+      ]
+    },
+    {
+      "id": 437255150,
+      "tag": "develop",
+      "version": "0.8.0-dev.19",
+      "source_sha": "5947dfde5d975bcd42f892907b1e678aee648760",
+      "assets": [
+        {
+          "id": 733664382,
+          "name": "EscrituraIntegrada-0.8.0-dev.19-develop-deploy.zip",
+          "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.19-develop-deploy.zip",
+          "sha256": "f57e0a892945f0ab2e8fbf2071bac2b2ce896da8bd2adbe5f48ab1991c9e9d1b",
+          "size": 15273,
+          "environment": "develop"
+        },
+        {
+          "id": 733667341,
+          "name": "EscrituraIntegrada-0.8.0-dev.19-production-deploy.zip",
+          "url": "https://github.com/codisplanfiscalai/escritura-integrada/releases/download/develop/EscrituraIntegrada-0.8.0-dev.19-production-deploy.zip",
+          "sha256": "8ad5ab90436a7ef544f90c113784e37938d26fb152c271d518acc1511ff9d295",
+          "size": 15327,
+          "environment": "production"
+        }
+      ]
+    }
+  ]
+}
