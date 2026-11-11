@@ -123,10 +123,17 @@ def main():
                         return payload
 
                     def confirm(delete=False):
+                        action = dialog.get_by_label(re.compile(r'^Operação')).input_value()
+                        assert delete == (action == 'delete')
+                        labels = {'update': 'Aplicar alteração', 'review': 'Marcar selecionados como conferidos',
+                                  'book': 'Escriturar selecionados'}
+                        button = dialog.get_by_role('button', name=re.compile(r'^Excluir definitivamente') if delete else labels[action], exact=not delete)
+                        expect(button).to_be_enabled()
                         with page.expect_response(lambda r: '/bulk-operations/confirm' in r.url and r.request.method == 'POST') as result:
-                            dialog.get_by_role('button', name=re.compile(r'^Excluir definitivamente') if delete else 'Confirmar operação', exact=not delete).click()
+                            button.click()
                         assert result.value.ok, result.value.text()
                         assert result.value.json()['completed']
+                        assert result.value.json()['action'] == action
                         expect(dialog).to_have_count(0)
                         expect(page.get_by_role('button', name='Operar selecionados', exact=True)).to_be_disabled()
 
