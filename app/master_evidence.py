@@ -94,8 +94,10 @@ def master_evidence(core, cid, kind, item_id, *, offset=0, limit=25):
             # Candidate narrowing only. The full CPF/CNPJ is checked below.
             sql = 'SELECT * FROM documents WHERE company_id=? AND extra_json LIKE ? ORDER BY issue_date DESC,id DESC'
             parameters = (cid, '%' + master['tax_id'] + '%')
+        from .fiscal_series import settings
+        digits=settings(conn,cid)["digits"]
         for row in conn.execute(sql, parameters):
-            doc = core._document_values(row)
+            doc = core._document_values(row,digits)
             summary = {k: doc.get(k) for k in ('id', 'number', 'series', 'model', 'issue_date', 'posting_date', 'key', 'direction', 'source', 'source_hash')}
             entries = []
             if kind in {'product', 'service'}:

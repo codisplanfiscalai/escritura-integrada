@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reactive, ref, nextTick, effectScope } from 'vue';
-import { COMPETENCE_MONTHS, normalizeContextPreferences, suggestedDateRange, useSuggestedDateRange, readContextPreferences, writeContextPreferences } from '../src/lib/context-preferences.js';
+import { COMPETENCE_MONTHS, normalizeContextPreferences, suggestedDateRange, useSuggestedDateRange, useSuggestedMonth, useSuggestedCompetence, useSuggestedDate, readContextPreferences, writeContextPreferences } from '../src/lib/context-preferences.js';
 
 test('competências de 01 a 12 e ano opcional sem valores inválidos', () => {
   assert.deepEqual(COMPETENCE_MONTHS.map(m => m.value), Array.from({length: 12}, (_, i) => String(i + 1).padStart(2, '0')));
@@ -53,4 +53,24 @@ test('sugestão preenche período, mantém edição manual e não altera compet�
     state.contextPreferences.month = '02'; state.period = '2025-11'; await nextTick();
     assert.deepEqual([start.value, end.value], ['2025-02-01', '2025-02-28']);
   } finally {scope.stop();}
+});
+
+test('monthly defaults honor fixed month, keep edits and clear when company is removed',()=>{
+ const state=reactive({companyId:1,period:'2026-11',contextPreferences:{month:'09'}}),month=ref(''),annual=ref(''),competence=ref(''),date=ref(''),scope=effectScope();
+ scope.run(()=>{useSuggestedMonth(state,month);useSuggestedMonth(state,annual,false);useSuggestedCompetence(state,competence);useSuggestedDate(state,date);});
+ try{
+  assert.deepEqual([month.value,annual.value,competence.value,date.value],['09','09','2026-09','2026-09-01']);
+  month.value='07';competence.value='2026-07';date.value='2026-07-12';state.contextPreferences.month='10';
+  assert.deepEqual([month.value,annual.value,competence.value,date.value],['07','10','2026-07','2026-07-12']);
+  month.value='';state.contextPreferences.month='12';assert.equal(month.value,'','manual empty filter stays empty');
+  state.companyId=2;assert.equal(month.value,'12');assert.equal(competence.value,'2026-12');
+  state.contextPreferences.month='';assert.equal(month.value,'11');assert.equal(annual.value,'');
+  state.companyId=null;assert.deepEqual([month.value,annual.value,competence.value,date.value],['','','','']);
+  state.companyId=1;state.period='2027-01';assert.equal(competence.value,'2027-01');assert.equal(state.period,'2027-01');
+ }finally{scope.stop();}
+});
+test('manually cleared date range survives new suggestions and navigation',()=>{
+ const state=reactive({companyId:1,period:'2026-11',contextPreferences:{month:'09'}}),start=ref(''),end=ref(''),scope=effectScope();
+ scope.run(()=>useSuggestedDateRange(state,start,end));
+ try{start.value='';end.value='';state.contextPreferences.month='08';state.tab='dashboard';assert.deepEqual([start.value,end.value],['','']);state.period='2027-01';assert.deepEqual([start.value,end.value],['2027-08-01','2027-08-31']);}finally{scope.stop();}
 });

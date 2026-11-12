@@ -41,7 +41,9 @@ class FiscalReportsMixin:
         cancelled_only = status == 'cancelled'
         if kind in {'fiscal-entries','fiscal-outputs'}:direction='incoming' if kind=='fiscal-entries' else 'outgoing';status='booked'
         with self.db.read(snapshot=True) as conn:
-            company=company_row(conn,cid);docs=[self._document_values(r) for r in conn.execute('SELECT * FROM documents WHERE company_id=? AND posting_date BETWEEN ? AND ? ORDER BY posting_date,id',(cid,start,end))]
+            from .fiscal_series import settings
+            digits=settings(conn,cid)["digits"]
+            company=company_row(conn,cid);docs=[self._document_values(r,digits) for r in conn.execute('SELECT * FROM documents WHERE company_id=? AND posting_date BETWEEN ? AND ? ORDER BY posting_date,id',(cid,start,end))]
             query=query.casefold().strip()
             docs=[d for d in docs if (not status or d['status']==status or status=='cancelled' and d.get('book_cancellation')) and (not cancelled_only or d.get('book_cancellation')) and (not direction or d['direction']==direction) and (not query or query in f"{d['number']} {d['partner_name']} {d['partner_tax_id']} {d['key']}".casefold())]
             analytical_book=kind in {'fiscal-entries','fiscal-outputs'}
@@ -172,4 +174,4 @@ class FiscalReportsMixin:
                         'payable_cents':r['payable_cents'],'carry_credit_cents':r['carry_credit_cents'],'responsible':r['created_by'],'reason':r['reason']})
                 totals={'finalized_assessments':len(rows)};note='Livro auxiliar de memórias conferidas e finalizadas por tributo. O intervalo considera as competências mensais das datas inicial e final, inclusive. Saldos de tributos diferentes não são somados nem compensados. Cada linha permite consultar a memória de origem.'
             if (cfop or ncm) and kind not in {'fiscal-items','fiscal-classifications','fiscal-operations','fiscal-entries','fiscal-outputs'}:note+=' CFOP/NCM selecionam documentos que contenham a classificação; os valores documentais permanecem integrais, sem rateio pelos itens selecionados.'
-            return {'kind':kind,'title':FISCAL_REPORTS[kind],'company_id':cid,'company_name':company['name'],'company_code':company['prosoft_code'] or company['code'],'company_tax_id':company['tax_id'],'company_ie':company['ie'],'start':start,'end':end,'rows':rows,**({'document_headers':document_headers,'row_scope':'analytical_posting_lines','analytical_version':1} if analytical_book else {}),'totals':totals,'scope_note':note,'filters':{'query':query,'status':'cancelled' if cancelled_only else status,'direction':direction,'cfop':cfop,'ncm':ncm}}
+            return {'series_digits':digits,'kind':kind,'title':FISCAL_REPORTS[kind],'company_id':cid,'company_name':company['name'],'company_code':company['prosoft_code'] or company['code'],'company_tax_id':company['tax_id'],'company_ie':company['ie'],'start':start,'end':end,'rows':rows,**({'document_headers':document_headers,'row_scope':'analytical_posting_lines','analytical_version':1} if analytical_book else {}),'totals':totals,'scope_note':note,'filters':{'query':query,'status':'cancelled' if cancelled_only else status,'direction':direction,'cfop':cfop,'ncm':ncm}}

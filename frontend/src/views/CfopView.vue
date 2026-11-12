@@ -1,11 +1,12 @@
 <script setup>
+import {useSuggestedDate} from '../lib/context-preferences.js';
 import {ref,watch,computed,onUnmounted,defineAsyncComponent} from 'vue';
 import {api,scope,state,company,useResource,can,allowedApi,ask,notify,changed} from '../lib/workspace';
 import {date as displayDate} from '../lib/format';
 const CfopSourcePanel=defineAsyncComponent(()=>import('../components/CfopSourcePanel.vue'));
 import FiscalLibraryPanel from '../components/FiscalLibraryPanel.vue';
 import Icon from '../components/Icon.vue';import BaseModal from '../components/BaseModal.vue';import DateInput from '../components/DateInput.vue';import CfopInput from '../components/CfopInput.vue';
-const tab=ref('table'),query=ref(''),direction=ref(''),asOf=ref(state.period+'-01'),page=ref(1),busy=ref(false),error=ref(''),detail=ref(null),mapping=ref(null),catalog=ref(null);let baseline='';
+const tab=ref('table'),query=ref(''),direction=ref(''),asOf=ref(state.period+'-01'),page=ref(1),busy=ref(false),error=ref(''),detail=ref(null),mapping=ref(null),catalog=ref(null);let baseline='';useSuggestedDate(state,asOf);
 const settings=ref(null),fallbackCatalog=ref([]),catalogVersion=ref(''),excludedScenarios=ref([]);
 const destinations=[['resale','Revenda'],['industrialization','Industrialização'],['consumption','Uso e consumo'],['fixed_asset','Ativo imobilizado'],['other','Outra destinação']];
 async function editSettings(){busy.value=true;error.value='';try{const [saved,catalog]=await Promise.all([api(scope('/fiscal-import-settings')),api(scope('/fiscal-import-settings/catalog'))]);settings.value={...saved,fallback_mappings:(saved.fallback_mappings||[]).map(r=>({...r}))};fallbackCatalog.value=catalog.rows||[];catalogVersion.value=catalog.version||'';excludedScenarios.value=catalog.excluded_scenarios||[];baseline=JSON.stringify(settings.value);state.editor={name:'Padrões de compras',companyId:state.companyId};}catch(e){error.value=e.message}finally{busy.value=false}}

@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS audit (
 );
 CREATE INDEX IF NOT EXISTS idx_journals_period ON journals(company_id,period,date);
 CREATE INDEX IF NOT EXISTS idx_lines_account ON journal_lines(company_id,account_id,journal_id);
+CREATE INDEX IF NOT EXISTS idx_documents_series_identity ON documents(company_id,direction,model,number);
 CREATE INDEX IF NOT EXISTS idx_documents_period ON documents(company_id,period,status);
 CREATE INDEX IF NOT EXISTS idx_titles_due ON titles(company_id,due_date);
 CREATE INDEX IF NOT EXISTS idx_bank_date ON bank_transactions(company_id,date);

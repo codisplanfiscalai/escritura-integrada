@@ -11,6 +11,9 @@ def eligibility(conn,cid,module,day,year):
         return {'status':'blocked','reason':e.detail,'code':e.code,'period':str(day or '')[:7]}
 
 def classify(conn,cid,parsed,year):
+    from .fiscal_series import settings,presentation
+    digits=settings(conn,cid)["digits"]
+    for row in parsed.get("documents",[]):row.update(presentation(row,digits))
     for kind,module,field in [('documents','fiscal','posting_date'),('transactions','financial','date')]:
         for index,row in enumerate(parsed.get(kind,[])):
             row['_selection']=f'{kind}:{index}'

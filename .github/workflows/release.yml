@@ -71,7 +71,7 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.needs_release == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
@@ -114,6 +114,39 @@ jobs:
       - name: Validar guias fixas, navegação e fechamento confirmado
         if: success() || failure()
         run: python scripts/browser_workspace_tabs.py
+      - name: Validar contexto, competência e rolagem no Chromium
+        if: success() || failure()
+        run: python scripts/browser_workspace_context.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: browser-workspace-context
+          path: artifacts/browser-workspace-context/
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: error
+      - name: Validar prévia e preparação da apuração no Chromium
+        if: success() || failure()
+        run: python scripts/browser_assessments.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: browser-assessments
+          path: artifacts/browser-assessments/
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: error
+      - name: Validar parâmetro e correção explícita de séries no Chromium
+        if: success() || failure()
+        run: python scripts/browser_fiscal_series.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: browser-fiscal-series
+          path: artifacts/browser-fiscal-series/
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: error
       - name: Validar desempenho e paginação no Chromium
         if: success() || failure()
         run: python scripts/browser_performance.py

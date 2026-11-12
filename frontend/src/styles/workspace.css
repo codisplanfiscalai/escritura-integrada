@@ -24,3 +24,12 @@ a.button[aria-busy="true"]::after{content:' · preparando…';font-size:.85em}
 .tabs-scroll-button:hover:not(:disabled){background:#e7eff3;border-color:#d8e4ea}
 .tabs-scroll-button:disabled{color:#b3c2ca;opacity:.5;cursor:default}
 .workspace-tab button:focus-visible,.tabs-scroll-button:focus-visible{outline:2px solid #377d8e;outline-offset:-3px;border-radius:4px}
+
+/* Keep navigation scrollable without widening the sidebar. */
+.sidebar nav{scrollbar-width:thin;scrollbar-color:#b6c6ce transparent}
+.sidebar nav::-webkit-scrollbar{width:6px;height:6px}
+.sidebar nav::-webkit-scrollbar-track{background:transparent}
+.sidebar nav::-webkit-scrollbar-thumb{background:#b6c6ce;border-radius:6px}
+.sidebar nav:hover::-webkit-scrollbar-thumb,.sidebar nav:focus-within::-webkit-scrollbar-thumb{background:#7d98a7}
+.sidebar nav:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+@media(forced-colors:active){.sidebar nav{scrollbar-color:auto}.sidebar nav::-webkit-scrollbar-thumb{background:ButtonText}}

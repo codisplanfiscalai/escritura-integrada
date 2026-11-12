@@ -3,11 +3,15 @@ import { computed, ref, onMounted, onUnmounted } from 'vue';
 import BaseModal from './BaseModal.vue';
 import Icon from './Icon.vue';
 import { state, company, activate, applyWorkspaceContext, setContextPreferences, notify, navigate, moduleNames } from '../lib/workspace';
+import { matchingCompanies, locateCompany } from '../lib/company-selection.js';
 import { taxId } from '../lib/format';
 import { COMPETENCE_MONTHS, validContextYear } from '../lib/context-preferences.js';
 
+const search = ref(''), clearing = ref(false);
+const activeYear = computed(() => state.companyId ? state.period.slice(0, 4) : '');
+const matches = computed(() => matchingCompanies(state.companies || [], search.value));
 const show = ref(false), draft = ref({ companyId: '', year: '', month: '' }), error = ref('');
-const locked = computed(() => state.contextBusy || !!state.editor || !!state.confirm);
+const locked = computed(() => clearing.value || state.contextBusy || !!state.editor || !!state.confirm);
 const fixed = computed(() => Boolean(state.contextPreferences.year || state.contextPreferences.month));
 function open() {
   if (locked.value) {
@@ -17,14 +21,28 @@ function open() {
   if (show.value) return;
   draft.value = { companyId: state.companyId || '', ...state.contextPreferences };
   error.value = '';
+  search.value = '';
   show.value = true;
 }
 function close() { if (!state.contextBusy) show.value = false; }
 function keyboard(event) {
-  if (event.key !== 'F8' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat || !state.session?.authenticated) return;
+  if (!['F8', 'F9'].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat || !state.session?.authenticated) return;
   event.preventDefault();
   if (typeof document !== 'undefined' && document.querySelector('.modal-dialog') && !show.value) return;
-  open();
+  if (event.key === 'F9') { if (!show.value) void clearContext(); } else open();
+}
+function locate() {
+  const found = locateCompany(state.companies || [], search.value);
+  if (found) { draft.value.companyId = found.id; error.value = ''; }
+  else error.value = matches.value.length ? 'Selecione uma das empresas encontradas.' : 'Nenhuma empresa encontrada.';
+}
+async function clearContext() {
+  if (locked.value || show.value) return;
+  clearing.value = true;
+  try {
+    if (await applyWorkspaceContext({companyId:'',year:'',month:''})) notify('Empresa, ano e competência removidos do contexto. Os dados foram preservados.');
+  } catch (e) { notify(e.message, 'error'); }
+  finally { clearing.value = false; }
 }
 onMounted(() => window.addEventListener('keydown', keyboard));
 onUnmounted(() => window.removeEventListener('keydown', keyboard));
@@ -54,7 +72,7 @@ async function changeYear(event) {
       }
     } catch (e) { notify(e.message, 'error'); }
   }
-  event.target.value = state.period.slice(0, 4);
+  event.target.value = activeYear.value;
 }
 </script>
 
@@ -72,19 +90,23 @@ async function changeYear(event) {
   </div>
   <div class="period-picker">
     <label for="active-period">{{moduleNames[state.module]}} · EXERCÍCIO</label>
-    <input id="active-period" type="text" inputmode="numeric" maxlength="4" placeholder="AAAA" :value="state.period.slice(0, 4)" :disabled="!state.companyId || locked" @change="changeYear"/>
+    <input id="active-period" type="text" inputmode="numeric" maxlength="4" placeholder="AAAA" :value="activeYear" :disabled="!state.companyId || locked" @change="changeYear"/>
     <button v-if="state.module !== 'auditor'" class="text-button" :disabled="locked || !state.companyId" @click="navigate(state.module === 'fiscal' ? 'periods' : state.module + '-periods')">Exercícios / meses</button>
   </div>
   <button class="button outline small context-button" :class="{ 'context-fixed': fixed }" :disabled="locked" aria-keyshortcuts="F8" aria-label="Fixar empresa, ano e competência (F8)" title="Fixar ou limpar empresa, ano e competência (F8)" @click="open">
     <Icon name="calendar" :size="15"/><span>Fixar contexto</span><kbd>F8</kbd>
   </button>
+  <button class="button outline small context-button" :disabled="locked || show || (!state.companyId && !fixed)" aria-keyshortcuts="F9" aria-label="Limpar empresa, ano e competência (F9)" title="Limpar empresa, ano e competência (F9)" @click="clearContext"><span>Limpar contexto</span><kbd>F9</kbd></button>
   <BaseModal v-if="show" title="Empresa, ano e competência" subtitle="Escolha o contexto de trabalho. A competência apenas sugere o intervalo nas telas de período." narrow @close="close">
     <p v-if="error" class="message error" role="alert">{{error}}</p>
     <form id="workspace-context-form" class="context-form" @submit.prevent="save">
+      <label>Buscar empresa por código, nome ou CNPJ<input v-model="search" type="search" :disabled="state.contextBusy" autofocus @keydown.enter.prevent="locate"/></label>
+      <button type="button" class="text-button" :disabled="!search || state.contextBusy" @click="locate">Localizar empresa</button>
       <label>Empresa
-        <select v-model="draft.companyId" :disabled="state.contextBusy" autofocus>
+        <select v-model="draft.companyId" :disabled="state.contextBusy">
           <option value="">Sem empresa selecionada</option>
-          <option v-for="c in state.companies" :key="c.id" :value="c.id">{{c.code}} · {{c.trade_name || c.name}}</option>
+          <option v-if="draft.companyId && !matches.some(c => c.id === Number(draft.companyId))" :value="draft.companyId">Empresa selecionada · {{draft.companyId}}</option>
+          <option v-for="c in matches" :key="c.id" :value="c.id">{{c.code}} · {{c.trade_name || c.name}}</option>
         </select>
       </label>
       <button type="button" class="text-button" :disabled="!draft.companyId || state.contextBusy" @click="draft.companyId = ''">Limpar empresa</button>

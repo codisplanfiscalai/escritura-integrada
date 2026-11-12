@@ -126,7 +126,7 @@ class FinanceMixin:
         if original['reversed_by']:
             raise DomainError('Lançamento de origem já estornado. Confira o vínculo.',409)
         lines=[{'account_id':x['account_id'],'debit':decimal_text(x['credit_cents']),
-                'credit':decimal_text(x['debit_cents']),'cost_center_id':x['cost_center_id']} for x in original['lines']]
+                'credit':decimal_text(x['debit_cents']),'cost_center_id':x['cost_center_id'],'participant_id':x.get('participant_id')} for x in original['lines']]
         return self._create_journal(conn,cid,{'date':day,'document':original['document'],'history':reason,'idempotency_key':key,'lines':lines},actor,reversal_of=jid)
 
     def reverse_settlement(self,cid,item_id,payload,actor):

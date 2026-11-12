@@ -13,6 +13,7 @@ test('catálogo contextual é importado explicitamente, preserva edição e regi
  const source=await readFile(new URL('../src/views/CfopView.vue',import.meta.url),'utf8');
  const {descriptor}=parse(source);
  let code=compileScript(descriptor,{id:'cfop-settings-test'}).content.replace(/from ['"]vue['"]/g,`from '${vueUrl}'`).replace(/import (\w+) from ['"][^'"]+\.vue['"];?/g,'const $1={};').replace(/from ['"]\.\.\/lib\/workspace['"]/g,`from '${mock}'`).replace(/from ['"]\.\.\/lib\/format['"]/g,`from '${new URL('../src/lib/format.js',import.meta.url).href}'`);
+ code=code.replace("from '../lib/context-preferences.js'",`from '${new URL('../src/lib/context-preferences.js',import.meta.url).href}'`);
  const component=(await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default;
  let view;const setup=component.setup;component.setup=(props,context)=>{view=setup(props,context);return ()=>null;};
  const renderer=createRenderer({createComment:()=>({}),insert:()=>{},remove:()=>{},parentNode:()=>null,nextSibling:()=>null}),app=renderer.createApp(component);app.mount({});

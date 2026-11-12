@@ -1,3 +1,4 @@
+from .fiscal_series import find_document
 """Explicit, atomic XML billing import. Never creates payments or settlements."""
 from decimal import Decimal
 from .core import DomainError, digest, ensure_open, iso_date, money
@@ -76,7 +77,7 @@ class ImportPayablesMixin:
                 existing = self._document(conn, cid, doc['id'])
             else:
                 from .fiscal_import import original_business_key
-                match = conn.execute('SELECT id FROM documents WHERE company_id=? AND business_key=?', (cid, original_business_key(doc))).fetchone()
+                match = find_document(conn,cid,doc)
                 if match: existing = self._document(conn, cid, match['id'])
             if existing:
                 legacy_enrichment = (doc.get('_billing_enriched') and 'billing' not in existing and
@@ -196,7 +197,7 @@ class ImportPayablesMixin:
                      'override_reason': override_reason, 'installments': [row]}
             plan.update(installments=[row], terms=terms)
             from .fiscal_import import original_business_key
-            found = conn.execute('SELECT id FROM documents WHERE company_id=? AND business_key=?', (cid, original_business_key(doc))).fetchone()
+            found = find_document(conn,cid,doc)
             if found:
                 old = self._document(conn, cid, found['id'])
                 if (old.get('billing') or {}).get('present') or old.get('invoices'):
