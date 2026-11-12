@@ -13,6 +13,7 @@ import re
 import secrets
 import sqlite3
 import time
+import unicodedata
 import uuid
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
@@ -368,14 +369,46 @@ class Core:
             ("5", "3.1.01.001", "Receitas operacionais", "credit"), ("6", "4.1.01.001", "Despesas operacionais", "debit")]:
             conn.execute("INSERT INTO accounts(company_id,access_code,classifier,name,nature,analytical,requires_cost_center) VALUES(?,?,?,?,?,1,0)", (cid, code, classifier, name, nature))
 
-    def accounts(self, cid):
-        with self.db.read() as conn:
+    def accounts(self, cid, page=None, per_page=50, search=''):
+        """Read only the requested rows without allocating shared account IDs.
+
+        Omitting page preserves the legacy array contract used by account
+        selectors and exports. Count and page use the same read snapshot.
+        """
+        per_page = integer(per_page, 'Itens por página')
+        if per_page > 5000:
+            raise DomainError('Itens por página deve estar entre 1 e 5000.')
+        offset = 0
+        if page is not None:
+            page = integer(page, 'Página')
+            offset = (page - 1) * per_page
+            if offset > 2**63 - 1:
+                raise DomainError('Página excede o limite suportado.')
+        def normalize(value):
+            return ''.join(char for char in unicodedata.normalize('NFD', value).casefold()
+                           if not unicodedata.combining(char))
+        query = normalize(text(search, 'Pesquisa', False, 200))
+        with self.db.read(snapshot=True) as conn:
             company_row(conn, cid)
-            rows = [dict(r) for r in conn.execute("SELECT * FROM effective_accounts WHERE company_id=? ORDER BY classifier,access_code", (cid,))]
+            where, params = 'company_id=?', [cid]
+            if query:
+                conn.create_function('account_search', 1, normalize, deterministic=True)
+                # instr is a literal substring match: %, _ and backslash are
+                # ordinary characters, not LIKE wildcards or an SQL fragment.
+                where += " AND instr(account_search(access_code||' '||classifier||' '||name),?)>0"
+                params.append(query)
+            total = None
+            if page is not None:
+                total = conn.execute('SELECT COUNT(*) FROM effective_accounts WHERE ' + where, params).fetchone()[0]
+            sql = 'SELECT * FROM effective_accounts WHERE ' + where + ' ORDER BY classifier,access_code'
+            if page is not None:
+                sql += ' LIMIT ? OFFSET ?'
+                params.extend((per_page, offset))
+            rows = [dict(r) for r in conn.execute(sql, params)]
             for row in rows:
                 for flag in ("analytical", "requires_cost_center", "active"):
                     row[flag] = bool(row[flag])
-            return rows
+            return rows if page is None else {'items': rows, 'total': total, 'page': page, 'per_page': per_page}
 
     def save_account(self, cid, payload, actor, item_id=None):
         with self.db.transaction() as conn:

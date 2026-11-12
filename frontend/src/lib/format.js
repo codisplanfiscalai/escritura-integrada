@@ -1,5 +1,7 @@
-export const money = (cents = 0) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(cents || 0) / 100);
-export const number = (n = 0) => new Intl.NumberFormat('pt-BR').format(n);
+const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const numberFormatter = new Intl.NumberFormat('pt-BR');
+export const money = (cents = 0) => currencyFormatter.format(Number(cents || 0) / 100);
+export const number = (n = 0) => numberFormatter.format(n);
 export const date = value => value ? String(value).slice(0, 10).split('-').reverse().join('/') : '—';
 export const dateTime = value => value ? new Date(value).toLocaleString('pt-BR') : '—';
 export function amount(value) {

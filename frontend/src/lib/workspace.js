@@ -43,14 +43,13 @@ export async function loadCompanies() { state.companies = rows(await api('/compa
 export async function refreshLocks() {
   if (!state.companyId) { state.locks = {}; state.yearLocks = {}; return; }
   const cid = state.companyId, p = state.period;
-  try {
-    const d=await api(scope(`/periods?period=${p}`,cid));
-    if(cid===state.companyId&&p===state.period)state.locks=d;
-  }catch{state.locks={};}
   const all={};
-  await Promise.all(['fiscal','accounting','financial','social'].filter(m=>can(m+'.periods')).map(async m=>{
-    try{const d=await api(scope(`/exercises?module=${m}&year=${p.slice(0,4)}`,cid));all[m]=Object.fromEntries(d.months.map(x=>[x.period,x]));}catch{all[m]={};}
-  }));
+  await Promise.all([
+    (async()=>{try{const d=await api(scope(`/periods?period=${p}`,cid));if(cid===state.companyId&&p===state.period)state.locks=d;}catch{if(cid===state.companyId&&p===state.period)state.locks={};}})(),
+    ...['fiscal','accounting','financial','social'].filter(m=>can(m+'.periods')).map(async m=>{
+      try{const d=await api(scope(`/exercises?module=${m}&year=${p.slice(0,4)}`,cid));all[m]=Object.fromEntries(d.months.map(x=>[x.period,x]));}catch{all[m]={};}
+    })
+  ]);
   if(cid===state.companyId&&p===state.period)state.yearLocks=all;
 }
 export async function activate(id, period = undefined, module = undefined, { useFixedYear = true, year = undefined } = {}) {
@@ -83,16 +82,25 @@ export function changed() { state.refresh++; refreshLocks(); }
 export const ask = options => new Promise(resolve => { state.confirm = { title: 'Confirmar ação', confirmLabel: 'Confirmar', ...options, resolve }; });
 export function answer(value) { const c = state.confirm; state.confirm = null; c?.resolve(value); }
 export function useResource(load, initial = []) {
-  const data = ref(initial), loading = ref(false), error = ref(''); let seq = 0, alive = true, active = true, activated = false;
+  const data = ref(initial), loading = ref(false), error = ref(''); let seq = 0, alive = true, active = true, timer = null;
   async function reload() {
-    if(!active)return;
+    clearTimeout(timer);timer=null;
+    if(!active||state.contextBusy)return;
     const n = ++seq, context = `${state.companyId}:${state.module}:${state.period}`; loading.value = true; error.value = '';
     try { const d = await load(); if (alive && n === seq && context === `${state.companyId}:${state.module}:${state.period}`) data.value = d; }
     catch(e) { if (alive && n === seq && context === `${state.companyId}:${state.module}:${state.period}`) error.value = e.message; }
     finally { if (alive && n === seq) loading.value = false; }
   }
-  watch(() => [state.companyId, state.period, state.refresh, state.module], (next, previous) => { if (!previous || next[0] !== previous[0] || next[1] !== previous[1]) data.value = JSON.parse(JSON.stringify(initial)); reload(); }, { immediate: true });
-  onActivated(()=>{active=true;if(activated)reload();activated=true;}); onDeactivated(()=>{active=false;seq++;}); onUnmounted(() => { alive = false; seq++; });
+  // Defer automatic loads until the outgoing KeepAlive screen has deactivated.
+  function scheduleReload(){clearTimeout(timer);if(!active||!alive)return;loading.value=true;if(state.contextBusy)return;timer=setTimeout(()=>{timer=null;reload();},0);}
+  watch(() => [state.companyId, state.period, state.refresh, state.module, state.contextBusy], (next, previous) => {
+    seq++;
+    if (!previous || next[0] !== previous[0] || next[1] !== previous[1]) data.value = JSON.parse(JSON.stringify(initial));
+    scheduleReload();
+  }, { immediate: true });
+  onActivated(()=>{active=true;scheduleReload();});
+  onDeactivated(()=>{active=false;seq++;clearTimeout(timer);});
+  onUnmounted(() => { alive = false;seq++;clearTimeout(timer); });
   return { data, loading, error, reload };
 }
 

@@ -78,8 +78,23 @@ class GlobalAccountPlansMixin:
             company_row(conn, cid)
             effect(conn, cid, 'accounting.accounts', 'read')
             binding = conn.execute('SELECT * FROM company_account_plan_bindings WHERE company_id=?', (cid,)).fetchone()
-            return {'binding': dict(binding) if binding else None,
-                    'plans': [summary(dict(r)) for r in conn.execute('SELECT * FROM global_account_plans ORDER BY id DESC')]}
+            # The list needs metadata only. Do not transfer original BLOBs or
+            # decode every account in every immutable version into Python.
+            rows = conn.execute('''SELECT p.id,p.name,p.description,p.parent_id,p.filename,
+                p.format,p.sha256,p.created_at,p.created_by,
+                json_extract(p.plan_json,'$.properties') AS properties_json,
+                COUNT(g.id) AS record_count,COUNT(DISTINCT g.classifier) AS classifier_count
+                FROM global_account_plans p
+                LEFT JOIN global_account_entries g ON g.global_plan_id=p.id
+                GROUP BY p.id ORDER BY p.id DESC''')
+            plans = []
+            for row in rows:
+                item = dict(row)
+                item['properties'] = json.loads(item.pop('properties_json'))
+                item['repeated_classifier_records'] = item['record_count'] - item['classifier_count']
+                item['immutable'] = True
+                plans.append(item)
+            return {'binding': dict(binding) if binding else None, 'plans': plans}
 
     def global_account_plan(self, cid, item_id, search='', page=1):
         page = integer(page, 'Página')
