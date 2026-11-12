@@ -3,7 +3,7 @@
   "services": {
     "app": {
       "image": "${ESCRITURA_IMAGE:?Use a imagem publicada ou o pacote de deploy da release}",
-      "pull_policy": "missing",
+      "pull_policy": "always",
       "platform": "linux/amd64",
       "init": true,
       "ports": [

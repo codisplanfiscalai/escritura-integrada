@@ -20,7 +20,7 @@ const selectedModel=computed(()=>selectedModels.value.find(m=>m.id===model.value
 const areaModels=computed(()=>(models.value||[]).filter(m=>m.kind in kinds.value));
 function invalidate(){requests.invalidate();origins.invalidate();busy.value=false;result.value=null;origin.value=null;rowDetails.value=null;preview.value=false;error.value='';page.value=1;}
 onUnmounted(invalidate);onDeactivated(invalidate);
-const {data}=useResource(async()=>{if(!state.companyId)return {accounts:[],centers:[]};const [accounts,centers]=await Promise.all([allowedApi('accounting.accounts',scope('/accounts')),allowedApi('accounting.cost_centers',scope('/cost-centers'))]);return {accounts,centers};},{accounts:[],centers:[]});
+const {data}=useResource(async()=>{if(!state.companyId||props.area!=='accounting')return {accounts:[],centers:[]};const [accounts,centers]=await Promise.all([allowedApi('accounting.accounts',scope('/accounts')),allowedApi('accounting.cost_centers',scope('/cost-centers'))]);return {accounts,centers};},{accounts:[],centers:[]});
 watch(()=>[state.companyId,state.period,props.area],()=>{invalidate();model.value=preferredModel(props.area==='fiscal'?'fiscal-documents':props.area==='financial'?'financial':'trial-balance');status.value='';direction.value='';query.value='';showNumbers.value=false;kind.value=props.area==='fiscal'?'fiscal-documents':props.area==='financial'?'financial':'trial-balance';cfop.value='';ncm.value='';firstPage.value=1;account.value='';center.value='';},{immediate:true});
 useSuggestedDateRange(state,start,end);
 const accounting=computed(()=>['diary','consolidated-diary','ledger','trial-balance','cost-centers','balance-sheet','income-statement'].includes(kind.value));

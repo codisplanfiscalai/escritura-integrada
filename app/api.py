@@ -252,8 +252,8 @@ def create_app(data_dir=None, demo=False):
         return core.update_company(cid, payload, actor(request))
 
     @application.get("/api/companies/{cid}/accounts")
-    def accounts(cid: int):
-        return core.accounts(cid)
+    def accounts(cid: int, page: int | None = None, per_page: int = 50, search: str = ''):
+        return core.accounts(cid, page=page, per_page=per_page, search=search)
 
     @application.post("/api/companies/{cid}/accounts", status_code=201)
     def create_account(cid: int, request: Request, payload: dict[str, Any] = Body(...)):
