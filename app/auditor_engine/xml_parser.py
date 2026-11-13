@@ -215,9 +215,11 @@ def parse_invoice(data:bytes,source_file_id:str,xml_storage_path:str,catalog:Cat
             elif actual_cst!=expected_cst:class_status='DOCUMENT_CST_DIVERGENT'
             else:class_status='DOCUMENT_CCLASS_DIVERGENT'
         evidence={'ncm':ncm,'ex_code':ex_code,'actual_cst':actual_cst,'actual_cclass_trib':actual_cc,'expected_cst':expected_cst,'expected_cclass_trib':expected_cc,'strategy':match.get('strategy'),'parameter_source_row':entry.source_row if entry else None,'catalog_version_id':catalog.version_id}
+        if entry and entry.requires_condition_review:
+            evidence['legal_conditions']=entry.conditions
         if class_status!='MATCH_EXACT':
             sev='high' if 'DIVERGENT' in class_status or class_status in {'PARAMETER_INVALID','AMBIGUOUS_PARAMETERIZATION'} else 'medium'
-            findings.append(finding('NCM-CLASS-001',sev,'ncm_class_trib','Divergência NCM × ClassTrib',f'Situação identificada: {class_status}.',document_ref,nitem,evidence,'Pode comprometer o enquadramento fiscal, a alíquota e a apuração assistida.','Revisar a parametrização e o XML conforme o catálogo vigente.'))
+            findings.append(finding('NCM-CLASS-001',sev,'ncm_class_trib','Conferir condições legais do enquadramento' if class_status=='CONDITION_REVIEW_REQUIRED' else 'Divergência NCM × ClassTrib',f'Situação identificada: {class_status}.',document_ref,nitem,evidence,'Pode comprometer o enquadramento fiscal, a alíquota e a apuração assistida.','Revisar a parametrização e o XML conforme o catálogo vigente.'))
         if has_base_group and not special and abs(base_xml-base_calc)>CENT:
             findings.append(finding('UB16-10-BASE-001','medium','calculation','Conferência assistida da base IBS/CBS','A base diverge da fórmula recuperada UB16-10; confirmar vigência e exceções antes de corrigir.',document_ref,nitem,{'base_xml':str(base_xml),'base_recalculated':str(base_calc),'difference':str(base_xml-base_calc),'components':{k:str(v) for k,v in components.items()}},'Pode alterar os débitos de IBS e CBS.','Reprocessar o cálculo do item e revisar os componentes da base.'))
         if abs(ibs_xml-ibs_calc)>CENT or abs(cbs_xml-cbs_calc)>CENT:

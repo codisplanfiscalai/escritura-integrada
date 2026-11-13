@@ -226,10 +226,10 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     expect(page.get_by_role('dialog')).to_have_count(0,timeout=30000)
     expect(main.get_by_text(re.compile('15638 linhas · 11096 NCMs completos'))).to_be_visible()
     main.get_by_label('Situação',exact=True).select_option('error')
-    expect(main.get_by_text('Página 1 · 6 resultados',exact=True)).to_be_visible()
+    expect(main.get_by_text('Página 1 · 3 resultados',exact=True)).to_be_visible()
     expect(main.get_by_role('button',name='Publicar após revisão',exact=True)).to_be_disabled()
     shot('auditor-catalogos-1440.png')
-    check('Catálogo original: 15.638 linhas recuperadas; seis linhas com erros visíveis; publicação impedida até revisão')
+    check('Catálogo original: 15.638 linhas recuperadas; três linhas com erros visíveis; publicação impedida até revisão')
     import sys
     sys.path.insert(0,str(root/'tests'))
     from auditor_samples import sample_archive

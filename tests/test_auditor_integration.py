@@ -101,12 +101,59 @@ class AuditorIntegrationTests(unittest.TestCase):
             self.assertIn(label,text)
         self.assertGreaterEqual(len(reader.pages),6)
 
+    def test_catalog_discovery_explains_drafts_without_publishing_or_leaking_rules(self):
+        payload={'name':'Histórico original','valid_from':'2026-01-01','valid_to':'2026-12-31'}
+        catalog=self.client.post(self.scope('/auditor/catalogs/reference'),json=payload).json()
+        self.assertEqual([],self.client.get(self.scope('/auditor/available-catalogs')).json())
+        response=self.client.get(self.scope('/auditor/available-catalogs?include_drafts=true'))
+        self.assertEqual(200,response.status_code,response.text)
+        options=response.json();self.assertEqual(1,len(options))
+        self.assertEqual(catalog['id'],options[0]['id'])
+        self.assertEqual('draft',options[0]['state'])
+        self.assertEqual(15638,options[0]['entry_count'])
+        self.assertEqual(4,options[0]['error_count'])
+        for hidden in ('content_json','reference_json','entries','reference','issues'):
+            self.assertNotIn(hidden,options[0])
+        for mode in ('internal','standalone'):
+            with patch.object(self.app.state.auditor,'submit'):
+                r=self.client.post(self.scope('/auditor/jobs'),json={'mode':mode,'start':'2026-01-01','end':'2026-12-31','catalog_id':catalog['id'],'idempotency_key':'draft-'+mode})
+            self.assertNotEqual(201,r.status_code)
+        self.activate(self.b['id'])
+        self.assertEqual([],self.client.get(self.scope('/auditor/available-catalogs?include_drafts=true',self.b['id'])).json())
+
+    def test_verified_reference_revision_preserves_original_and_requires_conditions(self):
+        from app.auditor_engine.catalog import CatalogSnapshot
+        from datetime import date
+        payload={'name':'Original','valid_from':'2026-01-01','valid_to':'2026-12-31'}
+        original=self.client.post(self.scope('/auditor/catalogs/reference'),json=payload).json()
+        iid=original['id']
+        response=self.client.post(self.scope(f'/auditor/catalogs/{iid}/revision'),json=payload|{'name':'Erratas verificadas','apply_verified_errata':True})
+        self.assertEqual(201,response.status_code,response.text)
+        revision=response.json();rid=revision['id']
+        self.assertEqual(0,revision['error_count'])
+        self.assertEqual(15638,revision['entry_count'])
+        self.assertEqual(3,len(revision['reference']['verified_errata']['changes']))
+        self.assertEqual('draft',revision['state'])
+        preserved=self.client.get(self.scope(f'/auditor/catalogs/{iid}')).json()
+        self.assertEqual(original['sha256'],preserved['sha256'])
+        self.assertEqual(4,preserved['error_count'])
+        self.assertEqual(3,self.client.get(self.scope(f'/auditor/catalogs/{iid}/compare/{rid}')).json()['total'])
+        rows=self.client.get(self.scope(f'/auditor/catalogs/{rid}/entries?search=15132120')).json()['rows']
+        self.assertEqual('Redução de 100%',rows[0]['reduction_type'])
+        snapshot=CatalogSnapshot({'sha256':revision['sha256'],'valid_from':'2026-01-01','valid_to':'2026-12-31','entries':rows})
+        self.assertEqual('CONDITION_REVIEW_REQUIRED',snapshot.match('15132120',None,date(2026,9,1))['status'])
+        r=self.client.post(self.scope(f'/auditor/catalogs/{rid}/publish'),json={'version':revision['version'],'reason':'Teste: revisão verificada, condições explícitas'})
+        self.assertEqual(200,r.status_code,r.text)
+        # Applying the errata again must not duplicate conditions or rewrite customized rows.
+        again=self.client.post(self.scope(f'/auditor/catalogs/{rid}/revision'),json=payload|{'apply_verified_errata':True}).json()
+        self.assertEqual([],again['reference']['verified_errata']['changes'])
+
     def test_catalog_original_counts_errors_edit_compare_and_immutable_publication(self):
         payload={'name':'Histórico original','valid_from':'2026-01-01','valid_to':'2026-12-31'}
         r=self.client.post(self.scope('/auditor/catalogs/reference'),json=payload);self.assertEqual(201,r.status_code,r.text)
         catalog=r.json();iid=catalog['id'];self.assertEqual(15638,catalog['entry_count'])
         self.assertEqual(19,len(catalog['reference']['cst']));self.assertEqual(142,len(catalog['reference']['cclass']))
-        errors=self.client.get(self.scope(f'/auditor/catalogs/{iid}/entries?status=error')).json();self.assertEqual(6,errors['total'])
+        errors=self.client.get(self.scope(f'/auditor/catalogs/{iid}/entries?status=error')).json();self.assertEqual(3,errors['total'])
         r=self.client.post(self.scope(f'/auditor/catalogs/{iid}/publish'),json={'version':catalog['version'],'reason':'Teste'});self.assertEqual(422,r.status_code)
         revision=self.client.post(self.scope(f'/auditor/catalogs/{iid}/revision'),json=payload|{'name':'Revisão de teste'}).json();rid=revision['id']
         for row in errors['rows']:
@@ -115,10 +162,13 @@ class AuditorIntegrationTests(unittest.TestCase):
             r=self.client.put(self.scope(f"/auditor/catalogs/{rid}/entries/{row['_index']}"),json={'version':revision['version'],'entry':entry})
             self.assertEqual(200,r.status_code,r.text);revision=r.json()
         self.assertEqual(0,revision['error_count'])
-        comparison=self.client.get(self.scope(f'/auditor/catalogs/{iid}/compare/{rid}')).json();self.assertEqual(6,comparison['total'])
+        comparison=self.client.get(self.scope(f'/auditor/catalogs/{iid}/compare/{rid}')).json();self.assertEqual(3,comparison['total'])
         r=self.client.post(self.scope(f'/auditor/catalogs/{rid}/publish'),json={'version':revision['version'],'reason':'Cenário sintético de teste; não constitui validação normativa'});self.assertEqual(200,r.status_code,r.text)
+        options=self.client.get(self.scope('/auditor/available-catalogs?include_drafts=true')).json()
+        self.assertEqual('published',next(c for c in options if c['id']==rid)['state'])
+        self.assertEqual([rid],[c['id'] for c in self.client.get(self.scope('/auditor/available-catalogs')).json()])
         r=self.client.put(self.scope(f"/auditor/catalogs/{rid}/entries/{errors['rows'][0]['_index']}"),json={'version':revision['version']+1,'entry':entry});self.assertEqual(409,r.status_code)
-        self.assertEqual(6,self.client.get(self.scope(f'/auditor/catalogs/{iid}/entries?status=error')).json()['total'])
+        self.assertEqual(3,self.client.get(self.scope(f'/auditor/catalogs/{iid}/entries?status=error')).json()['total'])
 
     def test_prepared_reports_are_reused_on_first_download_and_preview(self):
         job=self.submit()

@@ -19,6 +19,9 @@ def diagnostics(entries, reference):
     for n, row in enumerate(entries):
         def issue(code, message, severity='error'):
             issues.append({'index': n, 'source_row': row.get('source_row'), 'ncm': row.get('ncm'), 'ex_code': row.get('ex_code'), 'code': code, 'severity': severity, 'message': message})
+        # The audit engine ignores hierarchy headings: they are not tax rules.
+        if row.get('ncm_level') == 'hierarchy':
+            continue
         key = (row.get('ncm'), row.get('ex_code') or '')
         if key in seen and row.get('ncm_level','item') == 'item': issue('PARAMETER_CONFLICT', 'NCM/EX repetido; revise as ocorrências.')
         seen.add(key)
@@ -88,6 +91,9 @@ def revise_catalog(core, cid, payload, actor, iid=None):
             effect(conn, cid, 'auditor.catalogs', 'import')
             entries, reference = load_reference()
             source = 'Auditor Fiscal 1.2.2 / ' + reference['manifest']['version']; source_id = None
+        if payload.get('apply_verified_errata') is True:
+            from .auditor_catalog_corrections import corrected_reference
+            entries, reference = corrected_reference(entries, reference)
         start = iso_date(payload.get('valid_from')); end = iso_date(payload.get('valid_to'))
         if start > end: raise DomainError('Vigência final anterior à inicial.')
         name = text(payload.get('name'), 'Nome da versão', True, 150)
@@ -110,6 +116,7 @@ def edit_entry(core,cid,iid,payload,actor,index=None,delete=False):
             entry = dict(payload.get('entry') or {})
             hierarchy = entry.get('ncm_level') == 'hierarchy'
             for field, pattern in [('ncm',r'[0-9]{2,7}' if hierarchy else r'[0-9]{8}'),('cst',r'[0-9]{3}'),('cclass_trib',r'[0-9]{6}')]:
+                if hierarchy and field in ('cst','cclass_trib') and not entry.get(field): continue
                 if not isinstance(entry.get(field),str) or not re.fullmatch(pattern,entry[field]): raise DomainError('Confira NCM (8 dígitos; 2 a 7 em agrupamentos), CST (3) e cClassTrib (6 dígitos).')
             ex = entry.get('ex_code') or ''
             if not isinstance(ex,str) or (ex and not re.fullmatch(r'[0-9]{1,3}',ex)): raise DomainError('EX inválido.')

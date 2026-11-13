@@ -1,0 +1,40 @@
+{
+  "verified_at": "2026-11-13",
+  "url": "https://dfe-portal.svrs.rs.gov.br/DFE/ClassificacaoTributaria",
+  "html_sha256": "35041545a26179c93e1492d5e7cf8a65e43aa1b8d938e5e8bcc23003b6813e16",
+  "scope": "Extract of three official classifications; not a complete current catalog",
+  "classifications": [
+    {
+      "CodClassTrib": "200003",
+      "Cst": "200",
+      "PercRedIbs": 100.0,
+      "PercRedCbs": 100.0,
+      "DthPublicacao": "2026-06-22T00:00:00",
+      "DthIniVig": "2025-05-05T00:00:00",
+      "DthFimVig": null
+    },
+    {
+      "CodClassTrib": "200035",
+      "Cst": "200",
+      "PercRedIbs": 60.0,
+      "PercRedCbs": 60.0,
+      "DthPublicacao": "2026-06-22T00:00:00",
+      "DthIniVig": "2025-05-05T00:00:00",
+      "DthFimVig": null
+    },
+    {
+      "CodClassTrib": "200038",
+      "Cst": "200",
+      "PercRedIbs": 60.0,
+      "PercRedCbs": 60.0,
+      "DthPublicacao": "2026-06-22T00:00:00",
+      "DthIniVig": "2025-05-05T00:00:00",
+      "DthFimVig": null
+    }
+  ],
+  "law": {
+    "url": "https://www.fazenda.mg.gov.br/export/sites/fazenda/empresas/legislacao_tributaria/leis/2025/lc214_2025.pdf",
+    "sha256": "ec3011d0675aed01f0f8da77d52466b2c5577c641d3a04582b441b020c1b09a6",
+    "description": "LC214/2025 atualizada até LC227/2026; Anexos I item9, VIII item1 e IX item21"
+  }
+}
