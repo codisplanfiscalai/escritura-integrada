@@ -53,6 +53,11 @@ def validate_plan(plan):
 
 
 def check_head(gh, plan, branch, *, context=None):
+    if branch == 'develop':
+        main_sha = gh.commit_sha(gh.ref('heads/main'))
+        main = release_version(gh.file('VERSION', main_sha).strip()).without_suffix()
+        if release_version(plan['version']).core <= main.core:
+            raise RuntimeError('Ciclo develop encerrado pela main; promoção bloqueada.')
     if context is not None:
         context.check_head(gh, plan, branch)
         return

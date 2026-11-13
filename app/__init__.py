@@ -1,3 +1,3 @@
 """Escritura Integrada — implementação nova, independente das referências."""
 
-__version__ = "0.8.1-dev.28"
+__version__ = "0.9.0-dev.0"
