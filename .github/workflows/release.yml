@@ -409,6 +409,50 @@ jobs:
           retention-days: 30
           overwrite: true
 
+  promote-latest:
+    name: Promover alias latest após publicação estável
+    needs: [prepare, linux, windows, macos, docker, publish]
+    if: github.ref == 'refs/heads/main' && needs.prepare.outputs.branch == 'main' && needs.prepare.outputs.needs_release == 'true' && needs.prepare.result == 'success' && needs.linux.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' && needs.docker.result == 'success' && needs.publish.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+    concurrency:
+      group: escritura-release-mutations
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-plan
+          path: build
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: publication-reports
+          path: artifacts
+      - name: Promover somente latest sem reconstruir imagens
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GHCR_ACTOR: ${{ github.actor }}
+        run: python -m scripts.ci.latest_alias --ci-plan build/ci-plan.json --images artifacts/images-published.json --publication artifacts/publication.json --receipts artifacts/release --output artifacts/latest-alias.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: latest-alias-report
+          path: artifacts/latest-alias.json
+          retention-days: 30
+          overwrite: true
+          if-no-files-found: error
+
   promote-develop:
     name: Promover alias develop após publicação
     needs: [prepare, linux, windows, macos, docker, publish]
@@ -455,8 +499,8 @@ jobs:
 
   sync-develop:
     name: Integrar main e disparar próxima pré-release
-    needs: [prepare, publish]
-    if: always() && needs.prepare.outputs.proceed == 'true' && needs.prepare.outputs.branch == 'main' && (needs.publish.result == 'success' || needs.prepare.outputs.already_released == 'true')
+    needs: [prepare, publish, promote-latest]
+    if: always() && needs.prepare.outputs.proceed == 'true' && needs.prepare.outputs.branch == 'main' && ((needs.publish.result == 'success' && needs.promote-latest.result == 'success') || needs.prepare.outputs.already_released == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
