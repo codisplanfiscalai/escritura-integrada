@@ -1,4 +1,5 @@
 <script setup>
+import FiscalSeriesSettings from '../components/FiscalSeriesSettings.vue';
 import FiscalLibraryPanel from '../components/FiscalLibraryPanel.vue';
 import DateInput from '../components/DateInput.vue';
 import {ref,computed,watch,onUnmounted} from 'vue';
@@ -94,6 +95,7 @@ onUnmounted(()=>{requestSequence++;releaseEditor();});
       <button v-if="section!=='audit'" class="button primary" :disabled="loading||busy||!!loadError" v-allow="[section==='catalogs'?'fiscal.masters':'fiscal.parameters','create']" @click="newRecord"><Icon name="plus"/>{{section==='catalogs'?`Novo ${kindInfo.singular}`:section==='rules'?'Nova regra':'Novo modelo'}}</button>
       <button v-else class="button outline" :disabled="loading||busy" @click="reload"><Icon :name="loading?'loading':'refresh'"/>Atualizar histórico</button>
     </header>
+    <FiscalSeriesSettings v-if="section==='rules'"/>
     <FiscalLibraryPanel v-if="section==='rules'||section==='templates'" mode="patterns"/>
     <FiscalLibraryPanel v-if="section==='catalogs'" mode="catalogs" initial-kind="service"/>
     <div class="segmented settings-tabs" role="tablist" aria-label="Seções de parametrização">

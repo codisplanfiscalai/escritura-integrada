@@ -1,3 +1,4 @@
+from .fiscal_series import find_document
 """Atomic reclassification of existing imported documents, without replaying inserts."""
 from copy import deepcopy
 import json
@@ -53,8 +54,7 @@ class ImportReprocessingMixin:
         existing, blocked = {}, {}
         for index, raw in enumerate(parsed['documents']):
             key = valid[index]
-            row = conn.execute('SELECT * FROM documents WHERE company_id=? AND business_key=?',
-                               (cid, original_business_key(raw))).fetchone()
+            row = find_document(conn,cid,raw)
             if row is None:
                 blocked[key] = 'Documento não existe mais ou não foi importado. Não será recriado.'
                 continue
@@ -179,7 +179,7 @@ class ImportReprocessingMixin:
         rows = []
         for index, raw in enumerate(parsed['documents']):
             key = f'documents:{index}'
-            row = conn.execute('SELECT * FROM documents WHERE company_id=? AND business_key=?', (cid, original_business_key(raw))).fetchone()
+            row = find_document(conn,cid,raw)
             old = self._document(conn, cid, row['id']) if row else None
             proposed = deepcopy(old or raw)
             reason = ''

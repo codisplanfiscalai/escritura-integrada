@@ -395,7 +395,7 @@ class BulkOperations:
                 conn.execute('UPDATE imports SET confirmation_json=? WHERE id=?', (pack(mark(result)), batch['id']))
         for batch in conn.execute('SELECT id,layout,result_json FROM module_imports WHERE company_id=? AND result_json IS NOT NULL', (cid,)).fetchall():
             result = json.loads(batch['result_json'])
-            if batch['layout'] in {'journals-v1', 'openings-v1'} and {r['id'] for r in result.get('written', [])} & movements.get('journals', set()):
+            if batch['layout'] in {'journals-v1', 'openings-v1', 'journals-v2', 'openings-v2'} and {r['id'] for r in result.get('written', [])} & movements.get('journals', set()):
                 conn.execute('UPDATE module_imports SET result_json=? WHERE id=?', (pack(mark(result)), batch['id']))
 
     def _apply(self, conn, cid, req, rows, actor, reason):

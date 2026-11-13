@@ -39,13 +39,14 @@ test('fixar competência não altera mês operacional; ano opcional e limpeza s�
 
 test('F8 abre seleção; repetir e cancelar preservam contexto; edição e confirmação bloqueiam troca', async()=>{
   const state=reactive({session:{authenticated:true},companyId:1,period:'2026-11',contextPreferences:{year:'',month:'02'},contextBusy:false,editor:null,confirm:null});
-  const operations=[],messages=[];
-  globalThis.__contextTest={state,company:{value:null},activate:async()=>true,applyWorkspaceContext:async value=>{operations.push({...value});return true;},setContextPreferences:()=>{},notify:m=>messages.push(m),navigate:()=>{},moduleNames:{fiscal:'Fiscal'}};
+  const operations=[],messages=[];let rejectClear=false;
+  globalThis.__contextTest={state,company:{value:null},activate:async()=>true,applyWorkspaceContext:async value=>{operations.push({...value});if(rejectClear)throw new Error('Falha sintética');return true;},setContextPreferences:()=>{},notify:m=>messages.push(m),navigate:()=>{},moduleNames:{fiscal:'Fiscal'}};
   const mock=dataUrl('export const {state,company,activate,applyWorkspaceContext,setContextPreferences,notify,navigate,moduleNames}=globalThis.__contextTest;');
   const {descriptor}=parse(await readFile(new URL('../src/components/WorkspaceContext.vue',import.meta.url),'utf8'));
   const code=compileScript(descriptor,{id:'workspace-context-test'}).content
     .replace(/from ['"]vue['"]/g,`from '${vueUrl}'`).replace(/import (\w+) from ['"][^'"]+\.vue['"];?/g,'const $1={};')
     .replace(/from ['"]\.\.\/lib\/workspace['"]/g,`from '${mock}'`)
+    .replace(/from ['"]\.\.\/lib\/company-selection.js['"]/g,`from '${libUrl('company-selection')}'`)
     .replace(/from ['"]\.\.\/lib\/format['"]/g,`from '${libUrl('format')}'`)
     .replace(/from ['"]\.\.\/lib\/context-preferences.js['"]/g,`from '${libUrl('context-preferences')}'`);
   const component=(await import(dataUrl(code))).default;let view;const setup=component.setup;
@@ -59,12 +60,17 @@ test('F8 abre seleção; repetir e cancelar preservam contexto; edição e confi
   try{
     listeners.get('keydown')(event({ctrlKey:true}));assert.equal(view.show.value,false);
     listeners.get('keydown')(event());assert.equal(view.show.value,true);assert.equal(view.draft.value.companyId,1);
+    const countBefore=operations.length;view.keyboard(event({key:'F9'}));assert.equal(operations.length,countBefore);
     view.draft.value.companyId=2;view.draft.value.month='12';listeners.get('keydown')(event({repeat:true}));assert.equal(view.draft.value.companyId,2);
     view.close();assert.equal(view.show.value,false);assert.equal(state.companyId,1);assert.equal(state.contextPreferences.month,'02');
     view.open();assert.equal(view.draft.value.month,'02');view.draft.value.month='03';await view.save();assert.equal(operations.length,1);assert.equal(operations[0].month,'03');assert.equal(view.show.value,false);
     state.editor={name:'Documento'};view.keyboard(event());assert.equal(view.show.value,false);assert.equal(messages.length,2);
     state.editor=null;state.confirm={};view.keyboard(event());assert.equal(view.show.value,false);
     state.confirm=null;state.contextBusy=true;view.keyboard(event());assert.equal(view.show.value,false);
-    state.contextBusy=false;state.session.authenticated=false;view.keyboard(event());assert.equal(view.show.value,false);
+    state.contextBusy=false;assert.equal(view.activeYear.value,'2026');state.companyId=null;assert.equal(view.activeYear.value,'');state.companyId=1;
+    view.keyboard(event({key:'F9',repeat:true}));const beforeClear=operations.length;view.keyboard(event({key:'F9'}));await Promise.resolve();await Promise.resolve();assert.equal(operations.length,beforeClear+1);assert.deepEqual(operations.at(-1),{companyId:'',year:'',month:''});
+    rejectClear=true;await view.clearContext();assert.equal(messages.at(-1),'Falha sintética');assert.equal(view.clearing.value,false);rejectClear=false;
+    globalThis.document.querySelector=()=>({});const blockedCount=operations.length;view.keyboard(event({key:'F9'}));assert.equal(operations.length,blockedCount);globalThis.document.querySelector=()=>null;
+    state.session.authenticated=false;view.keyboard(event());assert.equal(view.show.value,false);
   }finally{app.unmount();assert.equal(listeners.size,0);globalThis.window=originalWindow;globalThis.document=originalDocument;delete globalThis.__contextTest;}
 });

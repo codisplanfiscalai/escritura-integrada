@@ -81,7 +81,9 @@ class ReportsMixin:
                     if r['journal_id'] not in x['journal_ids']:x['journal_ids'].append(r['journal_id'])
                 rows=list(groups.values());note='Consolidação diária por conta e centro dentro da empresa selecionada. Não consolida pessoas jurídicas nem elimina operações intercompanhias.'
             elif kind=='fiscal-book':
-                rows=[{'document_id':r['id'],'date':r['posting_date'],'document':r['number'],'series':r['series'],'model':r['model'],
+                from .fiscal_series import normalize_series,settings
+                digits=settings(conn,cid)['digits']
+                rows=[{'document_id':r['id'],'date':r['posting_date'],'document':r['number'],'series':normalize_series(r['series'],digits),'model':r['model'],
                     'partner_name':r['partner_name'],'direction':r['direction'],'cfop':r['cfop'],'total_cents':r['total_cents'],'status':r['status'],'journal_id':r['journal_id']} for r in conn.execute('SELECT * FROM documents WHERE company_id=? AND posting_date BETWEEN ? AND ? ORDER BY posting_date,id',(cid,start,end))]
                 rows=[r for r in rows if (not status or r['status']==status) and (not direction or r['direction']==direction) and (not query or query in (r['document']+' '+r['partner_name']).casefold())]
                 totals={'total_cents':sum(r['total_cents'] for r in rows),'documents':len(rows)}

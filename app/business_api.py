@@ -137,6 +137,10 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
     @app.get('/api/companies/{cid}/assessments')
     def assessments(cid:int,period:str):return core.assessments(cid,period)
 
+    @app.post('/api/companies/{cid}/assessments/preview')
+    def preview_assessment(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
+        check_period(request,payload.get('period'));return core.preview_assessment(cid,payload)
+
     @app.post('/api/companies/{cid}/assessments')
     def assess(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
         check_period(request,payload.get('period'));return core.assess_tax(cid,payload,actor(request))

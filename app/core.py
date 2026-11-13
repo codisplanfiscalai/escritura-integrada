@@ -5,6 +5,8 @@ uma operação e suas verificações de competência pertencem à mesma transaç
 """
 from __future__ import annotations
 
+from .fiscal_series import normalize_series, settings as series_settings, presentation as series_presentation, business_key as series_business_key, find_document as find_series_document, payload_hash as series_payload_hash, stored_payload_hash
+
 import base64
 import hashlib
 import hmac
@@ -468,7 +470,7 @@ class Core:
         result = select_one(conn, "journals", cid, item_id)
         result.pop("request_hash", None)
         result["status"] = "reversed" if result["reversed_by"] else "posted"
-        result["lines"] = [dict(r) for r in conn.execute("SELECT l.*,a.access_code,a.classifier,a.name AS account_name,c.name AS cost_center_name FROM journal_lines l JOIN effective_accounts a ON a.id=l.account_id LEFT JOIN cost_centers c ON c.id=l.cost_center_id WHERE l.journal_id=? AND l.company_id=? ORDER BY l.position", (item_id, cid))]
+        result["lines"] = [dict(r) for r in conn.execute("SELECT l.*,a.access_code,a.classifier,a.name AS account_name,c.name AS cost_center_name,p.name AS participant_name,p.tax_id AS participant_tax_id FROM journal_lines l JOIN effective_accounts a ON a.id=l.account_id LEFT JOIN cost_centers c ON c.id=l.cost_center_id LEFT JOIN masters p ON p.id=l.participant_id AND p.company_id=l.company_id WHERE l.journal_id=? AND l.company_id=? ORDER BY l.position", (item_id, cid))]
         return result
 
     def journals(self, cid, competence=None):
@@ -502,7 +504,23 @@ class Core:
                     raise DomainError("Centro de custo inativo.")
             if account["requires_cost_center"] and center is None:
                 raise DomainError(f"A conta {account['access_code']} exige centro de custo.")
-            result.append({"account_id": aid, "debit_cents": debit, "credit_cents": credit, "cost_center_id": center})
+            from .journal_participants import participant_policy
+            policy = participant_policy(conn, cid, account)
+            participant = line.get("participant_id")
+            if participant is not None:
+                participant = integer(participant, "Terceiro")
+                party = select_one(conn, "masters", cid, participant)
+                if party['kind'] != 'participant' or (not party['active'] and not allow_inactive):
+                    raise DomainError("Selecione um terceiro ativo desta empresa.")
+                if policy == 'none' and not allow_inactive:
+                    raise DomainError(f"A conta {account['access_code']} não permite terceiro.")
+            elif policy == 'required' and not allow_inactive:
+                raise DomainError(f"A conta {account['access_code']} exige terceiro.")
+            normalized = {"account_id": aid, "debit_cents": debit, "credit_cents": credit, "cost_center_id": center}
+            # Preserve hashes of legacy journals with no third-party dimension.
+            if participant is not None:
+                normalized['participant_id'] = participant
+            result.append(normalized)
         debit, credit = sum(x["debit_cents"] for x in result), sum(x["credit_cents"] for x in result)
         if debit != credit or debit <= 0:
             raise DomainError("Lançamento não balanceado: débitos e créditos devem ser iguais e maiores que zero.", 400, "unbalanced_journal")
@@ -532,7 +550,7 @@ class Core:
         jid = next_movement_id(conn,'journals')
         conn.execute("INSERT INTO journals(id,company_id,number,date,period,document,history,total_cents,idempotency_key,request_hash,reversal_of,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (jid, cid, number, day, day[:7], document, history, total, key, hashed, reversal_of, now(), actor))
         for index, line in enumerate(lines, 1):
-            conn.execute("INSERT INTO journal_lines(company_id,journal_id,position,account_id,debit_cents,credit_cents,cost_center_id) VALUES(?,?,?,?,?,?,?)", (cid, jid, index, line["account_id"], line["debit_cents"], line["credit_cents"], line["cost_center_id"]))
+            conn.execute("INSERT INTO journal_lines(company_id,journal_id,position,account_id,debit_cents,credit_cents,cost_center_id,participant_id) VALUES(?,?,?,?,?,?,?,?)", (cid, jid, index, line["account_id"], line["debit_cents"], line["credit_cents"], line["cost_center_id"], line.get("participant_id")))
         if reversal_of:
             conn.execute("UPDATE journals SET reversed_by=? WHERE id=? AND company_id=?", (jid, reversal_of, cid))
         audit(conn, cid, actor, "reverse" if reversal_of else "post", "journal", jid, {"period": day[:7], "total_cents": total, "reversal_of": reversal_of})
@@ -555,22 +573,22 @@ class Core:
                 raise DomainError("Um estorno não pode ser estornado por esta rotina.", 409, "invalid_reversal")
             if original["reversed_by"]:
                 raise DomainError("O lançamento já possui estorno.", 409, "already_reversed")
-            lines = [{"account_id": x["account_id"], "debit": decimal_text(x["credit_cents"]), "credit": decimal_text(x["debit_cents"]), "cost_center_id": x["cost_center_id"]} for x in original["lines"]]
+            lines = [{"account_id": x["account_id"], "debit": decimal_text(x["credit_cents"]), "credit": decimal_text(x["debit_cents"]), "cost_center_id": x["cost_center_id"], "participant_id": x.get("participant_id")} for x in original["lines"]]
             data = {"date": payload.get("date"), "document": original["document"], "history": f"Estorno do lançamento {original['number']}: {reason}", "idempotency_key": payload.get("idempotency_key") or f"reversal:{item_id}", "lines": lines}
             return self._create_journal(conn, cid, data, actor, reversal_of=item_id)
 
     @staticmethod
-    def _document_values(row):
+    def _document_values(row, digits=3):
         result = dict(row)
         for key in ("taxes", "items", "source"):
             result[key] = json.loads(result.pop(key + "_json"))
         result.update(json.loads(result.pop("extra_json", "{}")))
         result.pop("payload_hash", None)
         result.pop("business_key", None)
-        return result
+        return series_presentation(result, digits)
 
     def _document(self, conn, cid, item_id):
-        result = self._document_values(select_one(conn, "documents", cid, item_id))
+        result = self._document_values(select_one(conn, "documents", cid, item_id), series_settings(conn,cid)["digits"])
         result["sources"] = [{"source_hash": r["source_hash"], "source": json.loads(r["source_json"])} for r in conn.execute("SELECT * FROM document_sources WHERE company_id=? AND document_id=? ORDER BY id", (cid, item_id))]
         return result
 
@@ -582,7 +600,8 @@ class Core:
                 year = integer(year, "Exercício", 1900)
                 if year > 2199: raise DomainError("Exercício inválido.")
                 clause, params = " AND d.period BETWEEN ? AND ?", (cid, f"{year:04d}-01", f"{year:04d}-12")
-            documents = [self._document_values(r) | {"sources": []} for r in conn.execute(
+            digits = series_settings(conn,cid)["digits"]
+            documents = [self._document_values(r,digits) | {"sources": []} for r in conn.execute(
                 "SELECT d.* FROM documents d WHERE d.company_id=?" + clause + " ORDER BY d.posting_date DESC,d.id DESC", params)]
             by_id = {d["id"]: d for d in documents}
             for row in conn.execute("SELECT s.* FROM document_sources s JOIN documents d ON d.company_id=s.company_id AND d.id=s.document_id WHERE d.company_id=?" + clause + " ORDER BY s.id", params):
@@ -597,6 +616,8 @@ class Core:
         if direction not in {"incoming", "outgoing"}:
             raise DomainError("Informe se o documento é de entrada ou saída.")
         values = {k: text(payload.get(k), k, k in {"number", "model", "partner_name"}, 250) for k in ("number", "series", "model", "partner_name", "partner_tax_id", "key", "cfop")}
+        declared_series = text(payload.get("declared_series", values["series"]), "Série de origem", False, 250)
+        values["series"] = normalize_series(values["series"],series_settings(conn,cid)["digits"])
         values.update(direction=direction, issue_date=iso_date(payload.get("issue_date"), "Emissão"), posting_date=iso_date(payload.get("posting_date"), "Escrituração"), total_cents=money(payload.get("total"), "Total"))
         if values["cfop"] and not re.fullmatch(r"\d{4}", values["cfop"]):
             raise DomainError("CFOP deve ter quatro dígitos; sua aplicabilidade exige conferência fiscal.")
@@ -633,14 +654,14 @@ class Core:
             new_issuer = re.sub(r'[.\-/\s]', '', values['partner_tax_id']).upper()
             same_issuer = direction == 'outgoing' or not prior_issuer or not new_issuer or prior_issuer == new_issuer
             if same_issuer and (cancellation or prior):
-                same = cancellation == prior and all(candidate[k] == v for k, v in values.items())
+                same = cancellation == prior and all((canonical(candidate[k]) == canonical(v)) if k == "series" else candidate[k] == v for k, v in values.items())
                 if not same:
                     raise DomainError('Identidade já registrada; o livro não altera documento existente. Confira a origem.', 409, 'document_conflict')
-        business_key = ("key:" + values["key"]) if values["key"] else digest({k: values[k] for k in ("direction", "model", "series", "number", "partner_tax_id", "partner_name", "issue_date")})
-        hashed = digest(values | ({"book_cancellation": cancellation} if cancellation else {}) | {"taxes": json.loads(taxes), "items": document_item_semantics(json.loads(items), bool(source_hash and isinstance(payload.get("issuer"), dict)))})
-        existing = conn.execute("SELECT * FROM documents WHERE company_id=? AND business_key=?", (cid, business_key)).fetchone()
+        business_key = series_business_key(values)
+        hashed = series_payload_hash(values,json.loads(taxes),json.loads(items),{"book_cancellation":cancellation},bool(source_hash and isinstance(payload.get("issuer"),dict)))
+        existing = find_series_document(conn,cid,values)
         if existing:
-            if existing["payload_hash"] != hashed:
+            if stored_payload_hash(existing) != hashed:
                 raise DomainError("Já existe documento com a mesma identidade e conteúdo diferente. Confira antes de escriturar.", 409, "document_conflict")
             conn.execute("INSERT OR IGNORE INTO document_sources(company_id,document_id,source_hash,source_json,created_at) VALUES(?,?,?,?,?)", (cid, existing["id"], source_hash, source, now()))
             result = self._document(conn, cid, existing["id"]) | {"duplicate": True}
@@ -654,6 +675,7 @@ class Core:
             payload = self._import_document_masters(conn, cid, payload, actor)
             items = pack(payload.get('items', []))
         extras = {k: payload[k] for k in ("declared_source", "declared_xml", "declared_document_fields", "declared_protocol", "source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "billing", "receipt_date", "analytics", "raw_fields", "posting_date_proposed", "movement_date", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting", "carrier_id", "master_import_warnings", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review") if k in payload}
+        extras["declared_series"] = declared_series
         if cancellation:
             extras.update(book_cancellation=cancellation, document_state='cancelled', cancellation_evidence='validated_fiscal_book')
         if 'receipt_date' in extras:
@@ -695,6 +717,7 @@ class Core:
                     raise DomainError("Documento escriturado não pode ser editado por esta rotina.", 409, "document_booked")
                 self._validate_booked_edit(conn, cid, old, payload)
             values = {k: text(payload.get(k, old[k]), k, k in {"number", "model", "partner_name"}, 250) for k in ("direction", "number", "series", "model", "partner_name", "partner_tax_id", "key", "cfop")}
+            values["series"] = normalize_series(values["series"],series_settings(conn,cid)["digits"])
             if values["direction"] not in {"incoming", "outgoing"}:
                 raise DomainError("Informe entrada ou saída.")
             if values["cfop"] and not re.fullmatch(r"\d{4}", values["cfop"]):
@@ -710,11 +733,12 @@ class Core:
             items = json_value(payload.get("items", json.loads(old["items_json"])), list, "Itens")
             if old['source_hash'] and hasattr(self, '_preserve_import_item_origins'):
                 items = pack(self._preserve_import_item_origins(json.loads(old['items_json']), json.loads(items)))
-            identity = "key:" + values["key"] if values["key"] else digest({k: values[k] for k in ("direction", "model", "series", "number", "partner_tax_id", "partner_name", "issue_date")})
-            other = conn.execute("SELECT id FROM documents WHERE company_id=? AND business_key=? AND id<>?", (cid, identity, item_id)).fetchone()
+            identity = series_business_key(values)
+            other = find_series_document(conn,cid,values,exclude_id=item_id)
             if other:
                 raise DomainError("Já existe outro documento com essa identidade.", 409, "document_conflict")
             extras = json.loads(old["extra_json"])
+            extras.setdefault("declared_series",old["series"])
             for key in ("participant_id", "establishment_id", "document_category", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review", "receipt_date"):
                 if key in payload:
                     if key in {'fiscal_treatment', 'posting_group_review', 'total_review'} and payload[key] is None:
@@ -723,7 +747,7 @@ class Core:
                         extras[key] = payload[key]
             if 'receipt_date' in extras:
                 extras['receipt_date'] = None if extras['receipt_date'] in (None, '') else iso_date(extras['receipt_date'], 'Chegada efetiva')
-            values.update(payload_hash=digest(values | {"taxes": json.loads(taxes), "items": document_item_semantics(json.loads(items), bool(old["source_hash"] and isinstance(extras.get("issuer"), dict)))}), business_key=identity, period=values["posting_date"][:7], taxes_json=taxes, items_json=items)
+            values.update(payload_hash=series_payload_hash(values,json.loads(taxes),json.loads(items),extras,bool(old["source_hash"] and isinstance(extras.get("issuer"),dict))), business_key=identity, period=values["posting_date"][:7], taxes_json=taxes, items_json=items)
             if old['status'] == 'booked':
                 self._validate_posted_classification(conn, cid, {**extras, **values, 'items': json.loads(items)})
                 if 'import_posting' in extras:

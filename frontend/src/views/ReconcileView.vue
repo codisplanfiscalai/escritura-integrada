@@ -1,4 +1,5 @@
 <script setup>
+import {useSuggestedCompetence} from '../lib/context-preferences.js';
 import { ref, computed, watch, onUnmounted } from 'vue';
 import BankAllocation from '../components/BankAllocation.vue';
 import Icon from '../components/Icon.vue';
@@ -17,7 +18,7 @@ const context = ref({}), transaction = ref(null), form = ref({title_id:'', reaso
 const titleOptions = ref([]), titlesBusy = ref(false), titleError = ref('');
 let baseline = '', suggestionSequence = 0, modalSequence = 0, alive = true;
 
-const competence=ref(state.period);watch(()=>[state.companyId,state.period.slice(0,4)],()=>{competence.value=state.period});
+const competence=ref(state.period);useSuggestedCompetence(state,competence);
 const contextKey = computed(() => `${state.companyId}:${competence.value}`);
 const { data, loading, error: loadError, reload } = useResource(async () => {
   const id = state.companyId, period = competence.value, key = `${id}:${period}`;

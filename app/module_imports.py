@@ -15,6 +15,9 @@ LAYOUTS={
  'titles-v1':{'module':'financial','name':'Títulos e parcelas','fields':['id','kind','description','partner_name','document','issue_date','due_date','amount','installment'],'routine':'financial.titles'},
 }
 
+for base in ('journals', 'openings'):
+    LAYOUTS[base+'-v2'] = dict(LAYOUTS[base+'-v1'], fields=LAYOUTS[base+'-v1']['fields']+['participant_code'])
+
 def parse_csv(raw,layout):
     try:
         source=raw.decode('utf-8-sig')
@@ -68,14 +71,14 @@ class ModuleImportsMixin:
             grouped={};result=[]
             for n,row in enumerate(records,2):
                 key=row.get('id') or row.get('access_code')
-                if layout in {'journals-v1','openings-v1'}:
+                if layout in {'journals-v1','openings-v1','journals-v2','openings-v2'}:
                     group=grouped.setdefault(key,{'rows':[],'source_rows':[]});group['rows'].append(row);group['source_rows'].append(n)
                 else:grouped[str(n)]={'rows':[row],'source_rows':[n]}
             for index,(key,group) in enumerate(grouped.items()):
                 row=group['rows'][0];error=None;data={}
                 conn.execute('SAVEPOINT validate_import')
                 try:
-                    if layout in {'journals-v1','openings-v1'}:
+                    if layout in {'journals-v1','openings-v1','journals-v2','openings-v2'}:
                         if not key:raise DomainError('Informe o ID estável de cada lançamento.')
                         if any(any(r[k]!=row[k] for k in ('date','document','history')) for r in group['rows']):raise DomainError('Partidas do mesmo ID têm cabeçalhos diferentes.')
                         lines=[]
@@ -84,8 +87,12 @@ class ModuleImportsMixin:
                             if not account:raise DomainError('Conta não localizada: '+r['account'])
                             cc=conn.execute('SELECT id FROM cost_centers WHERE company_id=? AND code=?',(cid,r['cost_center'])).fetchone() if r['cost_center'] else None
                             if r['cost_center'] and not cc:raise DomainError('Centro de custo não localizado: '+r['cost_center'])
-                            lines.append({'account_id':account['id'],'debit':r['debit'] or '0','credit':r['credit'] or '0','cost_center_id':cc['id'] if cc else None})
-                        data={'date':iso_date(row['date']),'document':row['document'],'history':('Saldos iniciais: ' if layout=='openings-v1' else '')+row['history'],'lines':lines,'idempotency_key':layout+':'+key}
+                            participant = None
+                            if r.get('participant_code'):
+                                participant = conn.execute("SELECT id FROM masters WHERE company_id=? AND kind='participant' AND code=?", (cid,r['participant_code'])).fetchone()
+                                if not participant:raise DomainError('Terceiro não localizado: '+r['participant_code'])
+                            lines.append({'account_id':account['id'],'debit':r['debit'] or '0','credit':r['credit'] or '0','cost_center_id':cc['id'] if cc else None, 'participant_id':participant['id'] if participant else None})
+                        data={'date':iso_date(row['date']),'document':row['document'],'history':('Saldos iniciais: ' if layout.startswith('openings-') else '')+row['history'],'lines':lines,'idempotency_key':layout.replace('-v2','-v1')+':'+key}
                         self._normalize_lines(conn,cid,lines)
                         if not row['history']:raise DomainError('Informe o histórico.')
                     elif layout=='accounts-v1':

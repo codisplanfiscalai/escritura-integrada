@@ -171,10 +171,16 @@ def route_policy(path, method, query, payload, session):
         return 'fiscal.masters', 'create' if write else 'read', False
     if root == 'cfop-source-loads':
         return 'fiscal.masters', 'read' if tail.endswith('/preview') or not write else 'create', False
+    if root == 'fiscal-series':
+        if tail.endswith('/settings'):return 'fiscal.parameters','edit' if write else 'read',False
+        return 'fiscal.documents','read',False
     if root == 'fiscal-import-settings':
         return 'fiscal.parameters', 'edit' if write else 'read', False
     if root == 'fiscal-import-mappings':
         return 'fiscal.parameters', action, False
+    if root == 'documents' and tail.endswith('/account'):
+        return 'accounting.journals', 'create', False
+    if root == 'journal-participants': return 'accounting.journals', 'read', False
     mapping = {'accounts': 'accounting.accounts', 'cost-centers': 'accounting.cost_centers',
         'journals': 'accounting.journals', 'opening-balances': 'accounting.journals', 'documents': 'fiscal.documents',
         'titles': 'financial.titles', 'settlements': 'financial.settlements', 'renegotiations': 'financial.titles',

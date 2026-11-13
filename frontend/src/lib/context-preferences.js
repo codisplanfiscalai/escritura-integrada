@@ -24,25 +24,33 @@ export function suggestedDateRange(year, month = '') {
   return { start: `${year}-${normalized}-01`, end: `${year}-${normalized}-${lastDay}` };
 }
 
-// KeepAlive navigation and preference changes must not erase a user's custom range.
-// Changing company or operational year still resets the view to its new context.
-export function useSuggestedDateRange(state, start, end) {
+// Suggestions never overwrite a manually changed or cleared filter. Context changes
+// reset it; KeepAlive navigation and refreshes do not. The operational period is read-only.
+export function useSuggestedValues(state, fields, suggest) {
   let previousSuggestion = null;
   return watch(
-    () => [state.companyId, state.period.slice(0, 4), state.contextPreferences?.month || ''],
+    () => [state.companyId, state.period?.slice(0, 4) || '', state.contextPreferences?.month || '', state.period?.slice(5) || ''],
     (next, previous) => {
-      const suggestion = suggestedDateRange(next[1], next[2]);
+      const suggestion = next[0] ? suggest(next[1], next[2], next[3]) : Object.fromEntries(Object.keys(fields).map(key => [key, '']));
       const contextChanged = !previous || next[0] !== previous[0] || next[1] !== previous[1];
-      const untouched = !previousSuggestion ||
-        (start.value === previousSuggestion.start && end.value === previousSuggestion.end);
-      if (contextChanged || untouched || (!start.value && !end.value)) {
-        start.value = suggestion.start;
-        end.value = suggestion.end;
-      }
+      const untouched = !previousSuggestion || Object.keys(fields).every(key => fields[key].value === previousSuggestion[key]);
+      if (contextChanged || untouched) for (const key of Object.keys(fields)) fields[key].value = suggestion[key];
       previousSuggestion = suggestion;
     },
-    { immediate: true },
+    { immediate: true, flush: 'sync' },
   );
+}
+export function useSuggestedDateRange(state, start, end) {
+  return useSuggestedValues(state, {start, end}, (year, month) => suggestedDateRange(year, month));
+}
+export function useSuggestedMonth(state, month, operationalFallback = true) {
+  return useSuggestedValues(state, {month}, (_, fixed, operational) => ({month: fixed || (operationalFallback ? operational : '')}));
+}
+export function useSuggestedCompetence(state, competence) {
+  return useSuggestedValues(state, {competence}, (year, fixed, operational) => ({competence: `${year}-${fixed || operational}`}));
+}
+export function useSuggestedDate(state, date) {
+  return useSuggestedValues(state, {date}, (year, fixed, operational) => ({date: `${year}-${fixed || operational}-01`}));
 }
 
 export function contextPreferenceKey(userId) {

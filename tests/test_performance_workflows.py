@@ -35,5 +35,24 @@ class PerformanceWorkflowTests(unittest.TestCase):
                 self.assertNotIn('artifacts/performance', legacy[0])
 
 
+class RebuiltWorkflowTests(unittest.TestCase):
+    def test_rebuilt_suites_are_blocking_and_upload_in_linux(self):
+        for name in ('ci.yml','release.yml'):
+            workflow=(ROOT/'.github/workflows'/name).read_text()
+            before,rest=workflow.split('\n  linux:\n',1);linux=rest.split('\n  windows:\n',1)[0]
+            self.assertIn('timeout-minutes: 30',linux)
+            steps=re.split(r'(?m)^      - ',linux)[1:]
+            for script,artifact in [('browser_workspace_context.py','browser-workspace-context'),('browser_assessments.py','browser-assessments'),('browser_fiscal_series.py','browser-fiscal-series')]:
+                self.assertNotIn('name: '+artifact+'\n',before)
+                runs=[s for s in steps if 'run: python scripts/'+script+'\n' in s]
+                self.assertEqual(1,len(runs));self.assertIn('if: success() || failure()',runs[0])
+                self.assertNotIn('continue-on-error',runs[0]);self.assertNotIn('|| true',runs[0])
+                uploads=[s for s in steps if 'name: '+artifact+'\n' in s]
+                self.assertEqual(1,len(uploads));self.assertIn('if: always()',uploads[0])
+                self.assertIn('path: artifacts/'+artifact+'/',uploads[0]);self.assertIn('if-no-files-found: error',uploads[0])
+                self.assertLess(steps.index(runs[0]),steps.index(uploads[0]))
+                legacy=[s for s in steps if 'name: browser-evidence\n' in s]
+                self.assertEqual(1,len(legacy));self.assertNotIn('artifacts/'+artifact,legacy[0])
+
 if __name__ == '__main__':
     unittest.main()

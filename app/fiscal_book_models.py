@@ -236,7 +236,7 @@ def fiscal_book_pdf(result, model_id, first_page=1):
             for a,b,value,align in [(358,402,_money(values['value']),'right'),(402,436,row.get('accounting_code',''),'center'),(436,471,row.get('cfop'),'center'),(471,494,'ICMS','center'),(494,503,values['code'],'center'),(503,552,_money(values['operation']),'right'),(552,574,values['rate'],'right'),(574,620,_money(values['tax']),'right')]:cell(a,b,top,value,6,align=align)
             cell(620,804,top,observations,6,align='left')
         else:
-            series=str(row.get('series') or '');series=series.zfill(3) if series.isascii() and series.isdigit() else series
+            series=str(row.get('series') or '');series=series.zfill(result.get('series_digits',3)) if series.isascii() and series.isdigit() else series
             cell(72,99,top,species);cell(99,130,top,series)
             cell(130,168,top,number);cell(168,205,top,number)
             cell(205,218,top,str(row.get('date') or '')[-2:]);cell(218,231,top,row.get('partner_state',''))

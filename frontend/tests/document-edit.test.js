@@ -14,6 +14,7 @@ test('edição de documento com títulos envia somente alterações normalizadas
  const source=await readFile(new URL('../src/views/DocumentsView.vue',import.meta.url),'utf8');
  const {descriptor}=parse(source),require=createRequire(import.meta.url),vueUrl=pathToFileURL(require.resolve('vue/dist/vue.runtime.esm-bundler.js')).href;
  let code=compileScript(descriptor,{id:'document-edit-test'}).content.replace(/from ['"]vue['"]/g,`from '${vueUrl}'`).replace(/import (\w+) from ['"][^'"]+\.vue['"];?/g,'const $1={};').replace(/from ['"]\.\.\/lib\/workspace['"]/g,`from '${mock}'`).replace(/from ['"]\.\.\/lib\/(format|entry-focus)['"]/g,(_,name)=>`from '${new URL(`../src/lib/${name}.js`,import.meta.url).href}'`);
+ code=code.replace("from '../lib/context-preferences.js'",`from '${new URL('../src/lib/context-preferences.js',import.meta.url).href}'`);
  const component=(await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default;
  let view;const setup=component.setup;component.setup=(props,ctx)=>{view=setup(props,ctx);return ()=>null;};
  const app=createRenderer({createComment:()=>({}),insert:()=>{},remove:()=>{},parentNode:()=>null,nextSibling:()=>null}).createApp(component);app.mount({});
@@ -30,6 +31,7 @@ test('edição de documento com títulos envia somente alterações normalizadas
   view.chooseCancellation(false);assert.equal(view.documentSavePayload().book_cancellation,undefined);view.chooseCancellation(true);await view.close();view.open();assert.equal(view.form.value.book_cancellation,undefined,'nova inclusão não herda cancelamento');
   const cancelled={...original,document_state:'cancelled',total_cents:0,book_cancellation:cancelledPayload.book_cancellation};view.open(cancelled);assert.equal(view.locked.value,true);const beforeSave=requests.length;await view.save();assert.equal(requests.length,beforeSave,'registro cancelado não pode ser editado');view.chooseCancellation(false);assert.ok(view.form.value.book_cancellation,'não converte registro existente');
   view.openBook(cancelled);Object.assign(view.booking.value,{generate_titles:true,integrate:true,model_id:1,reason:'Registro da linha cancelada'});await view.confirmBook();const cancelledBooking=requests.at(-1).options.body;assert.equal(cancelledBooking.generate_titles,false);assert.equal(cancelledBooking.lines,undefined);assert.equal(cancelledBooking.model_id,undefined);assert.equal(cancelledBooking.installments,undefined);
+  view.openBook(original);assert.equal(view.booking.value.integrate,true);Object.assign(view.booking.value,{debit_account_id:3,credit_account_id:5});await view.confirmBook();assert.equal(requests.at(-1).url,'/companies/1/documents/51/account');assert.equal(requests.at(-1).options.body.generate_titles,false);assert.equal(requests.at(-1).options.body.lines.length,2);
   assert.equal(view.monthFilter.value,'09','consulta começa na competência ativa');
   const pending={...original,id:52,status:'pending',version:1};
   assert.equal(view.canBook(pending),true);

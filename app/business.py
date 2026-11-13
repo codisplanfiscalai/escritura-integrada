@@ -61,6 +61,64 @@ class BusinessCore(GlobalAccountPlansMixin, FiscalLibraryMixin, ThirdPartiesMixi
         self._validate_document_links(conn,cid,payload)
         return super()._create_document(conn,cid,payload,actor)
 
+    def _document_accounting_lines(self, conn, cid, doc, lines):
+        from .account_refs import resolve_account
+        from .journal_participants import participant_policy
+        if not isinstance(lines, list):
+            raise DomainError('Informe as partidas contábeis.')
+        participant = doc.get('participant_id')
+        if doc['direction'] == 'incoming' and doc.get('partner_tax_id') and not participant:
+            raise DomainError('Vincule explicitamente o fornecedor do documento antes de contabilizar.')
+        result = []
+        for line in lines:
+            if not isinstance(line, dict):
+                raise DomainError('Partida inválida.')
+            line = dict(line)
+            if participant and line.get('participant_id') not in (None, participant):
+                raise DomainError('Terceiro da partida diverge do documento.')
+            account = resolve_account(conn, cid, line.get('account_id'))
+            if participant and participant_policy(conn, cid, account) != 'none':
+                line['participant_id'] = participant
+            result.append(line)
+        return result
+
+    def account_document(self, cid, item_id, payload, actor):
+        from .permissions import effect
+        with self.db.transaction() as conn:
+            effect(conn, cid, 'fiscal.documents', 'read')
+            effect(conn, cid, 'accounting.journals', 'create')
+            scope = 'account-document:' + str(item_id)
+            key, hashed, previous = self._operation(conn, cid, scope, payload)
+            if previous:
+                return previous
+            doc = self._document(conn, cid, item_id)
+            check_version(doc, payload)
+            if doc['status'] != 'booked' or doc.get('book_cancellation') or doc.get('document_state') == 'cancelled':
+                raise DomainError('Contabilização posterior exige documento escriturado e não cancelado.', 409)
+            if doc.get('journal_id'):
+                raise DomainError('Documento já possui lançamento contábil.', 409, 'journal_exists')
+            if any(payload.get(k) for k in ('generate_titles', 'installments', 'use_document_installments')):
+                raise DomainError('Contabilização posterior não cria nem altera títulos.')
+            self._validate_document_links(conn, cid, doc, _existing_document_id=item_id)
+            model_id = payload.get('model_id')
+            if model_id and payload.get('lines'):
+                raise DomainError('Escolha modelo ou partidas, não ambos.')
+            lines = self._model_lines(conn, cid, model_id, doc) if model_id else payload.get('lines')
+            lines = self._document_accounting_lines(conn, cid, doc, lines)
+            _, total = self._normalize_lines(conn, cid, lines)
+            if total != doc['total_cents']:
+                raise DomainError('O valor contabilizado deve corresponder ao total do documento.')
+            reason = text(payload.get('reason') or f"Contabilização do documento {doc['number']}", 'Histórico', True, 1000)
+            journal = self._create_journal(conn, cid, {'date':doc['posting_date'], 'document':doc['number'],
+                'history':reason, 'lines':lines, 'idempotency_key':f'account-document:{item_id}:{key}'}, actor)
+            # Only the accounting association changes. Fiscal version/fingerprints remain intact.
+            conn.execute('UPDATE documents SET journal_id=? WHERE company_id=? AND id=?', (journal['id'], cid, item_id))
+            audit(conn, cid, actor, 'account-after-booking', 'document', item_id,
+                  {'journal_id':journal['id'], 'model_id':model_id, 'reason':reason})
+            result = {'document':self._document(conn, cid, item_id), 'journal':journal}
+            self._record_operation(conn, cid, scope, key, hashed, result)
+            return result
+
     def _book_document(self,conn,cid,item_id,payload,actor):
         doc=self._document(conn,cid,item_id)
         self._validate_document_links(conn,cid,doc,_existing_document_id=item_id)
@@ -76,6 +134,7 @@ class BusinessCore(GlobalAccountPlansMixin, FiscalLibraryMixin, ThirdPartiesMixi
             if payload.get('lines'):raise DomainError('Escolha um modelo ou partidas manuais, sem combinar os dois.')
             effective['lines']=self._model_lines(conn,cid,model_id,doc)
         if effective.get('lines'):
+            effective['lines']=self._document_accounting_lines(conn,cid,doc,effective['lines'])
             _,total=self._normalize_lines(conn,cid,effective['lines'])
             if total!=doc['total_cents']:
                 raise DomainError('O valor contabilizado deve corresponder ao total do documento.')

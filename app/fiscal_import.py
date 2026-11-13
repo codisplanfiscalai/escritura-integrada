@@ -12,7 +12,7 @@ from .tax_ledger import ensure_unfinalized
 
 def original_business_key(document):
     if document.get('key'): return 'key:' + document['key']
-    return digest({k: document.get(k, '') for k in ('direction', 'model', 'series', 'number', 'partner_tax_id', 'partner_name', 'issue_date')})
+    return digest({k: (document.get('declared_series',document.get('series','')) if k == 'series' else document.get(k,'')) for k in ('direction', 'model', 'series', 'number', 'partner_tax_id', 'partner_name', 'issue_date')})
 
 
 def validate_total_review(value):

@@ -4,12 +4,45 @@ from decimal import Decimal, ROUND_HALF_UP
 from .core import (DomainError, audit, digest, ensure_open, integer, money, now, pack, period, select_one, text, company_row)
 
 class TaxAssessmentMixin:
+    def _assessment_inventory(self, conn, cid, competence):
+        return digest([dict(row) for row in conn.execute('SELECT id,version,status FROM documents WHERE company_id=? AND period=? ORDER BY id', (cid, competence))])
+
+    def _assessment_coverage(self, conn, cid, payload):
+        competence = period(payload.get('period'))
+        docs = [self._document_values(r) for r in conn.execute('SELECT * FROM documents WHERE company_id=? AND period=? ORDER BY id', (cid, competence))]
+        booked = [d for d in docs if d['status'] == 'booked' and not d.get('book_cancellation')]
+        included = {}
+        for entry in payload.get('entries', []):
+            did = integer(entry.get('document_id'), 'Documento')
+            included.setdefault(did, []).append(entry.get('item_indices', []))
+        partial = []
+        for d in booked:
+            selections = included.get(d['id'], [])
+            if selections and all(selections) and set().union(*(set(x) for x in selections)) != set(range(len(d['items']))):
+                partial.append(d['id'])
+        return {'fingerprint': self._assessment_inventory(conn, cid, competence),
+                'booked_documents': len(booked), 'included_documents': len(included),
+                'pending_documents': sum(d['status'] != 'booked' for d in docs),
+                'cancelled_documents': sum(bool(d.get('book_cancellation')) for d in docs),
+                'omitted_document_ids': [d['id'] for d in booked if d['id'] not in included],
+                'partial_document_ids': partial}
+
+    def preview_assessment(self, cid, payload):
+        with self.db.read(snapshot=True) as conn:
+            ensure_open(conn, cid, period(payload.get('period')), 'fiscal')
+            from .tax_ledger import ensure_unfinalized
+            ensure_unfinalized(conn, cid, period(payload.get('period')), payload.get('tax', '').lower())
+            snapshot = self._assessment_snapshot(conn, cid, payload)
+            return {'snapshot': snapshot, 'fingerprint': digest(snapshot), 'coverage': self._assessment_coverage(conn, cid, payload)}
+
     def _assessment_snapshot(self,conn,cid,payload):
         competence=period(payload.get('period'));tax=text(payload.get('tax'),'Tributo',True,20).lower()
         if tax not in {'icms','ipi','iss','pis','cofins','ibs','cbs'}:raise DomainError('Tributo não suportado.')
         entries=payload.get('entries',[])
         if not isinstance(entries,list) or len(entries)>1000 or (not entries and payload.get('no_movement_confirmed') is not True):raise DomainError('Inclua bases conferidas ou confirme expressamente a ausência de bases no cenário.')
         company=company_row(conn,cid)
+        if payload.get('coverage_fingerprint') and payload['coverage_fingerprint'] != self._assessment_inventory(conn,cid,competence):
+            raise DomainError('Os documentos da competência mudaram. Gere e confira uma nova prévia.',409,'stale_coverage')
         output=[];seen=set();covered={}
         for entry in entries:
             if not isinstance(entry,dict):raise DomainError('Base fiscal inválida.')
@@ -25,7 +58,7 @@ class TaxAssessmentMixin:
             prior=covered.setdefault((did,effect),set())
             if prior.intersection(marks):raise DomainError('Documento ou item repetido no mesmo efeito tributário; revise as bases.')
             prior.update(marks)
-            if doc['status']!='booked' or doc['period']!=competence:raise DomainError('Use documentos escriturados da competência.')
+            if doc.get('book_cancellation') or doc['status']!='booked' or doc['period']!=competence:raise DomainError('Use documentos escriturados da competência.')
             if rule['tax'].lower()!=tax or rule['status']!='validated' or not rule['active'] or rule['superseded_by']:
                 raise DomainError('Selecione regra vigente, ativa e conferida do tributo.')
             if not rule['valid_from']<=doc['posting_date'] or (rule['valid_to'] and doc['posting_date']>rule['valid_to']):
@@ -73,6 +106,8 @@ class TaxAssessmentMixin:
             ensure_unfinalized(conn,cid,period(payload.get('period')),payload.get('tax','').lower())
             snapshot=self._assessment_snapshot(conn,cid,payload)
             fingerprint=digest(snapshot)
+            if payload.get('preview_fingerprint') and payload['preview_fingerprint'] != fingerprint:
+                raise DomainError('Bases, regras, ajustes ou saldo anterior mudaram. Confira uma nova prévia.',409,'stale_preview')
             item_id=conn.execute('INSERT INTO tax_assessments(company_id,period,tax,source,responsible,snapshot_json,fingerprint,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',
                 (cid,snapshot['period'],snapshot['tax'],source,responsible,pack({'result':snapshot,'request':payload}),fingerprint,now(),actor)).lastrowid
             result={'id':item_id,'snapshot':snapshot,'fingerprint':fingerprint,'source':source,'responsible':responsible}

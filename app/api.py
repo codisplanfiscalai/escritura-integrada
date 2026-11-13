@@ -56,6 +56,8 @@ def create_app(data_dir=None, demo=False):
     register_fiscal_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .account_plan_api import register_account_plan_routes
     register_account_plan_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .fiscal_series_operations import register as register_fiscal_series
+    register_fiscal_series(application,core,actor=lambda request:request.state.session["user"]["username"])
     from .bulk_api import register_bulk_routes
     register_bulk_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .third_party_api import register_third_party_routes
@@ -316,6 +318,16 @@ def create_app(data_dir=None, demo=False):
     def review_document(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
         check_document_period(request, cid, item_id)
         return core.review_document(cid, item_id, payload, actor(request))
+
+    @application.get("/api/companies/{cid}/journal-participants")
+    def journal_participants(cid: int):
+        with core.db.read() as conn:
+            return [dict(r) for r in conn.execute("SELECT id,code,name,tax_id FROM masters WHERE company_id=? AND kind='participant' AND active=1 ORDER BY code,id", (cid,))]
+
+    @application.post("/api/companies/{cid}/documents/{item_id}/account")
+    def account_document(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
+        check_document_period(request, cid, item_id)
+        return core.account_document(cid, item_id, payload, actor(request))
 
     @application.post("/api/companies/{cid}/documents/{item_id}/book")
     def book_document(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
