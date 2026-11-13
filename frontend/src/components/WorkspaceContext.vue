@@ -103,7 +103,7 @@ async function changeYear(event) {
       <label>Buscar empresa por código, nome ou CNPJ<input v-model="search" type="search" :disabled="state.contextBusy" autofocus @keydown.enter.prevent="locate"/></label>
       <button type="button" class="text-button" :disabled="!search || state.contextBusy" @click="locate">Localizar empresa</button>
       <label>Empresa
-        <select v-model="draft.companyId" :disabled="state.contextBusy">
+        <select aria-label="Empresa" v-model="draft.companyId" :disabled="state.contextBusy">
           <option value="">Sem empresa selecionada</option>
           <option v-if="draft.companyId && !matches.some(c => c.id === Number(draft.companyId))" :value="draft.companyId">Empresa selecionada · {{draft.companyId}}</option>
           <option v-for="c in matches" :key="c.id" :value="c.id">{{c.code}} · {{c.trade_name || c.name}}</option>
@@ -116,7 +116,7 @@ async function changeYear(event) {
       <button type="button" class="text-button" :disabled="!draft.year || state.contextBusy" @click="draft.year = ''">Deixar ano sem fixação</button>
       <small>Sem fixação, permanece o exercício escolhido para cada empresa e módulo. Os exercícios cadastrados e seus bloqueios continuam valendo.</small>
       <label>Competência a fixar (opcional)
-        <select v-model="draft.month" :disabled="state.contextBusy">
+        <select aria-label="Competência a fixar (opcional)" v-model="draft.month" :disabled="state.contextBusy">
           <option value="">Competência livre</option>
           <option v-for="month in COMPETENCE_MONTHS" :key="month.value" :value="month.value">{{month.value}} · {{month.label}}</option>
         </select>

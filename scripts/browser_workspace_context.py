@@ -64,7 +64,11 @@ def main():
                         cid=post('/companies',{'code':'00123','name':'Contexto sintético','tax_id':'TEST0001000120','regime':'outros','state':'SP'})['id']
                         year=str(date.today().year);post('/context',{'company_id':cid,'module':'fiscal','period':year+'-09'})
                         for i in range(24):post(f'/companies/{cid}/documents',{'direction':'incoming','number':str(1000+i),'model':'55','series':'1','issue_date':year+'-09-01','posting_date':year+'-09-01','partner_name':'Fornecedor sintético','cfop':'1102','total':'10.00'})
-                        page.reload();page.keyboard.press('F8')
+                        page.reload()
+                        # reload only waits for navigation; session hydration mounts the shortcut listener later.
+                        expect(page.locator('#active-company')).to_have_value(str(cid))
+                        expect(page.get_by_role('button',name='Fixar empresa, ano e competência (F8)',exact=True)).to_be_enabled()
+                        page.keyboard.press('F8')
                         dialog=page.get_by_role('dialog',name='Empresa, ano e competência')
                         expect(dialog).to_be_visible();dialog.get_by_label('Buscar empresa por código, nome ou CNPJ').fill('123');dialog.get_by_role('button',name='Localizar empresa').click()
                         expect(dialog.get_by_label('Empresa',exact=True)).to_have_value(str(cid))

@@ -74,7 +74,7 @@ def run(report,out):
                         dialog.get_by_role('button',name='Fechar',exact=True).click();page.get_by_role('button',name='Configurar série e corrigir existentes').click()
                         report['stage']='discard'
                         dialog.get_by_label('Dígitos mínimos da série').fill('5');dialog.get_by_role('button',name='Fechar',exact=True).click()
-                        question=page.get_by_role('dialog',name='Descartar parâmetro não salvo?');question.get_by_role('button',name='Cancelar',exact=True).click()
+                        question=page.get_by_role('dialog',name='Descartar parâmetro não salvo?');question.get_by_role('button',name='Voltar',exact=True).click()
                         expect(dialog.get_by_label('Dígitos mínimos da série')).to_have_value('5');dialog.get_by_role('button',name='Fechar',exact=True).click();question.get_by_role('button',name='Descartar',exact=True).click();expect(dialog).to_have_count(0)
                         assert not report['console_errors'],report['console_errors'];report['checks'].append('unsaved_cancel_and_discard')
                         page.screenshot(path=str(out/'final.png'),full_page=True)
