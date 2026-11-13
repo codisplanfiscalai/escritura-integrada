@@ -180,3 +180,23 @@ O contexto de build usa allowlist em `.dockerignore`. Pacotes de deploy têm lis
 Referências técnicas: [perfis Compose](https://docs.docker.com/compose/how-tos/profiles/), [interpolação](https://docs.docker.com/reference/compose-file/interpolation/), [serviços e pull policy](https://docs.docker.com/reference/compose-file/services/), [docker image save](https://docs.docker.com/reference/cli/docker/image/save/), [docker image load](https://docs.docker.com/reference/cli/docker/image/load/), [release MinIO utilizado](https://github.com/minio/minio/releases/tag/RELEASE.2025-10-15T17-29-55Z).
 
 A base inclui `libarchive-tools` e `libarchive13` Debian Bookworm `3.6.2-1+deb12u5` para RAR comprimido. A versão vem do [repositório oficial Debian](https://packages.debian.org/bookworm/libarchive-tools) e participa da identificação da imagem base. Novas correções exigem atualizar o Dockerfile e regenerar os manifests.
+
+
+### Aliases GHCR e promoção estável
+
+O job `promote-latest` publica apenas o alias da aplicação `latest`, depois da
+release **main** concluída e dos sete gates aprovados. Ele reutiliza o manifesto
+OCI versionado, sem rebuild, e verifica SHA da main, versão estável, execução,
+assets/checksums, digest e leitura pública. Não altera a branch nem o alias
+`develop`. O job existente `promote-develop` continua restrito à pré-release.
+
+A sincronização automática main → develop aguarda `promote-latest`, evitando
+alterar o snapshot protegido durante a promoção. Uma falha de promoção mantém
+o relatório `latest-alias-report` e impede essa sincronização para uma nova
+release. O re-run do job final confere novamente as provas e não duplica PUT se
+o alias já tiver o digest correto. Não há rollback automático de um PUT com
+resultado incerto; o relatório exige conferência do estado antes de nova ação.
+
+Isso vale para novas releases cujo workflow inclua o job. Releases históricas
+já publicadas não são reconstruídas nem alteradas por esse acréscimo; uma
+recuperação de alias antigo usa o procedimento operacional explícito existente.
