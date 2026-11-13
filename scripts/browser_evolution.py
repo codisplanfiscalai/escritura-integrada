@@ -230,6 +230,16 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     expect(main.get_by_role('button',name='Publicar após revisão',exact=True)).to_be_disabled()
     shot('auditor-catalogos-1440.png')
     check('Catálogo original: 15.638 linhas recuperadas; três linhas com erros visíveis; publicação impedida até revisão')
+    for mode in ('Auditoria da escrituração','Auditoria avulsa'):
+        main.get_by_role('button',name=mode,exact=True).click()
+        expect(main.get_by_text('Catálogo importado não é catálogo ausente.',exact=False)).to_be_visible()
+        draft=main.get_by_label('Catálogo publicado',exact=True).locator('option').filter(has_text='Referência histórica Auditor 1.2.2')
+        expect(draft).to_be_disabled()
+        expect(draft).to_contain_text('4 erros para revisar')
+        main.get_by_role('button',name='Revisar catálogo',exact=True).click()
+        expect(main.get_by_role('button',name='Publicar após revisão',exact=True)).to_be_disabled()
+        expect(main.get_by_text('Este catálogo está salvo como rascunho',exact=False)).to_be_visible()
+    check('Avulsa e escrituração mostram catálogo importado com diagnóstico e navegam à revisão sem publicar')
     import sys
     sys.path.insert(0,str(root/'tests'))
     from auditor_samples import sample_archive
