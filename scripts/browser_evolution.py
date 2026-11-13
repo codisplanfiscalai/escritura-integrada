@@ -234,7 +234,7 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
         main.get_by_role('button',name=mode,exact=True).click()
         expect(main.get_by_text('Catálogo importado não é catálogo ausente.',exact=False)).to_be_visible()
         draft=main.get_by_label('Catálogo publicado',exact=True).locator('option').filter(has_text='Referência histórica Auditor 1.2.2')
-        expect(draft).to_be_disabled()
+        expect(draft).to_have_js_property('disabled',True)
         expect(draft).to_contain_text('4 erros para revisar')
         main.get_by_role('button',name='Revisar catálogo',exact=True).click()
         expect(main.get_by_role('button',name='Publicar após revisão',exact=True)).to_be_disabled()

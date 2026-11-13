@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix='catalog-browser-') as data:
                     main.get_by_role('button',name=mode,exact=True).click()
                     expect(main.get_by_text('Catálogo importado não é catálogo ausente.',exact=False)).to_be_visible()
                     option=main.get_by_label('Catálogo publicado',exact=True).locator('option').filter(has_text='Referência importada')
-                    expect(option).to_be_disabled()
+                    expect(option).to_have_js_property('disabled',True)
                     expect(option).to_contain_text('4 erros para revisar')
                     main.get_by_role('button',name='Revisar catálogo',exact=True).click()
                     expect(main.get_by_role('button',name='Publicar após revisão',exact=True)).to_be_disabled()
