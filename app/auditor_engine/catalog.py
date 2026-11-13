@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import date
 @dataclass(slots=True)
 class ParamEntry:
-    id:str;ncm:str;ex_code:str|None;expected_cst:str|None;expected_cclass_trib:str|None;description:str|None;status:str;validation_issues:list;source_row:int|None;reduction_type:str|None;valid_from:date|None;valid_to:date|None
+    id:str;ncm:str;ex_code:str|None;expected_cst:str|None;expected_cclass_trib:str|None;description:str|None;status:str;validation_issues:list;source_row:int|None;reduction_type:str|None;valid_from:date|None;valid_to:date|None;conditions:object=None;requires_condition_review:bool=False
 class CatalogSnapshot:
     def __init__(self,snapshot=None):
         snapshot=snapshot or {}
@@ -15,7 +15,7 @@ class CatalogSnapshot:
             ex=row.get('ex_code') or None
             if ex and ex.isdigit():ex=ex.zfill(2)
             e=ParamEntry(str(n),row['ncm'],ex,row.get('cst'),row.get('cclass_trib'),row.get('description'), row.get('status','valid'), row.get('validation_issues',[]),row.get('source_row',n),row.get('reduction_type'),
-                         max(date.fromisoformat(row.get('valid_from') or snapshot['valid_from']),date.fromisoformat(snapshot['valid_from'])),min(date.fromisoformat(row.get('valid_to') or snapshot['valid_to']),date.fromisoformat(snapshot['valid_to'])))
+                         max(date.fromisoformat(row.get('valid_from') or snapshot['valid_from']),date.fromisoformat(snapshot['valid_from'])),min(date.fromisoformat(row.get('valid_to') or snapshot['valid_to']),date.fromisoformat(snapshot['valid_to'])),row.get('conditions'),bool(row.get('requires_condition_review')))
             self.by_key.setdefault((e.ncm,e.ex_code),[]).append(e)
     def match(self,ncm:str|None,ex_code:str|None,issued_on:date|None):
         if not ncm:return {'status':'DOCUMENT_NCM_MISSING','entry':None,'strategy':'none'}
@@ -28,4 +28,6 @@ class CatalogSnapshot:
         if not eligible:return {'status':'PARAMETER_OUT_OF_VALIDITY','entry':candidates[0],'strategy':strategy}
         if len(eligible)>1:return {'status':'AMBIGUOUS_PARAMETERIZATION','entry':eligible[0],'strategy':strategy,'candidates':len(eligible)}
         e=eligible[0]
+        if e.status!='error' and e.requires_condition_review:
+            return {'status':'CONDITION_REVIEW_REQUIRED','entry':e,'strategy':strategy}
         return {'status':'PARAMETER_INVALID' if e.status=='error' else 'MATCH','entry':e,'strategy':strategy}

@@ -4,6 +4,7 @@ import re
 from .core import (Core, DomainError, audit, check_version, decimal_text, ensure_open,
                    integer, iso_date, money, now, pack, period, select_one, text)
 from .cadastros import CadastrosMixin
+from .third_parties import ThirdPartiesMixin
 from .finance import FinanceMixin
 from .reconciliation import ReconciliationMixin
 from .reports import ReportsMixin
@@ -16,12 +17,25 @@ from .fiscal_reports import FiscalReportsMixin
 
 from .auditor import AuditorMixin
 from .module_imports import ModuleImportsMixin
+from .cfop import CfopMixin
+from .fiscal_import import FiscalImportMixin
+from .cfop_source import CfopSourceMixin
+from .account_plans import AccountPlansMixin
+from .global_account_plans import GlobalAccountPlansMixin
+from .import_reprocessing import ImportReprocessingMixin
 
-class BusinessCore(AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
-    def _validate_document_links(self,conn,cid,payload):
+from .import_payables import ImportPayablesMixin
+
+from .fiscal_library import FiscalLibraryMixin
+
+class BusinessCore(GlobalAccountPlansMixin, FiscalLibraryMixin, ThirdPartiesMixin, ImportPayablesMixin, ImportReprocessingMixin, AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
+    def _validate_document_links(self,conn,cid,payload,*,_existing_document_id=None):
         for k,kind in [('participant_id','participant'),('establishment_id','establishment')]:
             if payload.get(k):
-                m=self._master(conn,cid,integer(payload[k],k),kind,True)
+                from .third_parties import preserved_document_party
+                mid=integer(payload[k],k)
+                historical=preserved_document_party(conn,cid,mid,_existing_document_id,k)
+                m=self._master(conn,cid,mid,kind,active=historical is None)
                 if kind=='participant' and m['tax_id'] and m['tax_id']!=re.sub(r'[.\-/\s]','',payload.get('partner_tax_id','')).upper():
                     raise DomainError('CPF/CNPJ do documento diverge do participante selecionado.')
         items=payload.get('items',[])
@@ -33,6 +47,8 @@ class BusinessCore(AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalRepor
                 if m['kind'] not in {'product','service'}:raise DomainError('Item deve referenciar um produto ou serviço.')
 
     def create_document(self,cid,payload,actor):
+        payload = dict(payload)
+        payload.pop('import_posting', None)  # Only the immutable import flow may set this provenance.
         with self.db.transaction() as conn:
             if payload.get('idempotency_key'):
                 key,hashed,previous=self._operation(conn,cid,'manual-document',payload)
@@ -45,9 +61,69 @@ class BusinessCore(AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalRepor
         self._validate_document_links(conn,cid,payload)
         return super()._create_document(conn,cid,payload,actor)
 
+    def _document_accounting_lines(self, conn, cid, doc, lines):
+        from .account_refs import resolve_account
+        from .journal_participants import participant_policy
+        if not isinstance(lines, list):
+            raise DomainError('Informe as partidas contábeis.')
+        participant = doc.get('participant_id')
+        if doc['direction'] == 'incoming' and doc.get('partner_tax_id') and not participant:
+            raise DomainError('Vincule explicitamente o fornecedor do documento antes de contabilizar.')
+        result = []
+        for line in lines:
+            if not isinstance(line, dict):
+                raise DomainError('Partida inválida.')
+            line = dict(line)
+            if participant and line.get('participant_id') not in (None, participant):
+                raise DomainError('Terceiro da partida diverge do documento.')
+            account = resolve_account(conn, cid, line.get('account_id'))
+            if participant and participant_policy(conn, cid, account) != 'none':
+                line['participant_id'] = participant
+            result.append(line)
+        return result
+
+    def account_document(self, cid, item_id, payload, actor):
+        from .permissions import effect
+        with self.db.transaction() as conn:
+            effect(conn, cid, 'fiscal.documents', 'read')
+            effect(conn, cid, 'accounting.journals', 'create')
+            scope = 'account-document:' + str(item_id)
+            key, hashed, previous = self._operation(conn, cid, scope, payload)
+            if previous:
+                return previous
+            doc = self._document(conn, cid, item_id)
+            check_version(doc, payload)
+            if doc['status'] != 'booked' or doc.get('book_cancellation') or doc.get('document_state') == 'cancelled':
+                raise DomainError('Contabilização posterior exige documento escriturado e não cancelado.', 409)
+            if doc.get('journal_id'):
+                raise DomainError('Documento já possui lançamento contábil.', 409, 'journal_exists')
+            if any(payload.get(k) for k in ('generate_titles', 'installments', 'use_document_installments')):
+                raise DomainError('Contabilização posterior não cria nem altera títulos.')
+            self._validate_document_links(conn, cid, doc, _existing_document_id=item_id)
+            model_id = payload.get('model_id')
+            if model_id and payload.get('lines'):
+                raise DomainError('Escolha modelo ou partidas, não ambos.')
+            lines = self._model_lines(conn, cid, model_id, doc) if model_id else payload.get('lines')
+            lines = self._document_accounting_lines(conn, cid, doc, lines)
+            _, total = self._normalize_lines(conn, cid, lines)
+            if total != doc['total_cents']:
+                raise DomainError('O valor contabilizado deve corresponder ao total do documento.')
+            reason = text(payload.get('reason') or f"Contabilização do documento {doc['number']}", 'Histórico', True, 1000)
+            journal = self._create_journal(conn, cid, {'date':doc['posting_date'], 'document':doc['number'],
+                'history':reason, 'lines':lines, 'idempotency_key':f'account-document:{item_id}:{key}'}, actor)
+            # Only the accounting association changes. Fiscal version/fingerprints remain intact.
+            conn.execute('UPDATE documents SET journal_id=? WHERE company_id=? AND id=?', (journal['id'], cid, item_id))
+            audit(conn, cid, actor, 'account-after-booking', 'document', item_id,
+                  {'journal_id':journal['id'], 'model_id':model_id, 'reason':reason})
+            result = {'document':self._document(conn, cid, item_id), 'journal':journal}
+            self._record_operation(conn, cid, scope, key, hashed, result)
+            return result
+
     def _book_document(self,conn,cid,item_id,payload,actor):
         doc=self._document(conn,cid,item_id)
-        self._validate_document_links(conn,cid,doc)
+        self._validate_document_links(conn,cid,doc,_existing_document_id=item_id)
+        if doc.get('book_cancellation') and any(payload.get(k) for k in ('lines', 'model_id', 'generate_titles', 'installments', 'use_document_installments')):
+            raise DomainError('Documento cancelado não gera efeitos contábeis ou financeiros.')
         scope='book-document:'+str(item_id)
         if payload.get('idempotency_key'):
             key,hashed,previous=self._operation(conn,cid,scope,payload)
@@ -58,6 +134,7 @@ class BusinessCore(AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalRepor
             if payload.get('lines'):raise DomainError('Escolha um modelo ou partidas manuais, sem combinar os dois.')
             effective['lines']=self._model_lines(conn,cid,model_id,doc)
         if effective.get('lines'):
+            effective['lines']=self._document_accounting_lines(conn,cid,doc,effective['lines'])
             _,total=self._normalize_lines(conn,cid,effective['lines'])
             if total!=doc['total_cents']:
                 raise DomainError('O valor contabilizado deve corresponder ao total do documento.')
@@ -78,7 +155,7 @@ class BusinessCore(AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalRepor
             titles.append(self._create_title(conn,cid,{'kind':'payable' if doc['direction']=='incoming' else 'receivable',
                 'description':f'Documento {doc["number"]} - parcela {n}','partner_name':doc['partner_name'],
                 'participant_id':doc.get('participant_id'),'document':doc['number'],'document_id':item_id,'issue_date':doc['issue_date'],**p,
-                'installment':n,'source_key':f'document:{item_id}:revision:{doc["version"]}:installment:{n}'},actor))
+                'installment':n,'source_key':f'document:{item_id}:revision:{doc["version"]}:installment:{n}'},actor,_historical_document_id=item_id))
         result['titles']=titles
         audit(conn,cid,actor,'integrate','document',item_id,{'title_ids':[t['id'] for t in titles],
             'journal_id':result['journal']['id'] if result['journal'] else None,'model_id':model_id,
@@ -136,8 +213,15 @@ class BusinessCore(AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalRepor
                 if e['action']=='reverse-booking':
                     journal_ids.update(x for x in [e['details'].get('reversal_journal_id'),e['details'].get('before',{}).get('journal_id')] if x)
             from .permissions import readable
+            journals=[]
+            if readable(conn,cid,'accounting.journals'):
+                for journal_id in sorted(journal_ids):
+                    try:journals.append(self._journal(conn,cid,journal_id))
+                    except DomainError as exc:
+                        if exc.status!=404:raise
+                        journals.append({'id':journal_id,'deleted':True,'status':'deleted'})
             return {'document':doc,'titles':titles if readable(conn,cid,'financial.titles') else [],
-                'journals':[self._journal(conn,cid,i) for i in sorted(journal_ids)] if readable(conn,cid,'accounting.journals') else [],
+                'journals':journals,
                 'events':events if readable(conn,cid,'system.audit') else [],
                 'renegotiations':agreements if readable(conn,cid,'financial.titles') else []}
 

@@ -15,11 +15,13 @@ def deployment_env(manifest, environment):
     if environment not in {"production", "develop"}:
         raise ValueError("Ambiente de deploy inválido.")
     port = "8000" if environment == "production" else "8001"
+    app_reference = (manifest["images"]["app"]["repository"] + ":develop"
+                     if environment == "develop" else manifest["images"]["app"]["reference"])
     rows = ["# Gerado da publicação verificada. Não contém usuários/senhas predefinidos.",
-            "# Tags imutáveis permitem docker load + --pull never; digests estão em images.json.",
+            "# Develop segue :develop online; compose.release.yaml fixa a publicação para offline/rollback.",
             "COMPOSE_PROJECT_NAME=escritura-" + environment,
             "ESCRITURA_BIND=127.0.0.1", "ESCRITURA_PORT=" + port,
-            "ESCRITURA_IMAGE=" + manifest["images"]["app"]["reference"], "ESCRITURA_COOKIE_SECURE=0", "",
+            "ESCRITURA_IMAGE=" + app_reference, "ESCRITURA_COOKIE_SECURE=0", "",
             "# Serviços opcionais internos; o aplicativo permanece em SQLite."]
     for name in OPTIONAL_NAMES:
         rows.append(name.upper() + "_IMAGE=" + manifest["images"][name]["reference"])
@@ -28,6 +30,14 @@ def deployment_env(manifest, environment):
              "MYSQL_DATABASE=escritura", "MYSQL_USER=escritura", "MYSQL_PASSWORD=", "MYSQL_ROOT_PASSWORD=",
              "MINIO_ROOT_USER=", "MINIO_ROOT_PASSWORD=", ""]
     return "\n".join(rows)
+
+
+def release_compose(manifest):
+    """Override explícito: só imagens/pull policy, nunca dados ou configuração privada."""
+    return {"services": {
+        name: {"image": manifest["images"][name]["reference"], "pull_policy": "missing"}
+        for name in ("app", *OPTIONAL_NAMES)
+    }}
 
 
 def readme(manifest, environment):
@@ -45,7 +55,10 @@ INICIAR
 4. Abra http://127.0.0.1:{port} e crie o administrador no primeiro acesso.
 
 Apenas a porta da aplicação é publicada, com bind loopback por padrão.
-O .env já contém as tags da publicação. Não há senha padrão de administrador.
+Produção mantém a tag versionada; develop segue :develop e consulta o registro
+em cada up. O canal só avança quando o publicador promove o alias develop.
+Não há senha padrão de administrador. images.json descreve a release fixada,
+não necessariamente a imagem mais recente executada pelo canal develop.
 Não use volumes de produção em desenvolvimento.
 
 GHCR E VISIBILIDADE
@@ -58,10 +71,11 @@ SEM ACESSO AO REGISTRO (IMAGENS OFFLINE)
 Baixe também EscrituraIntegrada-{version}-linux-amd64-images.tar.gz e os hashes.
 Confira o SHA-256 antes de carregar. Docker já deve estar instalado.
 docker load -i /caminho/EscrituraIntegrada-{version}-linux-amd64-images.tar.gz
-docker compose up -d --pull never
+docker compose -f compose.yaml -f compose.release.yaml up -d --pull never
 
 O bundle contém app, base Python, Redis, PostgreSQL, MySQL e MinIO.
-São usadas tags imutáveis; images.json guarda digests e IDs para conferência.
+O override compose.release.yaml usa tags imutáveis presentes no tar;
+images.json guarda digests e IDs para conferência.
 Não depende de RepoDigests serem preservados por docker save/load.
 
 PERFIS OPCIONAIS
@@ -73,7 +87,7 @@ PostgreSQL: POSTGRES_PASSWORD (usuário/banco configuráveis).
 MySQL: MYSQL_ROOT_PASSWORD e MYSQL_PASSWORD (usuário/banco configuráveis).
 MinIO: MINIO_ROOT_USER (mínimo 3) e MINIO_ROOT_PASSWORD.
 Exemplo: docker compose --profile redis up -d
-Offline: docker compose --profile redis up -d --pull never
+Offline: docker compose -f compose.yaml -f compose.release.yaml --profile redis up -d --pull never
 As próprias imagens rejeitam credenciais ausentes com mensagem explícita.
 Nenhuma porta de banco, S3 ou console MinIO é publicada no host.
 
@@ -81,7 +95,15 @@ DADOS E ATUALIZAÇÕES
 O volume app-data é o SQLite persistente, com prefixo do projeto Compose.
 Faça backup consistente e testado antes de atualizar. Nunca use down -v em dados
 que deseja manter. Um rollback da imagem não desfaz migrações de banco.
-Execute docker compose down para parar/remover containers preservando volumes.
+Online develop: docker compose up -d (sem trocar a tag no .env).
+Em uma instalação develop antiga, ajuste ESCRITURA_IMAGE uma única vez para
+ghcr.io/codisplanfiscalai/escritura-integrada:develop
+e app.pull_policy para always no compose.yaml.
+Preserve COMPOSE_PROJECT_NAME, .env, credenciais, bind, portas e volumes existentes.
+Para fixar/voltar à release deste pacote, use sempre os dois arquivos Compose:
+docker compose -f compose.yaml -f compose.release.yaml up -d
+Para voltar ao canal móvel, use apenas docker compose up -d.
+Não é necessário parar/remover containers antes de atualizar.
 As instruções completas estão em DEPLOY.md e THIRD-PARTY.md neste pacote.
 """
 
@@ -95,6 +117,7 @@ def package(manifest, output_dir, root=ROOT):
         stem = "EscrituraIntegrada-" + manifest["version"] + "-" + environment + "-deploy"
         files = {
             "compose.yaml": (root / "deploy" / environment / "compose.yaml").read_bytes(),
+            "compose.release.yaml": (json.dumps(release_compose(manifest), ensure_ascii=False, indent=2) + "\n").encode(),
             ".env": deployment_env(manifest, environment).encode(),
             ".env.example": deployment_env(manifest, environment).encode(),
             "images.json": (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(),

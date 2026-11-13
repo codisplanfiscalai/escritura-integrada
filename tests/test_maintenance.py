@@ -14,6 +14,14 @@ from app.maintenance import prepare,finish,rollback,inspect,backup_before_schema
 
 
 class MaintenanceTests(unittest.TestCase):
+    def database_state(self):
+        with closing(sqlite3.connect(self.data/'escritura.sqlite3')) as conn:
+            tables=[r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+            return {'dump':tuple(conn.iterdump()),
+                    'records':{table:list(conn.execute('SELECT * FROM "'+table.replace('"','""')+'" ORDER BY rowid')) for table in tables},
+                    'meta_rowids':list(conn.execute('SELECT rowid,key,value FROM meta ORDER BY rowid')),
+                    'schema':list(conn.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name"))}
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.profile=self.root/'perfil';self.data=self.profile/'data'
         self.core=BusinessCore(Database(self.data),demo=True)
@@ -35,6 +43,42 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual('true',config['General']['start_minimized']);self.assertEqual('8765',config['General']['port'])
         self.assertFalse((self.profile/'maintenance.json').exists())
         self.assertTrue(list((self.profile/'maintenance-history').glob('*.json')))
+
+    def test_reinstall_preserves_exact_dump_and_all_business_rows_like_windows_installer(self):
+        self.core.save_group({'name':'Grupo preservado','company_ids':[1],
+            'permissions':[{'company_id':1,'routine':'fiscal.*','action':'read','effect':'allow'}]},'operador-teste')
+        self.core.create_exercise(1,{'module':'fiscal','year':2029},'operador-teste')
+        self.core.save_master(1,'participant',{'code':'PRESERVED','name':'Terceiro sintético preservado',
+            'tax_id':'11222333000181','data':{'roles':['supplier'],'email':'synthetic@example.test'}},'operador-teste')
+        config=self.profile/'config.ini'
+        config.write_text(config.read_text(encoding='utf-8')+'\n[Smoke]\nvalor=preservado\n',encoding='utf-8')
+        before=self.database_state()
+        # This is the same preparation/finish path called by the real Windows
+        # installer, not an equivalent-data replacement for its strict digest.
+        for _ in range(2):
+            result=prepare(self.profile,'0.8.0-dev.66')
+            self.assertEqual(before,self.database_state())
+            with closing(sqlite3.connect(Path(result['backup'])/'escritura.sqlite3')) as backup:
+                self.assertEqual(before['dump'],tuple(backup.iterdump()))
+            finish(self.profile)
+            self.assertEqual(before,self.database_state())
+            settings=configparser.ConfigParser();settings.read(config,encoding='utf-8')
+            self.assertEqual('preservado',settings['Smoke']['valor'])
+            self.assertEqual('true',settings['General']['start_minimized'])
+
+    def test_repeated_database_and_core_startup_preserve_marker_rowids_and_timestamps(self):
+        self.core.save_master(1,'participant',{'code':'STARTUP','name':'Synthetic startup party',
+            'tax_id':'11222333000181','data':{'roles':['customer']}},'operador-teste')
+        before=self.database_state()
+        for _ in range(3):
+            BusinessCore(Database(self.data),demo=True)
+            self.assertEqual(before,self.database_state())
+        from app.migration_third_parties import migrate_third_parties
+        with self.core.db.read() as conn:
+            changes=conn.total_changes
+            migrate_third_parties(conn)
+            self.assertEqual(changes,conn.total_changes,'already-current third-party migration must not rewrite rows')
+        self.assertEqual(before,self.database_state())
 
     def test_failed_install_restores_original_database(self):
         result=prepare(self.profile,'0.6.0-dev.1')

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from image_tools import OPTIONAL_NAMES, read_json, run, validate_manifest, write_json
 from image_tools import ROOT
-from package_deploy import deployment_env
+from package_deploy import deployment_env, release_compose
 
 
 def validate_compose_templates(manifest):
@@ -30,9 +30,12 @@ def validate_compose_templates(manifest):
             env_file.write_text(deployment_env(manifest, environment), encoding="utf-8")
             base = ["docker", "compose", "--env-file", env_file,
                     "--file", ROOT / "deploy" / environment / "compose.yaml"]
-            run([*base, "config", "--quiet"])
-            for profile in OPTIONAL_NAMES:
-                run([*base, "--profile", profile, "config", "--quiet"])
+            release_file = Path(temporary) / (environment + ".release.yaml")
+            release_file.write_text(json.dumps(release_compose(manifest)), encoding="utf-8")
+            for config in (base, [*base, "--file", release_file]):
+                run([*config, "config", "--quiet"])
+                for profile in OPTIONAL_NAMES:
+                    run([*config, "--profile", profile, "config", "--quiet"])
 
 
 def wait_healthy(name, timeout=180):

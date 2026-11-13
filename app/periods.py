@@ -30,6 +30,8 @@ class PeriodMixin:
             row = conn.execute('SELECT module FROM sessions WHERE token_hash=?', (digest(token.encode()),)).fetchone()
             result['module'] = row['module'] if row else 'fiscal'
             result['year'] = int(result['period'][:4])
+            from .operational_settings import get_settings
+            result['operational_settings'] = get_settings(conn, result['active_company_id']) if result['active_company_id'] else {}
             if not include_permissions:
                 return result
             cid, uid = result['active_company_id'], result['user']['id']
@@ -39,8 +41,16 @@ class PeriodMixin:
         return result
 
     def context(self, token, payload):
-        cid = integer(payload.get('company_id'), 'Empresa')
         token_hash = digest(token.encode())
+        # Clearing the workspace changes only session selection, never company data
+        # or the remembered operational exercises for each company/module.
+        if 'company_id' in payload and payload['company_id'] is None:
+            with self.db.transaction() as conn:
+                session = conn.execute('SELECT 1 FROM sessions WHERE token_hash=?', (token_hash,)).fetchone()
+                if not session: raise DomainError('Entre novamente.', 401, 'unauthenticated')
+                conn.execute('UPDATE sessions SET active_company_id=NULL WHERE token_hash=?', (token_hash,))
+            return self.session(token)
+        cid = integer(payload.get('company_id'), 'Empresa')
         with self.db.transaction() as conn:
             company_row(conn,cid)
             session = conn.execute('SELECT * FROM sessions WHERE token_hash=?', (token_hash,)).fetchone()
@@ -54,8 +64,12 @@ class PeriodMixin:
                 if not module: raise DomainError('Nenhum módulo de trabalho concedido nesta empresa.',403,'forbidden')
             saved = conn.execute('SELECT period FROM session_contexts WHERE token_hash=? AND company_id=? AND module=?', (token_hash,cid,module)).fetchone()
             competence = period(payload.get('period') or (saved['period'] if saved else session['period']))
+            if payload.get('year') is not None:
+                selected_year = integer(payload['year'], 'Exercício', 1900)
+                if selected_year > 2199: raise DomainError('Exercício deve estar entre 1900 e 2199.')
+                competence = f"{selected_year:04d}{competence[4:]}"
             if module != 'auditor' and not enabled(conn,cid,module,competence):
-                if payload.get('period'):
+                if payload.get('period') or payload.get('year') is not None:
                     raise DomainError('Exercício ainda não cadastrado neste módulo. Abra Competências e cadastre o ano.',409,'exercise_missing')
                 latest = conn.execute('SELECT year FROM exercises WHERE company_id=? AND module=? ORDER BY year DESC LIMIT 1',(cid,module)).fetchone()
                 if not latest: raise DomainError('Cadastre um exercício para este módulo.',409,'exercise_missing')

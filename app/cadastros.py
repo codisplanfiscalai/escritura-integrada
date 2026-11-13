@@ -2,7 +2,7 @@
 import json
 import re
 from .core import (DomainError, audit, boolean, check_version, company_row, integer,
-                   iso_date, json_value, money, normalize_cnpj, now, pack, select_one, text)
+                   iso_date, json_value, money, normalize_cnpj, now, pack, select_one, text, digest)
 
 KINDS = {'participant', 'establishment', 'product', 'service', 'history', 'accounting_model'}
 UFS = set('AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO EX'.split())
@@ -19,21 +19,8 @@ def profile_values(payload, previous=None):
     if state not in {'unknown', 'not_found', 'registered', 'exempt', 'not_applicable'}:
         raise DomainError('Situação da inscrição estadual inválida.')
     result['ie_status'] = state
-    result['state_registrations'] = []
-    regs = p.get('state_registrations', [])
-    if not isinstance(regs, list) or len(regs) > 100:
-        raise DomainError('Informe até 100 inscrições estaduais.')
-    for r in regs:
-        if not isinstance(r, dict):
-            raise DomainError('Inscrição estadual inválida.')
-        uf = text(r.get('state'), 'UF da IE', True, 2).upper()
-        if uf not in UFS:
-            raise DomainError('UF da inscrição estadual inválida.')
-        result['state_registrations'].append({
-            'state': uf, 'number': text(r.get('number'), 'Inscrição estadual', True, 30),
-            'active': r.get('active') if isinstance(r.get('active'), bool) else None,
-            'source': text(r.get('source'), 'Fonte da IE', False, 100),
-            'updated_at': text(r.get('updated_at'), 'Atualização da IE', False, 100)})
+    from .third_parties import registration_values
+    result['state_registrations'] = registration_values(p.get('state_registrations', []))
     cnaes = p.get('secondary_cnaes', [])
     if not isinstance(cnaes, list) or len(cnaes) > 200:
         raise DomainError('CNAEs secundários inválidos.')
@@ -88,17 +75,27 @@ class CadastrosMixin:
             old = self._master(conn, cid, item_id, kind) if item_id else None
             if old:
                 check_version(old, payload)
+                if payload.get('active') is not False and conn.execute('SELECT 1 FROM third_party_replacements WHERE company_id=? AND master_id=?', (cid, item_id)).fetchone():
+                    raise DomainError('Cadastro substituído; utilize o cadastro correto indicado no histórico.', 409, 'already_replaced')
             code = text(payload.get('code'), 'Código', True, 50)
             name = text(payload.get('name'), 'Nome', True, 250)
             active = boolean(payload.get('active'), True)
             data = payload.get('data', {})
             json_value(data, dict, 'Dados cadastrais')
             data = dict(data)
+            # Documentary provenance is immutable during ordinary master editing.
+            if old:
+                for field in ('import_identity', 'import_source', 'import_source_hash'):
+                    if field in old['data']:
+                        if field in data and data[field] != old['data'][field]:
+                            raise DomainError('Origem documental do cadastro deve permanecer preservada.', 409, 'master_origin_preserved')
+                        data[field] = old['data'][field]
             tax_id = tax_identity(payload.get('tax_id')) if kind in {'participant', 'establishment'} else ''
             if kind in {'participant', 'establishment'}:
                 data['profile'] = profile_values(data.get('profile'))
                 for k in ('trade_name', 'address', 'number', 'district', 'city', 'state', 'postal_code',
-                          'ibge', 'ie', 'im', 'cnae', 'email', 'phone', 'prosoft_code'):
+                          'ibge', 'ie', 'im', 'cnae', 'email', 'phone', 'prosoft_code',
+                          'country', 'country_code', 'crt', 'ie_indicator', 'suframa', 'ie_substitute', 'foreign_id'):
                     data[k] = text(data.get(k), k, False, 500)
                 if data['state'] and data['state'] not in UFS:
                     raise DomainError('UF inválida.')
@@ -115,20 +112,27 @@ class CadastrosMixin:
                 if old and old['tax_id'] != tax_id:
                     raise DomainError('A identidade de um participante/estabelecimento é preservada. Crie outro cadastro para outro CPF/CNPJ.')
             if kind in {'product','service'}:
-                for k in ('unit','ncm','cfop','service_code','cst','cclass_trib','barcode'):
+                for k in ('unit','ncm','cfop','service_code','cst','cclass_trib','barcode',
+                          'cest','extipi','origin','tax_unit','tax_barcode','manufacturer_code',
+                          'benefit_code','anp_code'):
                     data[k] = text(data.get(k), k, False, 100)
-                for k,n in [('ncm',8),('cfop',4)]:
+                for k,n in [('ncm',8),('cfop',4),('cest',7)]:
                     if data[k] and not re.fullmatch(rf'\d{{{n}}}',data[k]):
                         raise DomainError(f'{k.upper()}: informe {n} dígitos.')
-                data['price'] = str(data.get('price') or '0.00')
-                money(data['price'], 'Preço')
+                if data.get('price') in (None, ''):
+                    data.pop('price', None)
+                else:
+                    data['price'] = str(data['price'])
+                    money(data['price'], 'Preço')
             if kind == 'history':
                 data = {'text': text(data.get('text'), 'Histórico', True, 2000)}
             if kind == 'accounting_model':
                 data = {k: data.get(k) for k in ('debit_account_id','credit_account_id','cost_center_id',
                          'valid_from','valid_to','history','direction','status','source','responsible')}
                 for k in ('debit_account_id','credit_account_id'):
-                    account = select_one(conn,'accounts',cid,integer(data[k],'Conta'))
+                    from .account_refs import resolve_account
+                    account = resolve_account(conn,cid,data[k],materialize=True,actor=actor)
+                    data[k]=account['id']
                     if not account['active'] or not account['analytical']:
                         raise DomainError('Modelo exige contas analíticas ativas.')
                 if data['debit_account_id'] == data['credit_account_id']:
@@ -152,8 +156,171 @@ class CadastrosMixin:
                 conn.execute('UPDATE masters SET code=?,name=?,tax_id=?,data_json=?,active=?,updated_at=?,version=version+1 WHERE id=? AND company_id=?',(*values,item_id,cid))
             else:
                 item_id = conn.execute('INSERT INTO masters(code,name,tax_id,data_json,active,updated_at,company_id,kind,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(*values,cid,kind,now())).lastrowid
+            from .third_parties import sync_third_party
+            sync_third_party(conn, cid, item_id, actor, 'Cadastro local revisado explicitamente.')
             audit(conn,cid,actor,'update' if old else 'create',kind,item_id,{'before':old,'after':payload})
             return self._master(conn,cid,item_id)
+
+    def _import_document_masters(self, conn, cid, payload, actor):
+        """Link XML identities in the document transaction, never by display name.
+
+        Supplier item codes are scoped to their issuer, not to the buyer's SKU.
+        Existing reviewed descriptions/tax settings are never overwritten.
+        """
+        if not payload.get('source_hash') or not isinstance(payload.get('issuer'), dict):
+            return payload
+        payload = dict(payload)
+        company = company_row(conn, cid)
+        warnings = []
+
+        def allowed(action):
+            from .permissions import effect
+            try:
+                effect(conn, cid, 'fiscal.masters', action)
+            except DomainError as exc:
+                if exc.status != 403:
+                    raise
+                warnings.append('Sem permissão para ' + ('criar cadastros' if action == 'create' else 'atualizar papéis de participantes') + '; dados de origem preservados no documento.')
+                return False
+            return True
+
+        def insert(kind, code, name, tax_id, data):
+            if not allowed('create'):
+                return None
+            # Generated technical codes must not collide with user-entered codes.
+            initial, suffix = code, 0
+            while conn.execute('SELECT 1 FROM masters WHERE company_id=? AND kind=? AND code=?',
+                               (cid, kind, code)).fetchone():
+                suffix += 1
+                code = initial[:40] + '-' + str(suffix)
+            stamp = now()
+            mid = conn.execute(
+                'INSERT INTO masters(company_id,kind,code,name,tax_id,data_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+                (cid, kind, code, name, tax_id, pack(data), stamp, stamp)).lastrowid
+            from .third_parties import sync_third_party
+            sync_third_party(conn, cid, mid, actor, 'Identidade vinculada pela importação; origem local preservada.')
+            audit(conn, cid, actor, 'create', kind, mid,
+                  {'source': payload.get('source'), 'source_hash': payload['source_hash'], 'imported': True})
+            return mid
+
+        def participant(party, role):
+            if not isinstance(party, dict) or not party.get('tax_id'):
+                return None  # Anonymous consumers do not become fictitious masters.
+            try:
+                identity = tax_identity(party['tax_id'])
+            except DomainError:
+                warnings.append('CPF/CNPJ inválido na origem; participante não cadastrado automaticamente.')
+                return None
+            if identity == company['tax_id']:
+                return None
+            row = conn.execute("SELECT * FROM masters WHERE company_id=? AND kind='participant' AND tax_id=?",
+                               (cid, identity)).fetchone()
+            if row:
+                if not row['active']:
+                    warnings.append('Participante existente inativo; vínculo automático não realizado.')
+                    return None
+                data = json.loads(row['data_json'])
+                roles = data.get('roles', [])
+                if role not in roles and allowed('edit'):
+                    data['roles'] = sorted(set(roles + [role]))
+                    conn.execute('UPDATE masters SET data_json=?,updated_at=?,version=version+1 WHERE company_id=? AND id=?',
+                                 (pack(data), now(), cid, row['id']))
+                    from .third_parties import sync_third_party
+                    sync_third_party(conn, cid, row['id'], actor, 'Função local acrescentada pela importação autorizada.')
+                    audit(conn, cid, actor, 'update', 'participant', row['id'], {'added_role': role, 'source_hash': payload['source_hash']})
+                return row['id']
+            name = str(party.get('name') or '').strip()
+            if not name:
+                warnings.append('Participante identificado sem nome na origem; cadastro automático não realizado.')
+                return None
+            data = {k: party[k] for k in ('trade_name', 'address', 'number', 'district', 'city', 'state',
+                    'postal_code', 'ibge', 'ie', 'im', 'email', 'phone', 'cnae', 'crt',
+                    'ie_indicator', 'suframa', 'ie_substitute', 'country', 'country_code', 'foreign_id') if party.get(k)}
+            profile = profile_values(None)
+            profile['complement'] = str(party.get('complement') or '')
+            ie, uf = str(party.get('ie') or ''), str(party.get('state') or '')
+            # XML evidence, not an online registration-status assertion.
+            exempt = ie.upper() == 'ISENTO' or (not ie and party.get('ie_indicator') == '2')
+            if uf in UFS - {'EX'} and (ie or exempt):
+                profile['state_registrations'] = [{'state': uf, 'number': '' if exempt else ie,
+                    'status': 'exempt' if exempt else '', 'active': None,
+                    'source': 'XML importado', 'updated_at': ''}]
+                profile['ie_status'] = 'exempt' if exempt else 'registered'
+            data.update(roles=[role], profile=profile, import_source=payload.get('source'),
+                        import_source_hash=payload['source_hash'])
+            return insert('participant', 'XML-' + identity, name, identity, data)
+
+        partner_tax_id = payload.get('partner_tax_id')
+        parties = [payload.get('issuer', {}), payload.get('recipient', {})]
+        transport = payload.get('transport') or {}
+        if isinstance(transport, dict):
+            parties.append(transport.get('taker') or {})
+        party = next((p for p in parties if p.get('tax_id') == partner_tax_id and partner_tax_id),
+                     {'tax_id': partner_tax_id, 'name': payload.get('partner_name')})
+        role = 'supplier' if payload.get('direction') in {'incoming', 'entrada'} else 'customer'
+        participant_id = participant(party, role)
+        if participant_id and not payload.get('participant_id'):
+            payload['participant_id'] = participant_id
+        carrier = transport.get('carrier') if isinstance(transport, dict) else None
+        if payload.get('document_type') == 'transport':
+            carrier = payload.get('issuer')
+        carrier_id = participant(carrier, 'carrier')
+        if carrier_id:
+            payload['carrier_id'] = carrier_id
+
+        issuer = payload['issuer'].get('tax_id') or payload['issuer'].get('foreign_id')
+        linked_items = []
+        catalog_index = {}
+        for item in payload.get('items', []):
+            item = dict(item)
+            tax_fields = item.get('taxes') if isinstance(item.get('taxes'), dict) else {}
+            # Mixed NF-e can declare services per item. Use the actual ISSQN
+            # source group, never CFOP or description as a tax/type guess.
+            issqn = any(str(key).startswith('ISSQN/') for key in tax_fields)
+            icms = any(str(key).startswith('ICMS/') for key in tax_fields)
+            explicit_service = payload.get('document_type') in {'service', 'transport'}
+            if not item.get('master_id') and issqn and icms and not explicit_service:
+                warnings.append(f"Item {item.get('number', '?')}: grupos ICMS e ISSQN simultâneos; cadastro automático pendente de revisão.")
+                linked_items.append(item)
+                continue
+            kind = 'service' if explicit_service or issqn else 'product'
+            code = str(item.get('code') or '').strip()
+            name = str(item.get('description') or '').strip()
+            if not item.get('master_id') and issuer and code and name:
+                identity = {'issuer': issuer, 'code': code}
+                if kind not in catalog_index:
+                    catalog_index[kind] = {}
+                    for row in conn.execute('SELECT * FROM masters WHERE company_id=? AND kind=?', (cid, kind)):
+                        origin = json.loads(row['data_json']).get('import_identity')
+                        if isinstance(origin, dict):
+                            catalog_index[kind][pack(origin)] = row
+                found = catalog_index[kind].get(pack(identity))
+                if found and found['active']:
+                    item['master_id'] = found['id']
+                elif found:
+                    warnings.append('Produto/serviço existente inativo; vínculo automático não realizado.')
+                else:
+                    data = {k: item[k] for k in ('unit', 'ncm', 'cest', 'service_code', 'barcode') if item.get(k)}
+                    declared = item.get('declared_product_fields') or {}
+                    for field, tag in {'tax_unit': 'uTrib', 'tax_barcode': 'cEANTrib', 'extipi': 'EXTIPI',
+                                       'manufacturer_code': 'cProdFabricante', 'benefit_code': 'cBenef',
+                                       'anp_code': 'comb/cProdANP'}.items():
+                        if declared.get(tag) and str(declared[tag]).upper() != 'SEM GTIN':
+                            data[field] = declared[tag]
+                    if kind == 'service' and not data.get('service_code') and tax_fields.get('ISSQN/cListServ'):
+                        data['service_code'] = str(tax_fields['ISSQN/cListServ']).strip()
+                    data.update(import_identity=identity, import_source=payload.get('source'),
+                                import_source_hash=payload['source_hash'])
+                    # Source CFOP/CST and invoice prices are not master defaults.
+                    master_id = insert(kind, 'XML-' + digest(identity)[:40], name, '', data)
+                    if master_id:
+                        item['master_id'] = master_id
+                        catalog_index[kind][pack(identity)] = {'id': master_id, 'active': True}
+            linked_items.append(item)
+        payload['items'] = linked_items
+        if warnings:
+            payload['master_import_warnings'] = list(dict.fromkeys(warnings))
+        return payload
 
     def _model_lines(self,conn,cid,item_id,doc):
         model = self._master(conn,cid,integer(item_id,'Modelo'),'accounting_model',True)

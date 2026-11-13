@@ -10,6 +10,8 @@ def preview_url_allowed(value,base):
         if origin.scheme!='http' or origin.hostname!='127.0.0.1':return False
         match=re.fullmatch(r'/api/companies/[0-9]+/auditor/jobs/[0-9]+/(report|files)',url.path)
         query=parse_qs(url.query)
+        if re.fullmatch(r'/api/companies/[0-9]+/imports/[0-9]+/documents/[0-9]+/danfe',url.path):
+            return not url.query
         if re.fullmatch(r'/api/companies/[0-9]+/(business-reports/[a-z-]+|tax-ledgers/[0-9]+/report)',url.path):
             return query.get('format')==['pdf'] and query.get('purpose')==['print']
         if not match:return False

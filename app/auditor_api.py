@@ -9,9 +9,16 @@ def register_auditor_routes(app,core,actor,year):
     from . import auditor_catalogs as catalogs
 
     @app.get('/api/companies/{cid}/auditor/available-catalogs')
-    def available_catalogs(cid:int):
+    def available_catalogs(cid:int,include_drafts:bool=False):
         with core.db.read() as conn:
-            return [dict(r) for r in conn.execute("SELECT id,name,sha256,source,valid_from,valid_to FROM auditor_catalogs WHERE company_id=? AND state='published' ORDER BY id DESC",(cid,))]
+            rows = [dict(r) for r in conn.execute("SELECT id,name,sha256,source,valid_from,valid_to,state FROM auditor_catalogs WHERE company_id=? AND (state='published' OR ?) ORDER BY id DESC",(cid,include_drafts))]
+        if include_drafts:
+            for row in rows:
+                if row['state'] != 'draft':
+                    continue
+                detail = catalogs.catalog_detail(core,cid,row['id'])
+                row.update(error_count=detail['error_count'],entry_count=detail['entry_count'])
+        return rows
 
     @app.get('/api/companies/{cid}/auditor/jobs/{jid}/progress')
     def progress(cid:int,jid:int,request:Request):

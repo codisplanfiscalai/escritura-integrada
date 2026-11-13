@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse,json,os,platform,plistlib,shutil,subprocess,sys
 from datetime import datetime,timezone
 from pathlib import Path
-from build_windows import ROOT,run,source_revision,sha256,frontend_assets,collect_notices,version_resource
+from build_windows import ROOT,run,source_revision,sha256,frontend_assets,collect_notices,version_resource,maintenance_bundle_args
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--smoke',action='store_true');args=parser.parse_args()
@@ -42,7 +42,7 @@ def main():
         payload=build/'macos-payload';shutil.rmtree(payload,ignore_errors=True);payload.mkdir()
         shutil.copytree(app,payload/app.name,symlinks=True)
         scripts=build/'macos-installer-scripts';shutil.rmtree(scripts,ignore_errors=True);scripts.mkdir()
-        run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onefile','--name','EscrituraMaintenance',
+        run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onefile','--name','EscrituraMaintenance',*maintenance_bundle_args(),
             '--distpath',scripts,'--workpath',build/'macos-maintenance-work','--specpath',build,ROOT/'app/maintenance.py'])
         run(['codesign','--force','--sign','-',scripts/'EscrituraMaintenance'])
         pre=(ROOT/'packaging/macos/preinstall').read_text().replace('@@ARCH@@',arch).replace('@@VERSION@@',version)

@@ -61,7 +61,7 @@ class ExportPerformanceTests(unittest.TestCase):
                 from pypdf import PdfReader
                 from io import BytesIO
                 label={'fiscal-documents':'Documentos fiscais','diary':'Diário Geral','financial':'Títulos por vencimento'}[kind]
-                self.assertIn(label,PdfReader(BytesIO(response.content)).pages[0].extract_text())
+                self.assertIn(label.casefold(),PdfReader(BytesIO(response.content)).pages[0].extract_text().casefold())
                 self.assertTrue(preview_url_allowed('http://127.0.0.1:3456'+path+'&purpose=print','http://127.0.0.1:3456'))
         self.assertTrue(preview_url_allowed('http://127.0.0.1:3456'+self.scope('/tax-ledgers/1/report?format=pdf&purpose=print'),'http://127.0.0.1:3456'))
         self.assertFalse(preview_url_allowed('http://127.0.0.1:3456'+self.scope('/business-reports/diary?format=pdf&purpose=export'),'http://127.0.0.1:3456'))

@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from build_windows import ROOT,sha256,source_revision,version_resource
+from build_windows import ROOT,sha256,source_revision,version_resource,maintenance_bundle_args
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
         if not (payload/'EscrituraIntegrada.exe').is_file():raise RuntimeError('Construa primeiro o aplicativo Windows.')
         helperdir=ROOT/'build/maintenance';helperdir.mkdir(parents=True,exist_ok=True)
         subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onefile','--noconsole',
-            '--name','EscrituraMaintenance','--paths',str(ROOT),'--distpath',str(helperdir),
+            '--name','EscrituraMaintenance',*maintenance_bundle_args(),'--distpath',str(helperdir),
             '--workpath',str(ROOT/'build/maintenance-work'),'--specpath',str(ROOT/'build'),'app/maintenance.py'],cwd=ROOT,check=True)
         helper=helperdir/'EscrituraMaintenance.exe'
         candidates=[Path(x)/'Inno Setup 6/ISCC.exe' for x in [os.environ.get('ProgramFiles(x86)',''),os.environ.get('ProgramFiles','')]]

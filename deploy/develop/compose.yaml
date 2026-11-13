@@ -3,16 +3,11 @@
   "services": {
     "app": {
       "image": "${ESCRITURA_IMAGE:?Use a imagem publicada ou o pacote de deploy da release}",
-      "pull_policy": "missing",
+      "pull_policy": "always",
       "platform": "linux/amd64",
       "init": true,
       "ports": [
-        {
-          "target": 8000,
-          "published": "${ESCRITURA_PORT:-8001}",
-          "host_ip": "${ESCRITURA_BIND:-127.0.0.1}",
-          "protocol": "tcp"
-        }
+        "${ESCRITURA_BIND:-127.0.0.1}:${ESCRITURA_PORT:-8001}:8000/tcp"
       ],
       "environment": {
         "ESCRITURA_DATA_DIR": "/data",

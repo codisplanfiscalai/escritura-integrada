@@ -21,9 +21,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from build_images import assert_identity, remote_exists
 from export_images import save_gzip, verify_load
 from image_tools import GHCR_PREFIX, IMAGE_NAMES, OPTIONAL_NAMES, image_plan, load_catalog, validate_manifest, validate_version
-from package_deploy import deployment_env, package
+from package_deploy import deployment_env, package, release_compose
 from sync_deploy_templates import sync
-from smoke_images import container_url
+from smoke_images import container_url, validate_compose_templates
 
 
 def published_fixture():
@@ -141,7 +141,7 @@ class InfrastructureTests(unittest.TestCase):
                 self.assertNotIn("build", service)
                 self.assertNotIn("network_mode", service)
                 self.assertNotIn("privileged", service)
-                self.assertEqual(service["pull_policy"], "missing")
+                self.assertEqual(service["pull_policy"], "always" if environment == "develop" and name == "app" else "missing")
                 self.assertIn("healthcheck", service)
                 for mount in service.get("volumes", []):
                     self.assertIn(mount.split(":")[0], data["volumes"])
@@ -151,7 +151,8 @@ class InfrastructureTests(unittest.TestCase):
                     self.assertEqual(service["networks"], ["internal"])
                     self.assertNotIn("ports", service)
             self.assertEqual(count, 1)
-            self.assertIn("127.0.0.1", data["services"]["app"]["ports"][0]["host_ip"])
+            self.assertIsInstance(data["services"]["app"]["ports"][0], str)
+            self.assertTrue(data["services"]["app"]["ports"][0].startswith("${ESCRITURA_BIND:-127.0.0.1}:"))
             self.assertTrue(data["services"]["app"]["read_only"])
 
     def test_stage_projects_and_ports_differ_and_volumes_are_not_global(self):
@@ -164,6 +165,21 @@ class InfrastructureTests(unittest.TestCase):
                 self.assertNotIn("name", volume)
                 self.assertNotIn("external", volume)
         self.assertEqual((ROOT / "compose.yaml").read_bytes(), (ROOT / "deploy/production/compose.yaml").read_bytes())
+
+    def test_dockge_ports_use_short_syntax_with_the_same_loopback_and_tcp_mapping(self):
+        # Dockge's card parser calls split('/') on each port. Long-form objects
+        # are valid Compose, but can hide the app card in affected Dockge versions.
+        for environment, default_port in (("production", "8000"), ("develop", "8001")):
+            data = json.loads((ROOT / "deploy" / environment / "compose.yaml").read_text())
+            ports = data["services"]["app"]["ports"]
+            port_variable = "${ESCRITURA_PORT:-" + default_port + "}"
+            self.assertEqual(ports, ["${ESCRITURA_BIND:-127.0.0.1}:" + port_variable + ":8000/tcp"])
+            for published_port in (default_port, "48001"):
+                with self.subTest(environment=environment, published_port=published_port):
+                    resolved = ports[0].replace("${ESCRITURA_BIND:-127.0.0.1}", "127.0.0.1").replace(port_variable, published_port)
+                    address, protocol = resolved.split("/")
+                    self.assertEqual(address.split(":"), ["127.0.0.1", published_port, "8000"])
+                    self.assertEqual(protocol, "tcp")
 
     def test_optional_credentials_do_not_block_compose_interpolation(self):
         for environment in ("production", "develop"):
@@ -190,6 +206,64 @@ class InfrastructureTests(unittest.TestCase):
                 if key.endswith("_IMAGE"):
                     self.assertTrue(content.startswith(GHCR_PREFIX))
             self.assertEqual(pairs["MINIO_ROOT_USER"], "")
+
+    def test_develop_tracks_channel_but_production_and_optional_images_stay_pinned(self):
+        for channel in ("develop", "production"):
+            data = published_fixture()
+            data["channel"] = channel
+            original = copy.deepcopy(data)
+            for environment in ("production", "develop"):
+                pairs = dict(line.split("=", 1) for line in deployment_env(data, environment).splitlines()
+                             if "=" in line and not line.startswith("#"))
+                expected = GHCR_PREFIX + ":develop" if environment == "develop" else data["images"]["app"]["reference"]
+                self.assertEqual(pairs["ESCRITURA_IMAGE"], expected)
+                for name in OPTIONAL_NAMES:
+                    self.assertEqual(pairs[name.upper() + "_IMAGE"], data["images"][name]["reference"])
+            self.assertEqual(data, original)
+        example = (ROOT / "deploy/develop/.env.example").read_text()
+        self.assertIn("ESCRITURA_IMAGE=" + GHCR_PREFIX + ":develop\n", example)
+
+    def test_release_override_pins_only_images_and_policy_without_touching_state(self):
+        data = published_fixture()
+        override = release_compose(data)
+        self.assertEqual(set(override), {"services"})
+        self.assertEqual(set(override["services"]), {"app", *OPTIONAL_NAMES})
+        for name, service in override["services"].items():
+            self.assertEqual(service, {"image": data["images"][name]["reference"], "pull_policy": "missing"})
+            self.assertNotIn(":develop", service["image"])
+            self.assertNotIn("@", service["image"])
+        # Release file is explicit, never an auto-loaded compose.override.yaml.
+        for environment in ("production", "develop"):
+            base = json.loads((ROOT / "deploy" / environment / "compose.yaml").read_text())
+            merged = copy.deepcopy(base)
+            for name, values in override["services"].items():
+                merged["services"][name].update(values)
+            for name in merged["services"]:
+                before = {k: v for k, v in base["services"][name].items() if k not in {"image", "pull_policy"}}
+                after = {k: v for k, v in merged["services"][name].items() if k not in {"image", "pull_policy"}}
+                self.assertEqual(before, after)
+            self.assertEqual(base["volumes"], merged["volumes"])
+            self.assertEqual(base["name"], merged["name"])
+
+    def test_ci_validates_online_and_fixed_configs_for_each_optional_profile(self):
+        calls = []
+        manifest = published_fixture()
+        def fake_run(command, **kwargs):
+            calls.append(command)
+            if command[-2:] == ["config", "--quiet"]:
+                files = [Path(command[i + 1]) for i, arg in enumerate(command) if arg == "--file"]
+                if len(files) == 2:
+                    self.assertEqual(json.loads(files[1].read_text()), release_compose(manifest))
+                self.assertNotIn("up", command)  # Configuration check never deploys the moving alias.
+            return subprocess.CompletedProcess(command, 0, "", "")
+        with mock.patch("smoke_images.run", side_effect=fake_run):
+            validate_compose_templates(manifest)
+        self.assertEqual(calls[0], ["docker", "compose", "version"])
+        configs = calls[1:]
+        self.assertEqual(len(configs), 20)  # 2 environments x 2 modes x (app + 4 profiles).
+        self.assertEqual(sum(command.count("--file") == 2 for command in configs), 10)
+        for profile in OPTIONAL_NAMES:
+            self.assertEqual(sum(profile in command for command in configs), 4)
 
     def test_manifest_rejects_plan_foreign_images_missing_digests_and_env_injection(self):
         data = published_fixture()
@@ -220,10 +294,22 @@ class InfrastructureTests(unittest.TestCase):
             for entry in result["packages"]:
                 with zipfile.ZipFile(output / entry["file"]) as archive:
                     self.assertEqual({Path(n).name for n in archive.namelist()},
-                                     {"compose.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "THIRD-PARTY.md"})
+                                     {"compose.yaml", "compose.release.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "THIRD-PARTY.md"})
                     for name in archive.namelist():
                         self.assertNotIn(poison, archive.read(name))
+                    compose_name = next(name for name in archive.namelist() if Path(name).name == "compose.yaml")
+                    bundled_compose = json.loads(archive.read(compose_name))
+                    template = json.loads((root / "deploy" / entry["environment"] / "compose.yaml").read_text())
+                    self.assertEqual(bundled_compose, template)
+                    release_name = next(name for name in archive.namelist() if Path(name).name == "compose.release.yaml")
+                    self.assertEqual(json.loads(archive.read(release_name)), release_compose(data))
+                    readme_name = next(name for name in archive.namelist() if Path(name).name == "LEIA-ME.txt")
+                    readme = archive.read(readme_name).decode()
+                    self.assertIn("-f compose.yaml -f compose.release.yaml up -d --pull never", readme)
+                    self.assertIn("-f compose.yaml -f compose.release.yaml --profile redis up -d --pull never", readme)
+                    self.assertIsInstance(bundled_compose["services"]["app"]["ports"][0], str)
                 self.assertTrue((output / (entry["file"] + ".sha256")).is_file())
+            self.assertEqual(result, package(data, output, root=root))
 
     def test_save_stream_is_valid_gzip_and_failure_removes_partial(self):
         payload = b"synthetic docker-save stream\n" * 1000

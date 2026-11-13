@@ -27,7 +27,7 @@ def main():
     sys.path.insert(0,str(ROOT))
     from app.db import Database
     from app.business import BusinessCore
-    from app.maintenance import integrity
+    from app.maintenance import integrity, SCHEMA_VERSION
     report={'ok':False,'version':args.version,'checks':[],'upgrade_fixture':'Instalação real; versão anterior simulada no registro; migração de base portátil validada separadamente.'}
     try:
         try:
@@ -77,9 +77,9 @@ def main():
             old_counts=integrity(portable/'escritura.sqlite3');source_hash=db_digest(portable/'escritura.sqlite3')
             profile=root/'Perfil migrado';setup([f'/PORTABLEDATA={portable}'])
             new_counts=integrity(profile/'data/escritura.sqlite3')
-            if old_counts['schema_version']!=2 or new_counts['schema_version']!=5 or old_counts['companies']!=new_counts['companies'] or old_counts['users']!=new_counts['users']:raise RuntimeError('Migração portátil inconsistente.')
+            if old_counts['schema_version']!=2 or new_counts['schema_version']!=SCHEMA_VERSION or old_counts['companies']!=new_counts['companies'] or old_counts['users']!=new_counts['users']:raise RuntimeError('Migração portátil inconsistente.')
             if db_digest(portable/'escritura.sqlite3')!=source_hash:raise RuntimeError('A origem portátil foi alterada.')
-            report['checks'].append('Banco portátil 0.5/schema 2 migrado para schema 5 pela seleção do instalador; origem preservada')
+            report['checks'].append(f'Banco portátil 0.5/schema 2 migrado para schema {SCHEMA_VERSION} pela seleção do instalador; origem preservada')
             archive=ROOT/'artifacts'/f'EscrituraIntegrada-{args.version}-windows-x64.zip'
             gui=run_smoke(archive,args.result.with_name('windows-installed-gui.json'),args.version,installed_executable=exe,existing_profile=profile)
             if not gui.get('ok'):raise RuntimeError('Aplicativo instalado não aprovou abertura gráfica e encerramento.')
@@ -91,7 +91,9 @@ def main():
             report['ok']=True
     except Exception as exc:report['error']=str(exc)
     args.result.parent.mkdir(parents=True,exist_ok=True);args.result.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
-    print(json.dumps(report,ensure_ascii=False))
+    # Keep the UTF-8 artifact intact; console encodings such as cp1252 must
+    # never mask an installer diagnostic containing a BOM or Unicode path.
+    print(json.dumps(report,ensure_ascii=True))
     return 0 if report['ok'] else 1
 
 if __name__=='__main__':raise SystemExit(main())

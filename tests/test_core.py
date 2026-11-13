@@ -43,6 +43,12 @@ class CoreApiTests(unittest.TestCase):
     def create_company(self, code, base):
         response = self.client.post('/api/companies', json={'code': code, 'name': f'{code} (dados fictícios)', 'tax_id': base + cnpj_digits(base), 'regime': 'outros', 'state': 'SP', 'create_default_accounts': True})
         self.assertEqual(201, response.status_code, response.text)
+        # Legacy invariants explicitly exercise the opt-in strict period policy.
+        # Dedicated operational-settings tests cover the real unrestricted defaults.
+        if not getattr(self, 'operational_defaults', False):
+            from app.operational_settings import save_settings
+            with self.core.db.transaction() as conn:
+                save_settings(conn, response.json()['id'], {'version': 0, 'settings': {'enforce_period_locks': True, 'require_separate_document_review': True, 'require_extra_confirmations': True}}, 'synthetic-test-fixture')
         return response.json()
 
     def journal(self, key='test-journal', amount='123.45', day='2026-11-06', center=None):
@@ -182,9 +188,13 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(200, booked.status_code, booked.text)
         self.assertIsNone(booked.json()['journal'])
         self.assertEqual([], self.core.journals(self.a['id'], '2026-11'))
-        self.assertEqual(409, self.client.put(self.scope(f"/documents/{doc['id']}"), json={'version': 5, 'reason': 'Não permitido', 'cfop': '1102'}).status_code)
+        correction = self.client.put(self.scope(f"/documents/{doc['id']}"), json={'version': 5, 'reason': 'Correção posterior rastreável', 'cfop': '1102'})
+        self.assertEqual(200, correction.status_code, correction.text)
+        self.assertEqual('booked', correction.json()['status'])
+        self.assertEqual('abc123', correction.json()['source_hash'])
         closed = self.client.post(self.scope('/periods/close'), json={'period': '2026-11', 'module': 'fiscal', 'reason': 'Fim da conferência'})
         self.assertEqual(200, closed.status_code, closed.text)
+        self.assertEqual(409, self.client.put(self.scope(f"/documents/{doc['id']}"), json={'version': correction.json()['version'], 'reason': 'Competência fechada', 'cfop': '1101'}).status_code)
         self.assertEqual(409, self.client.post(self.scope('/documents'), json=self.document('OUTRO')).status_code)
         self.assertEqual(201, self.client.post(self.scope('/journals'), json=self.journal()).status_code)
 

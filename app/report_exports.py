@@ -5,7 +5,7 @@ import json
 from xml.sax.saxutils import escape
 from .core import DomainError,decimal_text
 
-LABELS={'date':'Data','document':'Documento','document_id':'Origem fiscal','journal_id':'Lançamento','title_id':'Título','item':'Item',
+LABELS={'partner_state':'UF do participante','partner_ie':'Inscrição estadual do participante','company_ie':'Inscrição estadual','date':'Data','document':'Documento','document_id':'Origem fiscal','journal_id':'Lançamento','title_id':'Título','item':'Item',
 'document_version':'Versão do documento','rule_version':'Versão da regra','rule_id':'Regra','item_indices':'Itens selecionados','ledger_id':'Apuração','assessment_id':'Memória','period':'Competência','tax':'Tributo','partner_name':'Participante','partner_tax_id':'CPF/CNPJ',
 'direction':'Operação','description':'Descrição','status':'Situação','model':'Modelo','series':'Série','cfop':'CFOP','ncm':'NCM','quantity':'Quantidade','unit':'Unidade',
 'total_cents':'Total (R$)','item_total_cents':'Total itens (R$)','documents':'Documentos','items':'Itens','occurrences':'Ocorrências',
@@ -35,6 +35,14 @@ REPORT_TITLES={'diary':'Diário Geral','consolidated-diary':'Diário Consolidado
 
 def export_report(result,kind):
     rows=result['rows'];keys=list(dict.fromkeys(k for r in rows for k in r))
+    labels=dict(LABELS)
+    if result.get('row_scope')=='analytical_posting_lines':
+        from .fiscal_report_models import ANALYTICAL_LABELS
+        labels.update(ANALYTICAL_LABELS)
+        labels['total_cents']='Valor contábil da linha (R$)'
+        if kind=='pdf':
+            from .fiscal_report_models import fiscal_pdf
+            return fiscal_pdf(result)
     title=result.get('title') or REPORT_TITLES.get(result['kind'],result['kind']);output=BytesIO()
     if kind=='xlsx':
         from openpyxl import Workbook
@@ -43,8 +51,8 @@ def export_report(result,kind):
         wb=Workbook();meta=wb.active;meta.title='Conferência';sheet=wb.create_sheet('Dados');raw=wb.create_sheet('Valores em centavos')
         for pair in [('Relatório',title),('Empresa',result['company_name']),('Início',result['start']),('Fim',result['end']),('Escopo',result['scope_note']),('Filtros',json.dumps(result.get('filters',{}),ensure_ascii=False))]:meta.append(pair)
         meta.append(['Totais conferíveis',''])
-        for k,v in result['totals'].items():meta.append([LABELS.get(k,k),display(k,v)])
-        for ws in [sheet,raw]:ws.append([LABELS.get(k,k) if ws is sheet else k for k in keys])
+        for k,v in result['totals'].items():meta.append([labels.get(k,k),display(k,v)])
+        for ws in [sheet,raw]:ws.append([labels.get(k,k) if ws is sheet else k for k in keys])
         for row in rows:
             for ws in [sheet,raw]:
                 values=[]
@@ -52,12 +60,35 @@ def export_report(result,kind):
                     v=row.get(k)
                     if k.endswith('_cents') and v is not None:values.append(Decimal(v)/100 if ws is sheet else v)
                     elif isinstance(v,(int,float)) and not isinstance(v,bool):values.append(v)
-                    else:values.append(display(k,v))
+                    else:
+                        rendered=display(k,v)
+                        if k=='declared_classifications' and result.get('row_scope')=='analytical_posting_lines' and len(rendered)>32000:
+                            rendered='Classificações completas na aba Classificações declaradas (excede o limite de uma célula Excel). '
+                        values.append(rendered)
                 ws.append(values)
                 for cell in ws[ws.max_row]:
                     if isinstance(cell.value,str):cell.data_type='s'  # texto do usuário nunca vira fórmula
                     cell.alignment=Alignment(vertical='top',wrap_text=True)
                     if ws is sheet and keys[cell.column-1].endswith('_cents'):cell.number_format='#,##0.00;[Red]-#,##0.00'
+        if result.get('row_scope')=='analytical_posting_lines':
+            headers=result.get('document_headers') or []
+            header_keys=list(dict.fromkeys(k for r in headers for k in r))
+            header_sheet=wb.create_sheet('Cabeçalhos documentos')
+            header_sheet.append([LABELS.get(k,k) for k in header_keys])
+            for row in headers:
+                header_sheet.append([Decimal(row[k])/100 if k.endswith('_cents') and row.get(k) is not None else display(k,row.get(k)) for k in header_keys])
+                for cell in header_sheet[header_sheet.max_row]:
+                    if isinstance(cell.value,str):cell.data_type='s'
+                    if header_keys[cell.column-1].endswith('_cents'):cell.number_format='#,##0.00;[Red]-#,##0.00'
+            classes_sheet=wb.create_sheet('Classificações declaradas')
+            class_keys=['document_id','document','line','posting_group','cfop','cst_icms','csosn','origin','rate']
+            classes_sheet.append([labels.get(k,k) for k in class_keys])
+            for row in rows:
+                for classification in row.get('declared_classifications',[]):
+                    record={k:row.get(k) for k in ['document_id','document','line','posting_group']} | classification
+                    classes_sheet.append([display(k,record.get(k)) for k in class_keys])
+                    for cell in classes_sheet[classes_sheet.max_row]:
+                        if isinstance(cell.value,str):cell.data_type='s'
         for ws in wb:
             ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions if ws is not meta else 'A1:B1'
             for cell in ws[1]:cell.font=Font(bold=True,color='FFFFFF');cell.fill=PatternFill('solid',fgColor='225F57')
@@ -91,7 +122,7 @@ def export_report(result,kind):
     doc=SimpleDocTemplate(output,pagesize=pagesize,leftMargin=30,rightMargin=30,topMargin=35,bottomMargin=30,title=title,author='Escritura Integrada')
     story=[para(title,styles['Heading1']),para(result['company_name'],styles['Heading2']),para(f"Período: {result['start']} a {result['end']}",body),Spacer(1,8),para(result['scope_note'],body),Spacer(1,10)]
     if result.get('filters'):story+=[para('Filtros: '+json.dumps(result['filters'],ensure_ascii=False),body),Spacer(1,8)]
-    totals=[[para(LABELS.get(k,k)),para(display(k,v))] for k,v in result['totals'].items()]
+    totals=[[para(labels.get(k,k)),para(display(k,v))] for k,v in result['totals'].items()]
     if totals:
         table=LongTable(totals,colWidths=[width*.7,width*.3]);table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eef5f3')),('VALIGN',(0,0),(-1,-1),'TOP'),('BOTTOMPADDING',(0,0),(-1,-1),5)]));story.extend([table,Spacer(1,16)])
     anchors=[k for k in ['document','date','account_name','partner_name','tax'] if k in keys][:2]
@@ -99,10 +130,12 @@ def export_report(result,kind):
     for index,columns in enumerate(blocks):
         if not columns:continue
         if index:story+=[PageBreak(),para(title+' · continuação',styles['Heading2']),para(result['company_name'],body),Spacer(1,10)]
-        content=[[para(LABELS.get(k,k)) for k in columns]]+[[para(display(k,r.get(k))) for k in columns] for r in rows]
+        content=[[para(labels.get(k,k)) for k in columns]]+[[para(display(k,r.get(k))) for k in columns] for r in rows]
         table=LongTable(content,colWidths=[width/len(columns)]*len(columns),repeatRows=1,hAlign='LEFT',splitByRow=1,splitInRow=1)
         table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#dceee7')),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f5f7f8')]),('GRID',(0,0),(-1,-1),.25,colors.HexColor('#d5dfe2')),('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]));story.append(table)
     if not rows:story.append(para('Nenhum registro nos filtros selecionados.',body))
     def footer(canvas,document):
         canvas.setFont('EscrituraSans',8);canvas.drawString(30,15,'Escritura Integrada · relatório auxiliar');canvas.drawRightString(pagesize[0]-30,15,f'Página {document.page}')
     doc.build(story,onFirstPage=footer,onLaterPages=footer);return output.getvalue(),'application/pdf'
+
+LABELS.update(document_state='Estado documental', cancellation_source='Fonte do cancelamento', cancellation_responsible='Responsável pelo cancelamento', cancellation_reason='Motivo do cancelamento', book_cancellation='Cancelamento conforme livro validado')

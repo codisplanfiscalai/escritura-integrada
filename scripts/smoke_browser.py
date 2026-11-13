@@ -64,7 +64,9 @@ def main():
                             response=page.request.post(url+'/api'+path,data=payload,headers={'X-CSRF-Token':csrf})
                             assert response.ok, response.text()
                             return response.json()
-                        check('Login e contexto por sessão')
+                        assert session['operational_settings']['require_extra_confirmations'] is False
+                        assert session['operational_settings']['require_separate_document_review'] is False
+                        check('Login e contexto por sessão; confirmações e conferência separada são opcionais por padrão')
                         shot('dashboard-1440.png')
                         nav('Empresas')
                         # Edit the other company without activating it.
@@ -108,11 +110,15 @@ def main():
                         page.get_by_role('button',name='Salvar documento',exact=True).click()
                         expect(page.get_by_role('dialog')).to_have_count(0)
                         row=page.locator('tbody tr').filter(has_text='UI001')
-                        row.get_by_role('button',name='Conferir',exact=True).click()
-                        page.get_by_label('Observação da conferência').fill('Conferência sintética de ponta a ponta')
-                        page.get_by_role('button',name='Marcar como conferido',exact=True).click()
+                        expect(row.get_by_role('button',name='Conferir e escriturar',exact=True)).to_be_visible()
+                        row.get_by_role('button',name='Marcar conferido',exact=True).click()
+                        expect(row.get_by_text('Conferido',exact=True)).to_be_visible()
+                        expect(page.get_by_role('dialog')).to_have_count(0)
+                        reviewed=next(d for d in page.request.get(url+f'/api/companies/{cid}/documents?year=2026').json() if d['number']=='UI001')
+                        assert reviewed['status']=='reviewed' and reviewed['reviewed_by']
+                        check('Conferência padrão salva o responsável sem diálogo extra e mantém escrituração disponível')
                         row.get_by_role('button',name='Escriturar',exact=True).click()
-                        page.get_by_label('Observação da escrituração *',exact=True).fill('Escrituração sintética de teste')
+                        page.get_by_label('Observação da escrituração (opcional)',exact=True).fill('Escrituração sintética de teste')
                         page.get_by_label('Contabilizar junto com o documento',exact=False).check()
                         page.get_by_label('Conta a debitar *',exact=False).select_option(aid['3'])
                         page.get_by_label('Conta a creditar *',exact=False).select_option(aid['5'])
@@ -121,10 +127,12 @@ def main():
                         date_field('Primeiro vencimento').fill('10112026')
                         page.get_by_role('button',name='Distribuir mensalmente',exact=True).click()
                         shot('escrituracao-integrada-1440.png')
-                        page.get_by_role('button',name='Confirmar escrituração',exact=True).click()
+                        page.get_by_role('dialog',name='Escriturar documento',exact=True).get_by_role('button',name='Escriturar documento',exact=True).click()
                         expect(page.get_by_role('dialog')).to_have_count(0)
                         titles=page.request.get(url+f'/api/companies/{cid}/titles').json();created=[t for t in titles if t['document']=='UI001']
                         assert len(created)==2 and sum(t['amount_cents'] for t in created)==10000
+                        booked=next(d for d in page.request.get(url+f'/api/companies/{cid}/documents?year=2026').json() if d['number']=='UI001')
+                        assert booked['status']=='booked' and booked['journal_id']
                         check('Documento → conferência → contabilidade + duas parcelas em transação única')
                         nav('Contas a pagar')
                         page.get_by_role('textbox',name='Pesquisar títulos').fill('UI001')
@@ -152,20 +160,24 @@ def main():
                         expect(page.get_by_role('button',name='Confirmar importação',exact=True)).to_be_visible()
                         shot('importacao-previa-1440.png')
                         page.get_by_role('button',name='Confirmar importação',exact=True).click()
-                        page.get_by_role('button',name='Importar registros',exact=True).click()
                         expect(page.get_by_role('button',name='Abrir conciliação',exact=True)).to_be_visible()
+                        expect(page.get_by_role('dialog',name='Confirmar importação?',exact=True)).to_have_count(0)
                         assert page.request.get(url+'/api/session').json()['authenticated']
                         with page.expect_download() as download:
                             page.get_by_role('link',name='Baixar original',exact=True).click()
                         assert Path(download.value.path()).read_bytes()==(ROOT/'tests/fixtures/extrato_ficticio.csv').read_bytes()
-                        check('Importação CSV pela interface preserva autenticação e confirmação')
+                        check('Importação CSV padrão executa uma única confirmação final, preservando autenticação e arquivo original')
                         nav('Livros e demonstrações')
                         page.get_by_label(re.compile('^Relatório')).select_option('trial-balance')
                         page.get_by_role('button',name='Gerar relatório',exact=True).click()
                         expect(page.get_by_role('heading',name='Balancete',exact=True)).to_be_visible()
                         shot('balancete-1440.png')
                         assert page.locator('.report-output tbody tr').count()>0
-                        page.locator('.report-output tbody tr .text-button').first.click()
+                        account_row=page.locator('.report-output tbody tr').filter(has=page.get_by_role('cell',name='3',exact=True))
+                        account_row.get_by_role('button',name=re.compile(r'^Ver detalhes do registro ')).click()
+                        details=page.get_by_role('dialog',name='Detalhes do registro',exact=True)
+                        details.get_by_role('button',name=f"Lançamento #{booked['journal_id']}",exact=True).click()
+                        expect(details).to_have_count(0)
                         expect(page.get_by_role('heading',name='Lançamento de origem',exact=True)).to_be_visible()
                         assert page.get_by_role('dialog').locator('tbody tr').count()>=2
                         page.get_by_role('button',name='Fechar',exact=True).click()
@@ -176,24 +188,41 @@ def main():
                         page.get_by_role('button',name='Cadastrar exercício',exact=True).click()
                         expect(page.locator('.month-card')).to_have_count(12)
                         expect(page.get_by_label('Exercício do módulo')).to_have_value('2028')
+                        def select_month(card, label, period):
+                            with page.expect_response(lambda r: r.url.endswith('/api/context') and r.request.method=='POST') as selected:
+                                card.get_by_role('button',name=label,exact=True).click()
+                            assert selected.value.ok,selected.value.text()
+                            assert selected.value.json()['period']==period
+                            expect(page.locator('#active-period')).to_have_value(period[:4])
+                            # Context activation also refreshes locks after the POST.
+                            # Wait for its real busy state, not an arbitrary delay.
+                            expect(page.locator('#active-period')).to_be_enabled()
+                            expect(card.get_by_role('button',name='Selecionada',exact=True)).to_be_enabled()
+                            selected_session=page.request.get(url+'/api/session').json()
+                            assert selected_session['period']==period and selected_session['active_company_id']==cid
+                            assert selected_session['module']=='fiscal'
                         january=page.locator('.month-card').filter(has=page.get_by_role('heading',name='Janeiro',exact=True))
-                        january.get_by_role('button',name='Selecionar / consultar',exact=True).click()
-                        expect(page.locator('#active-period')).to_have_value('2028')
+                        select_month(january,'Selecionar / consultar','2028-01')
                         january.get_by_role('button',name='Fechar',exact=True).click()
                         page.get_by_label('Justificativa *',exact=True).fill('Conferência anual sintética')
                         page.get_by_role('button',name='Confirmar fechamento',exact=True).click()
                         expect(january.get_by_text('Bloqueada',exact=True)).to_be_visible()
                         shot('competencias-1440.png')
                         assert page.request.get(url+f'/api/companies/{cid}/periods?period=2028-01').json()['accounting']['closed'] is False
-                        january.get_by_role('button',name='Selecionada',exact=True).click()
+                        select_month(january,'Selecionada','2028-01')
+                        expect(january.get_by_text('Bloqueada',exact=True)).to_be_visible()
                         january.get_by_role('button',name='Reabrir',exact=True).click()
-                        page.get_by_label('Justificativa *',exact=True).fill('Revisão sintética autorizada')
-                        page.get_by_role('button',name='Confirmar reabertura',exact=True).click()
+                        reopen=page.get_by_role('dialog',name='Reabrir competência',exact=True)
+                        expect(reopen).to_be_visible()
+                        reopen.get_by_label('Justificativa *',exact=True).fill('Revisão sintética autorizada')
+                        with page.expect_response(lambda r: '/periods/reopen' in r.url and r.request.method=='POST') as reopened:
+                            reopen.get_by_role('button',name='Confirmar reabertura',exact=True).click()
+                        assert reopened.value.ok,reopened.value.text()
+                        expect(reopen).to_have_count(0)
                         expect(january.get_by_text('Aberta',exact=True)).to_be_visible()
                         page.get_by_label('Exercício do módulo').select_option('2026')
                         november=page.locator('.month-card').filter(has=page.get_by_role('heading',name='Novembro',exact=True))
-                        november.get_by_role('button',name='Selecionar / consultar',exact=True).click()
-                        expect(page.locator('#active-period')).to_have_value('2026')
+                        select_month(november,'Selecionar / consultar','2026-11')
                         check('Exercício 2028 com 12 meses, seleção, fechamento/reabertura justificados e independência contábil')
                         # Group and user administration through the actual UI.
                         nav('Grupos de usuários')
@@ -277,8 +306,27 @@ def main():
                         check('Livro fiscal com filtros e Excel gerado no backend')
                         from browser_exports import run as exports
                         exports(page,url,cid,nav,check,shot)
+                        # Closed-month rejection is opt-in. Enable only that rule in
+                        # this disposable fixture; keep extra confirmations disabled.
+                        settings_url=url+f'/api/companies/{cid}/operational-settings'
+                        settings_response=page.request.get(settings_url)
+                        assert settings_response.ok,settings_response.text()
+                        settings=settings_response.json()
+                        configured={**settings['settings'],'enforce_period_locks':True}
+                        saved=page.request.put(settings_url,data={'version':settings['version'],'settings':configured},headers={'X-CSRF-Token':csrf})
+                        assert saved.ok,saved.text()
+                        assert saved.json()['settings']==configured
+                        assert configured['require_extra_confirmations'] is False
+                        page.reload()
+                        expect(page.get_by_role('navigation',name='Navegação principal')).to_be_visible()
+                        assert page.request.get(url+'/api/session').json()['operational_settings']==configured
                         from browser_evolution import run as evolution
                         evolution(page,browser,url,cid,csrf,nav,check,shot)
+                        from browser_fiscal import run as fiscal
+                        fiscal(page,url,cid,nav,check,shot)
+                        nav('Livros e relatórios fiscais')
+                        page.get_by_role('button',name='Gerar relatório',exact=True).click()
+                        expect(page.locator('.report-output')).to_be_visible()
                         for width,height in [(1024,768),(390,844)]:
                             page.set_viewport_size({'width':width,'height':height})
                             assert page.evaluate('document.documentElement.scrollWidth')<=width+1,'Overflow da página'

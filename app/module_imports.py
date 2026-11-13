@@ -15,6 +15,9 @@ LAYOUTS={
  'titles-v1':{'module':'financial','name':'Títulos e parcelas','fields':['id','kind','description','partner_name','document','issue_date','due_date','amount','installment'],'routine':'financial.titles'},
 }
 
+for base in ('journals', 'openings'):
+    LAYOUTS[base+'-v2'] = dict(LAYOUTS[base+'-v1'], fields=LAYOUTS[base+'-v1']['fields']+['participant_code'])
+
 def parse_csv(raw,layout):
     try:
         source=raw.decode('utf-8-sig')
@@ -55,37 +58,41 @@ class ModuleImportsMixin:
     def preview_module_import(self,cid,payload,actor):
         layout=payload.get('layout');module=payload.get('module');year=integer(payload.get('year'),'Exercício',1900)
         if layout not in LAYOUTS or LAYOUTS[layout]['module']!=module or year>2199:raise DomainError('Leiaute ou exercício inválido.')
-        encoded=payload.get('content_base64','')
-        if not isinstance(encoded,str) or len(encoded)>28_000_000:raise DomainError('Arquivo maior que 20 MiB.')
-        try:raw=base64.b64decode(encoded,validate=True)
-        except ValueError:raise DomainError('Arquivo base64 inválido.')
+        from .operational_settings import decode_import_content, ensure_import_allowed
+        with self.db.read() as conn:
+            raw=decode_import_content(conn,cid,payload.get('content_base64'))
         records=parse_csv(raw,layout)
         with self.db.transaction() as conn:
             company_row(conn,cid);effect(conn,cid,module+'.imports','import')
+            ensure_import_allowed(conn,cid,len(raw))
             fingerprint=digest(raw)
             old=conn.execute('SELECT * FROM module_imports WHERE company_id=? AND module=? AND year=? AND layout=? AND fingerprint=?',(cid,module,year,layout,fingerprint)).fetchone()
             if old:return self._module_preview(conn,cid,old)
             grouped={};result=[]
             for n,row in enumerate(records,2):
                 key=row.get('id') or row.get('access_code')
-                if layout in {'journals-v1','openings-v1'}:
+                if layout in {'journals-v1','openings-v1','journals-v2','openings-v2'}:
                     group=grouped.setdefault(key,{'rows':[],'source_rows':[]});group['rows'].append(row);group['source_rows'].append(n)
                 else:grouped[str(n)]={'rows':[row],'source_rows':[n]}
             for index,(key,group) in enumerate(grouped.items()):
                 row=group['rows'][0];error=None;data={}
                 conn.execute('SAVEPOINT validate_import')
                 try:
-                    if layout in {'journals-v1','openings-v1'}:
+                    if layout in {'journals-v1','openings-v1','journals-v2','openings-v2'}:
                         if not key:raise DomainError('Informe o ID estável de cada lançamento.')
                         if any(any(r[k]!=row[k] for k in ('date','document','history')) for r in group['rows']):raise DomainError('Partidas do mesmo ID têm cabeçalhos diferentes.')
                         lines=[]
                         for r in group['rows']:
-                            account=conn.execute('SELECT id FROM accounts WHERE company_id=? AND access_code=?',(cid,r['account'])).fetchone()
+                            account=conn.execute('SELECT id FROM effective_accounts WHERE company_id=? AND access_code=?',(cid,r['account'])).fetchone()
                             if not account:raise DomainError('Conta não localizada: '+r['account'])
                             cc=conn.execute('SELECT id FROM cost_centers WHERE company_id=? AND code=?',(cid,r['cost_center'])).fetchone() if r['cost_center'] else None
                             if r['cost_center'] and not cc:raise DomainError('Centro de custo não localizado: '+r['cost_center'])
-                            lines.append({'account_id':account['id'],'debit':r['debit'] or '0','credit':r['credit'] or '0','cost_center_id':cc['id'] if cc else None})
-                        data={'date':iso_date(row['date']),'document':row['document'],'history':('Saldos iniciais: ' if layout=='openings-v1' else '')+row['history'],'lines':lines,'idempotency_key':layout+':'+key}
+                            participant = None
+                            if r.get('participant_code'):
+                                participant = conn.execute("SELECT id FROM masters WHERE company_id=? AND kind='participant' AND code=?", (cid,r['participant_code'])).fetchone()
+                                if not participant:raise DomainError('Terceiro não localizado: '+r['participant_code'])
+                            lines.append({'account_id':account['id'],'debit':r['debit'] or '0','credit':r['credit'] or '0','cost_center_id':cc['id'] if cc else None, 'participant_id':participant['id'] if participant else None})
+                        data={'date':iso_date(row['date']),'document':row['document'],'history':('Saldos iniciais: ' if layout.startswith('openings-') else '')+row['history'],'lines':lines,'idempotency_key':layout.replace('-v2','-v1')+':'+key}
                         self._normalize_lines(conn,cid,lines)
                         if not row['history']:raise DomainError('Informe o histórico.')
                     elif layout=='accounts-v1':
@@ -114,7 +121,7 @@ class ModuleImportsMixin:
 
     def _import_account(self,conn,cid,data,actor):
         effect(conn,cid,'accounting.accounts','create')
-        existing=conn.execute('SELECT * FROM accounts WHERE company_id=? AND access_code=?',(cid,data['access_code'])).fetchone()
+        existing=conn.execute('SELECT * FROM effective_accounts WHERE company_id=? AND access_code=?',(cid,data['access_code'])).fetchone()
         if existing:
             if any(existing[k]!=v for k,v in data.items()):raise DomainError('Conta existente com conteúdo diferente. Edite pelo cadastro.',409,'account_conflict')
             return {'id':existing['id'],'duplicate':True}
@@ -123,12 +130,17 @@ class ModuleImportsMixin:
     def confirm_module_import(self,cid,iid,payload,actor):
         with self.db.transaction() as conn:
             batch=select_one(conn,'module_imports',cid,iid)
+            from .operational_settings import ensure_import_allowed
+            original_size=conn.execute('SELECT length(content) FROM stored_files WHERE company_id=? AND id=?',(cid,batch['file_id'])).fetchone()
+            ensure_import_allowed(conn,cid,original_size[0] if original_size else 0)
             if batch['module']!=payload.get('module'):raise DomainError('Módulo de destino divergente.',403,'forbidden')
             effect(conn,cid,batch['module']+'.imports','import')
             if payload.get('fingerprint')!=batch['fingerprint']:raise DomainError('Prévia alterada.',409,'stale_preview')
             result=self._module_preview(conn,cid,batch)
             if batch['result_json']:
                 previous=json.loads(batch['result_json'])
+                if previous.get('movement_deleted'):
+                    raise DomainError('Movimentos deste lote foram excluídos fisicamente. O resultado anterior não pode ser repetido; prepare uma nova intenção de importação.',409,'movement_deleted')
                 if sorted(payload.get('selected',[]))!=previous['selected']:raise DomainError('Lote já confirmado com outra seleção.',409,'idempotency_conflict')
                 return previous|{'duplicate':True}
             selected=selected_rows(result,payload);written=[]

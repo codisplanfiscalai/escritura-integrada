@@ -19,7 +19,7 @@ As imagens e o bundle desta entrega são `linux/amd64`. Windows usa Docker Deskt
 
 ## Instalar a partir da release
 
-Baixe `EscrituraIntegrada-<versão>-production-deploy.zip` ou `EscrituraIntegrada-<versão>-develop-deploy.zip`. Cada pacote contém `compose.yaml`, `.env` preenchido com imagens publicadas, manifesto de imagens e instruções. Não contém código da aplicação, banco, senha de administrador nem material recuperado dos sistemas de referência.
+Baixe `EscrituraIntegrada-<versão>-production-deploy.zip` ou `EscrituraIntegrada-<versão>-develop-deploy.zip`. Cada pacote contém `compose.yaml`, `compose.release.yaml` (override fixado), `.env` preenchido com imagens publicadas, manifesto de imagens e instruções. Não contém código da aplicação, banco, senha de administrador nem material recuperado dos sistemas de referência.
 
 Dentro do diretório extraído:
 
@@ -42,7 +42,22 @@ Só o serviço `app` declara uma porta publicada no host. Bancos, Redis, S3 e co
 
 No `.env`, ajuste `ESCRITURA_PORT` quando necessário. `ESCRITURA_BIND` controla a interface publicada; o padrão loopback restringe o acesso à máquina. Para acesso por rede, planeje o endpoint HTTP/HTTPS e as permissões do host antes de alterar o bind. `ESCRITURA_COOKIE_SECURE=1` destina-se a um endpoint HTTPS já configurado; marcá-lo em HTTP impede o navegador de enviar o cookie de sessão. Os arquivos entregues não instalam proxy TLS, certificados ou serviço Windows.
 
-O Compose da raiz equivale ao de produção e exige `ESCRITURA_IMAGE`. Para partir do repositório, copie `deploy/production/.env.example` para `.env` e substitua a tag indicada por uma release publicada. Os exemplos não afirmam que uma tag ainda não publicada já existe; os ZIPs da release usam o manifesto efetivo do GHCR.
+O Compose da raiz equivale ao de produção e exige `ESCRITURA_IMAGE`. Para partir do repositório, copie `deploy/production/.env.example` para `.env` e substitua a tag indicada por uma release publicada. O exemplo develop acompanha `:develop`, que precisa ter sido promovido no GHCR. Produção continua fixada à versão publicada; estes ajustes não alteram `latest`.
+
+### Cartão da aplicação no Dockge
+
+Os templates usam a forma curta de `ports`, como texto. O parser do cartão do [Dockge 1.4.2](https://github.com/louislam/dockge/blob/1.4.2/common/util-common.ts) espera esse formato. A forma longa, com `target`, `published`, `host_ip` e `protocol`, é válida no Compose, mas pode causar `input.split is not a function` no navegador e impedir a exibição do cartão `app`, mesmo com o container iniciado.
+
+Para corrigir um Compose antigo de desenvolvimento, substitua somente a entrada de porta por:
+
+```yaml
+ports:
+  - "${ESCRITURA_BIND:-127.0.0.1}:${ESCRITURA_PORT:-8001}:8000/tcp"
+```
+
+Em produção e no Compose da raiz, o padrão de `ESCRITURA_PORT` é `8000`, não `8001`. O valor já configurado no `.env` continua prevalecendo. Essa troca de sintaxe preserva o endereço de publicação, a porta e o protocolo; não requer mudar redes, volumes ou expor o servidor em todas as interfaces. Os ZIPs de deploy futuros usam os mesmos templates. Alterar o código-fonte não modifica pacotes já publicados nem stacks já instaladas, e o ajuste do Compose não exige recompilar a imagem.
+
+Para distinguir o painel de um problema na aplicação, consulte `docker compose ps app` e teste `http://127.0.0.1:<porta-configurada>/api/health` no próprio host Docker. Um endereço `127.0.0.1` aberto em outro computador aponta para esse outro computador; acesso remoto requer o proxy ou túnel autorizado para a instalação. Os cartões dos serviços opcionais podem continuar inativos enquanto seus perfis não estiverem habilitados.
 
 ## GHCR público ou autenticado
 
@@ -69,14 +84,14 @@ Confira a integridade:
 ```sh
 sha256sum -c EscrituraIntegrada-<versão>-linux-amd64-images.tar.gz.sha256
 docker load -i EscrituraIntegrada-<versão>-linux-amd64-images.tar.gz
-docker compose up -d --pull never
+docker compose -f compose.yaml -f compose.release.yaml up -d --pull never
 ```
 
-No PowerShell, `Get-FileHash -Algorithm SHA256 <arquivo>` permite comparar o hash com o manifesto. `docker load` aceita o arquivo comprimido. O pacote usa tags imutáveis no `.env`, enquanto `images.json` guarda digests do registro e IDs das imagens. Essa separação evita depender da preservação de `RepoDigests` por `docker save/load`.
+No PowerShell, `Get-FileHash -Algorithm SHA256 <arquivo>` permite comparar o hash com o manifesto. `docker load` aceita o arquivo comprimido. O override explícito `compose.release.yaml` fixa todas as imagens à publicação do pacote, mesmo se o `.env` apontar para `:develop`. `images.json` guarda digests e IDs dessa publicação, não o estado corrente do canal móvel. O override não altera projeto, portas, segredos, perfis ou volumes. Essa separação evita depender da preservação de `RepoDigests` por `docker save/load`.
 
 O exportador grava o tar comprimido por streaming. No runner isolado, `--verify-load` recusa containers em uso, remove somente as tags do manifesto, carrega o bundle, confere os IDs e executa novamente o smoke com `--pull never`. `offline_load_verified: true` só é escrito depois desse teste real. A ausência dessa marca significa que a carga ainda não foi demonstrada por esse artefato.
 
-O Compose usa `pull_policy: missing`; imagens já carregadas podem ser usadas sem registro. `--pull never` torna a intenção offline explícita. Não troque esse comportamento por `always` ao usar o bundle.
+O app develop online usa `pull_policy: always` para não reutilizar uma tag móvel antiga em cache. Produção, serviços opcionais e o override de release usam `missing`. Offline, use os dois arquivos Compose e `--pull never`: o tar contém a tag versionada, não o alias develop. Falhas de pull online não devem ser ocultadas usando silenciosamente imagens antigas.
 
 ## Ativar um serviço opcional
 
@@ -96,7 +111,7 @@ docker compose --profile redis up -d
 docker compose --profile redis ps
 ```
 
-Para iniciar mais de um perfil, repita `--profile`. Para uso offline, acrescente `--pull never` ao `up`. Gere senhas próprias, longas e aleatórias; os pacotes entregues deixam esses campos vazios. Caracteres especiais devem seguir a [sintaxe de `.env` do Compose](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/); aspas simples evitam interpolar `$` na senha.
+Para iniciar mais de um perfil, repita `--profile`. Para uso offline, use `docker compose -f compose.yaml -f compose.release.yaml --profile redis up -d --pull never` (substitua/repita o perfil desejado). Gere senhas próprias, longas e aleatórias; os pacotes entregues deixam esses campos vazios. Caracteres especiais devem seguir a [sintaxe de `.env` do Compose](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/); aspas simples evitam interpolar `$` na senha.
 
 A validação fica no entrypoint de cada imagem e é executada apenas quando o serviço é iniciado. Assim, a configuração de app-only não exige segredos de perfis inativos. Isso evita exigir `${VAR:?}` para credenciais opcionais durante a fase global de interpolação. As senhas não são passadas por build args e não entram nas camadas das imagens.
 
@@ -115,7 +130,23 @@ docker compose cp app:/data/backup.sqlite3 ./backup.sqlite3
 
 Esse nome substitui a cópia anterior; renomeie o arquivo externo com a data e mantenha backups fora do volume. Proteja os arquivos, pois contêm dados do escritório. Teste restauração em um projeto/volume separado antes de depender do procedimento. Não copie apenas o `.sqlite3` enquanto há gravações sem usar um mecanismo consistente.
 
-Antes de atualizar: guarde backup, preserve o `.env` do ambiente, revise a versão de destino e altere `ESCRITURA_IMAGE` para a tag publicada. `docker compose down` preserva volumes; `down -v` os remove e não é parte do procedimento normal. Um rollback de imagem não desfaz uma migração de dados. Os perfis opcionais usam backups nativos de cada produto, conforme sua configuração; o backup SQLite não os inclui.
+Antes de atualizar: guarde backup, preserve o `.env` e o nome do projeto Compose do ambiente e revise a versão de destino. Em produção, altere `ESCRITURA_IMAGE` para a tag publicada e execute `docker compose up -d`.
+
+### Desenvolvimento acompanha o canal
+
+No pacote develop, `ESCRITURA_IMAGE=ghcr.io/codisplanfiscalai/escritura-integrada:develop` e somente o app usa `pull_policy: always`. `docker compose up -d` consulta o registro e recria o app se a imagem mudou, sem trocar o `.env` a cada versão. Não há atualização em segundo plano: execute o comando ou a ação equivalente no Dockge. Resolva falhas de rede/autenticação antes de atualizar.
+
+**Instalações existentes:** ajuste uma única vez a linha `ESCRITURA_IMAGE` para o valor acima e `services.app.pull_policy` para `always`. Não substitua todo o `.env` pelo exemplo: preserve credenciais, nome de projeto, bind, portas e volumes. Copiar um ZIP novo sobre a instalação pode apagar configurações privadas. Não mude o projeto existente para `escritura-develop`: isso apontaria para outro volume.
+
+O workflow de release promove o alias no job final **Promover alias develop após publicação**, somente em develop e depois de todos os gates e da publicação. Esse job usa a imagem já construída, exige a mesma versão, commit, execução e recibos dos assets, confere o inventário remoto e valida o pull público por digest. A prova é repetida imediatamente antes e depois da gravação. As referências main/latest são conferidas e não são escritas por esse job. Imagens opcionais continuam fixadas por conteúdo e requerem atualização deliberada do pacote/configuração.
+
+Aguarde também esse job final ficar verde antes de atualizar uma instalação pelo canal. A presença da release ou da tag SemVer sozinha não comprova que `:develop` avançou. O artefato `develop-alias-report` registra o resultado. Em erro de rede durante a gravação, o resultado pode ser incerto: confira o digest corrente antes de repetir. É possível reexecutar apenas o job final da mesma run, sem reconstruir as imagens, desde que o head, os gates mais recentes, os assets e os recibos continuem válidos. Uma nova execução de workflow não substitui essa reexecução. O job não tenta desfazer alterações externas nem muda `latest`, reservado a main/estável.
+
+### Fixar uma release ou fazer rollback
+
+Guarde o pacote e o bundle da release desejada. Após verificar backup/compatibilidade de banco, use `docker compose -f compose.yaml -f compose.release.yaml up -d`. O override escolhe todas as tags exatas do manifesto, independentemente do canal no `.env`. Offline, carregue o tar correspondente e acrescente `--pull never`. Continue incluindo o override enquanto quiser permanecer fixado. Uma tag antiga no `.env` não prevalece sobre esse override.
+
+Para retomar develop, execute `docker compose up -d` sem o override. `compose.release.yaml` não é carregado automaticamente e não muda credenciais nem armazenamento. Não é necessário executar `down` antes de atualizar. `docker compose down` preserva volumes; `down -v` os remove e não é parte do procedimento normal. Um rollback de imagem não desfaz uma migração de dados. Os perfis opcionais usam backups nativos de cada produto, conforme sua configuração; o backup SQLite não os inclui.
 
 ## Build, versões e verificações
 
@@ -123,7 +154,7 @@ Antes de atualizar: guarde backup, preserve o `.env` do ambiente, revise a vers�
 
 `docker/runtime.lock` fixa as 25 dependências Python diretas/transitivas do runtime Linux e o `colorama` com marcador exclusivo de Windows, com hashes oficiais de wheels, preservando as versões do ambiente de aplicação já testado. O build exige binários, hashes e `pip check`. `frontend/package-lock.json` e `npm ci` travam o frontend. Node e Go ficam nos estágios de compilação. MinIO é compilado do commit e arquivo de fonte com checksum, com módulos fixados no `go.sum`, `go mod verify` e `GOTOOLCHAIN=local`.
 
-A publicação calcula IDs de conteúdo para bases/mirrors e usa tags que incluem esse hash. A tag SemVer da aplicação é imutável pelo publicador: uma tag existente precisa ter o mesmo ID de conteúdo e commit; divergência interrompe o processo. Mudanças de conteúdo exigem nova versão. Não são usadas tags `latest` nos deploys. O source SHA, versão, digests, IDs, resultado do smoke e disponibilidade anônima compõem o manifesto da publicação.
+A publicação calcula IDs de conteúdo para bases/mirrors e usa tags que incluem esse hash. A tag SemVer da aplicação é imutável pelo publicador: uma tag existente precisa ter o mesmo ID de conteúdo e commit; divergência interrompe o processo. Mudanças de conteúdo exigem nova versão. Não são usadas tags `latest` nos deploys; somente o app develop acompanha o alias móvel `develop`. O source SHA, versão, digests, IDs, resultado do smoke e disponibilidade anônima compõem o manifesto da publicação.
 
 Comandos do pipeline, depois de aplicar a versão no checkout:
 
@@ -149,3 +180,23 @@ O contexto de build usa allowlist em `.dockerignore`. Pacotes de deploy têm lis
 Referências técnicas: [perfis Compose](https://docs.docker.com/compose/how-tos/profiles/), [interpolação](https://docs.docker.com/reference/compose-file/interpolation/), [serviços e pull policy](https://docs.docker.com/reference/compose-file/services/), [docker image save](https://docs.docker.com/reference/cli/docker/image/save/), [docker image load](https://docs.docker.com/reference/cli/docker/image/load/), [release MinIO utilizado](https://github.com/minio/minio/releases/tag/RELEASE.2025-10-15T17-29-55Z).
 
 A base inclui `libarchive-tools` e `libarchive13` Debian Bookworm `3.6.2-1+deb12u5` para RAR comprimido. A versão vem do [repositório oficial Debian](https://packages.debian.org/bookworm/libarchive-tools) e participa da identificação da imagem base. Novas correções exigem atualizar o Dockerfile e regenerar os manifests.
+
+
+### Aliases GHCR e promoção estável
+
+O job `promote-latest` publica apenas o alias da aplicação `latest`, depois da
+release **main** concluída e dos sete gates aprovados. Ele reutiliza o manifesto
+OCI versionado, sem rebuild, e verifica SHA da main, versão estável, execução,
+assets/checksums, digest e leitura pública. Não altera a branch nem o alias
+`develop`. O job existente `promote-develop` continua restrito à pré-release.
+
+A sincronização automática main → develop aguarda `promote-latest`, evitando
+alterar o snapshot protegido durante a promoção. Uma falha de promoção mantém
+o relatório `latest-alias-report` e impede essa sincronização para uma nova
+release. O re-run do job final confere novamente as provas e não duplica PUT se
+o alias já tiver o digest correto. Não há rollback automático de um PUT com
+resultado incerto; o relatório exige conferência do estado antes de nova ação.
+
+Isso vale para novas releases cujo workflow inclua o job. Releases históricas
+já publicadas não são reconstruídas nem alteradas por esse acréscimo; uma
+recuperação de alias antigo usa o procedimento operacional explícito existente.

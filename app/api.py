@@ -33,13 +33,35 @@ def create_app(data_dir=None, demo=False):
     @asynccontextmanager
     async def lifespan(application):
         worker.recover()
-        try:yield
-        finally:await asyncio.to_thread(worker.close)
+        from .import_package_cleanup import scheduler
+        cleanup_task = asyncio.create_task(scheduler(database))
+        try: yield
+        finally:
+            cleanup_task.cancel()
+            import contextlib
+            with contextlib.suppress(asyncio.CancelledError): await cleanup_task
+            await asyncio.to_thread(worker.close)
     application = FastAPI(lifespan=lifespan, title="Escritura Integrada", version=__version__, docs_url=None, redoc_url=None)
     application.state.core = core
     application.state.db = database
     application.state.auditor = worker
     application.state.demo = demo
+    from .import_package_cleanup import register as register_package_cleanup
+    register_package_cleanup(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .operational_settings import register as register_operational_settings
+    register_operational_settings(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .fiscal_library_api import register_fiscal_library_routes
+    register_fiscal_library_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .fiscal_api import register_fiscal_routes
+    register_fiscal_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .account_plan_api import register_account_plan_routes
+    register_account_plan_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .fiscal_series_operations import register as register_fiscal_series
+    register_fiscal_series(application,core,actor=lambda request:request.state.session["user"]["username"])
+    from .bulk_api import register_bulk_routes
+    register_bulk_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .third_party_api import register_third_party_routes
+    register_third_party_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .lookups import LookupService
     application.state.lookups = LookupService(database)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"
@@ -75,7 +97,7 @@ def create_app(data_dir=None, demo=False):
         if path.startswith("/api/"):
             if mutating:
                 content_length = request.headers.get("content-length")
-                if content_length and (not content_length.isdigit() or int(content_length) > 30_000_000):
+                if content_length and (not content_length.isdigit() or int(content_length) > (180_000_000 if re.fullmatch(r"/api/companies/\d+/(imports/preview|module-imports/preview)", path) else 30_000_000)):
                     return JSONResponse({"detail": "Requisição excede o limite de tamanho.", "code": "request_too_large"}, 413)
                 origin = request.headers.get("origin")
                 if origin and urlsplit(origin).netloc != request.headers.get("host"):
@@ -119,7 +141,9 @@ def create_app(data_dir=None, demo=False):
                         return JSONResponse({"detail": "Confirmação de sessão inválida. Atualize a página.", "code": "invalid_csrf"}, 403)
                     expected = {"token_hash": digest(token.encode()), "user_id": session["user"]["id"], "write": writing, "admin": privileged, "permission_company_id": permission_cid, "routine": routine, "action": action or 'read'}
                     match = re.match(r"^/api/companies/(\d+)/", path)
-                    if match:
+                    # Company administration targets the opened registration, not movements.
+                    # Permissions are still revalidated for that exact company in the transaction.
+                    if match and not re.fullmatch(r"/api/companies/\d+/operational-settings(?:/(?:templates|apply-template))?", path):
                         cid = int(match.group(1))
                         if session["active_company_id"] != cid:
                             return JSONResponse({"detail": "A empresa ativa mudou. Reabra o lançamento no contexto correto.", "code": "stale_context"}, 409)
@@ -145,7 +169,7 @@ def create_app(data_dir=None, demo=False):
             and response.headers.get('content-disposition', '').startswith('inline;'))
         response.headers["X-Frame-Options"] = "SAMEORIGIN" if audit_pdf else "DENY"
         ancestors = "'self'" if audit_pdf else "'none'"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors " + ancestors
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors " + ancestors
         if path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -230,8 +254,8 @@ def create_app(data_dir=None, demo=False):
         return core.update_company(cid, payload, actor(request))
 
     @application.get("/api/companies/{cid}/accounts")
-    def accounts(cid: int):
-        return core.accounts(cid)
+    def accounts(cid: int, page: int | None = None, per_page: int = 50, search: str = ''):
+        return core.accounts(cid, page=page, per_page=per_page, search=search)
 
     @application.post("/api/companies/{cid}/accounts", status_code=201)
     def create_account(cid: int, request: Request, payload: dict[str, Any] = Body(...)):
@@ -294,6 +318,16 @@ def create_app(data_dir=None, demo=False):
     def review_document(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
         check_document_period(request, cid, item_id)
         return core.review_document(cid, item_id, payload, actor(request))
+
+    @application.get("/api/companies/{cid}/journal-participants")
+    def journal_participants(cid: int):
+        with core.db.read() as conn:
+            return [dict(r) for r in conn.execute("SELECT id,code,name,tax_id FROM masters WHERE company_id=? AND kind='participant' AND active=1 ORDER BY code,id", (cid,))]
+
+    @application.post("/api/companies/{cid}/documents/{item_id}/account")
+    def account_document(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):
+        check_document_period(request, cid, item_id)
+        return core.account_document(cid, item_id, payload, actor(request))
 
     @application.post("/api/companies/{cid}/documents/{item_id}/book")
     def book_document(cid: int, item_id: int, request: Request, payload: dict[str, Any] = Body(...)):

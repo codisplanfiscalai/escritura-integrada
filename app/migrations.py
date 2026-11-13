@@ -7,6 +7,7 @@ def migrate(conn):
             'companies': {'profile_json': "TEXT NOT NULL DEFAULT '{}'"},
             'users': {'role': "TEXT NOT NULL DEFAULT 'admin'", 'active': 'INTEGER NOT NULL DEFAULT 1'},
             'accounts': {'report_group': "TEXT NOT NULL DEFAULT ''", 'prosoft_code': "TEXT NOT NULL DEFAULT ''"},
+            'journal_lines': {'participant_id': 'INTEGER REFERENCES masters(id)'},
             'cost_centers': {'prosoft_code': "TEXT NOT NULL DEFAULT ''"},
             'titles': {'participant_id': 'INTEGER REFERENCES masters(id)', 'source_key': 'TEXT', 'request_hash': "TEXT NOT NULL DEFAULT ''", 'cancelled': 'INTEGER NOT NULL DEFAULT 0', 'renegotiation_id': 'INTEGER', 'installment': 'INTEGER NOT NULL DEFAULT 1'},
             'settlements': {'interest_cents': 'INTEGER NOT NULL DEFAULT 0', 'fine_cents': 'INTEGER NOT NULL DEFAULT 0', 'discount_cents': 'INTEGER NOT NULL DEFAULT 0', 'cash_cents': 'INTEGER', 'reversed_at': 'TEXT', 'reversal_date': 'TEXT', 'reversal_reason': 'TEXT', 'reversal_journal_id': 'INTEGER REFERENCES journals(id)'},
@@ -17,6 +18,19 @@ def migrate(conn):
                 if name not in existing:
                     conn.execute(f'ALTER TABLE {table} ADD COLUMN {name} {definition}')
         statements = [
+            '''CREATE TABLE IF NOT EXISTS account_plan_batches (
+                id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id),
+                filename TEXT NOT NULL, format TEXT NOT NULL, sha256 TEXT NOT NULL, original BLOB NOT NULL,
+                options_json TEXT NOT NULL, plan_json TEXT NOT NULL, preview_hash TEXT NOT NULL, state_hash TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('preview','confirmed','reference')), confirmation_json TEXT,
+                created_at TEXT NOT NULL, created_by TEXT NOT NULL, UNIQUE(company_id,id))''',
+            '''CREATE TABLE IF NOT EXISTS account_plan_properties (
+                company_id INTEGER PRIMARY KEY REFERENCES companies(id), properties_json TEXT NOT NULL, extras_json TEXT NOT NULL DEFAULT '{}')''',
+            '''CREATE TABLE IF NOT EXISTS account_plan_metadata (
+                company_id INTEGER NOT NULL, account_id INTEGER NOT NULL, prosoft_json TEXT NOT NULL, extras_json TEXT NOT NULL DEFAULT '{}', batch_id INTEGER NOT NULL,
+                PRIMARY KEY(company_id,account_id),
+                FOREIGN KEY(company_id,account_id) REFERENCES accounts(company_id,id),
+                FOREIGN KEY(company_id,batch_id) REFERENCES account_plan_batches(company_id,id))''',
             '''CREATE TABLE IF NOT EXISTS masters (
                 id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id),
                 kind TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL, tax_id TEXT NOT NULL DEFAULT '',
@@ -78,6 +92,8 @@ def migrate(conn):
         migrate_v4(conn)
         from .migration_v5 import migrate_v5
         migrate_v5(conn)
+        from .bulk_operations import initialize_bulk_schema
+        initialize_bulk_schema(conn)
         conn.commit()
     except BaseException:
         conn.rollback()

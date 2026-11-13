@@ -17,6 +17,11 @@ def browser_script():
         const companies = await (await fetch('/api/companies')).json();
         const cid = session.active_company_id;
         const company = companies.find(c=>c.id===cid), year=session.period.slice(0,4);
+        const cfopResponse=await fetch(`/api/companies/${cid}/cfop-reference?date=${year}-11-01`);
+        const cfop=await cfopResponse.json();
+        if(!cfopResponse.ok||cfop.total!==619||!cfop.rows.some(r=>r.code==='1102'))throw Error('Tabela CFOP ausente no pacote');
+        const sourceResponse=await fetch(`/api/companies/${cid}/cfop-source-loads/default`), sourceCFOP=await sourceResponse.json();
+        if(!sourceResponse.ok||sourceCFOP.record_count!==779||!sourceCFOP.records.some(r=>r.code==='111'&&r.review_status==='unreviewed'))throw Error('Carga CFOP de referência ausente no pacote');
         const base=`/api/companies/${cid}/auditor`;
         const headers={'Content-Type':'application/json','X-CSRF-Token':session.csrf_token};
         const send=async(path,body)=>{const r=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});if(!r.ok)throw Error(`Auditor ${path}: ${r.status} ${await r.text()}`);return r.json()};
@@ -39,5 +44,5 @@ def browser_script():
         }
         const catalog=await send('/catalogs/reference',{name:'Referência histórica - smoke',valid_from:year+'-01-01',valid_to:year+'-12-31'});
         if(catalog.entry_count!==15638||catalog.reference.cst.length!==19||catalog.reference.cclass.length!==142)throw Error('Catálogos ausentes no pacote');
-        return {...artifacts,job_id:job.id,documents:1,items:result.result.documents[0].items.length,catalog_rows:catalog.entry_count};
+        return {...artifacts,job_id:job.id,documents:1,items:result.result.documents[0].items.length,catalog_rows:catalog.entry_count,cfop_codes:cfop.total,cfop_source_records:sourceCFOP.record_count};
     }'''.replace('__XML__',xml)

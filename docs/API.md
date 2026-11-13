@@ -4,6 +4,22 @@ API JSON no prefixo `/api`, mesma origem do aplicativo. Valores recebidos são s
 
 ## Sessão e contexto
 
+### Incremento fiscal 0.8
+
+`GET /companies/{id}/cfop-source-loads/default` baixa a carga padrão. `POST .../cfop-source-loads/preview` recebe `{date,bundle?}` (ausência de `bundle` seleciona a padrão) e apresenta comparação, cadastros a criar/preservar e `preview_hash`. `POST .../cfop-source-loads` recebe os mesmos dados mais `{preview_hash,reason}`; exige inclusão em cadastros fiscais, preserva todos os registros de origem e completa a tabela com a referência oficial, sem ativar os parâmetros declarados.
+
+`GET .../cfop-source-loads`, `GET .../cfop-source-loads/{load_id}/rows?search=&page=1` e `GET .../{load_id}/original` consultam cargas da empresa, registros paginados e JSON preservado. A mesma carga é idempotente. O formato e os limites estão em [Carga CFOP](CFOP_CARGA_REFERENCIA.md).
+
+`GET /companies/{id}/cfop-reference?search=&direction=&date=YYYY-MM-DD&page=1` retorna metadados da referência e até 50 códigos com título, nota, vigência da redação e cadastro local. `POST .../cfop-reference/apply` recebe `{edition,date,reason}` e copia os códigos sem substituir os existentes; exige inclusão em cadastros fiscais.
+
+`GET/POST /companies/{id}/fiscal-import-mappings` e `PUT .../{mapping_id}` consultam/criam/editam associações. Campos: `direction`, `model` (vazio = todos), `source_cfop`, `target_cfop`, `valid_from`, `valid_to`, `responsible`, `reason`, `active`; a edição exige `version`. Vigências ativas sobrepostas são recusadas. Não há alteração retroativa dos documentos.
+
+`POST /companies/{id}/imports/{batch_id}/posting-preview` recebe `{cfop_mappings:{"incoming:55:5102":"1102"}}` (objeto opcional de escolhas somente do lote). Retorna documentos preparados, `import_posting` com elegibilidade/diagnóstico e `posting_hash`.
+
+A confirmação existente aceita `posting_mode:"book"`, `posting_hash`, as mesmas `cfop_mappings`, `preview_hash` e `selected`. Exige importar e escriturar. Revalida empresa, exercício, CFOP, parâmetros, bloqueios e apuração finalizada dentro da transação. A resposta acrescenta `documents_booked`. Não cria efeitos contábeis/financeiros implícitos. O modo `pending` e clientes sem `posting_mode` preservam a conferência individual anterior.
+
+O `PUT` existente de documentos permite corrigir escrituração sem efeitos vinculados, com `version` e `reason`, mantendo o estado escriturado. O original permanece imutável. O `POST .../review` registra a conferência posterior de uma importação direta. Períodos fechados, apurações finalizadas e vínculos continuam protegidos.
+
 - `GET /health` → `{status:"ok",version:"0.4.0-dev.1",demo:boolean}`.
 - `GET /session` → `{authenticated,setup_required,demo,user:{id,username}|null,csrf_token,active_company_id,period}`.
 - `POST /setup {username,password}` cria o primeiro administrador (senha mínima 12 caracteres), inicia sessão; disponível uma vez.
@@ -91,7 +107,9 @@ Os endpoints anteriores são preservados. `app/business_api.py` e `tests/test_bu
 | Renegociação | `POST .../titles/renegotiate {date,reason,idempotency_key,title_ids,versions,interest,discount,installments}`; `GET .../renegotiations`; `POST .../renegotiations/{id}/reverse {date,reason,idempotency_key}`. Reversão exige parcelas sem movimentos |
 | Rateio bancário | `POST .../banks/{id}/allocate {reason,idempotency_key,settle,allocations:[{title_id,amount}]}`; `settle:false` só vincula, `true` baixa o principal explicitamente. `POST .../allocations/{id}/reverse {reason}` desfaz vínculo sem estornar baixa |
 | Participantes | `GET .../partner-reconciliation`; títulos, pagamentos e saldos agrupados por identidade do participante |
-| Relatórios | `GET .../business-reports/{kind}?start=YYYY-MM-DD&end=YYYY-MM-DD&account_id=&cost_center_id=&query=&status=&direction=&format=json|csv`; filtros aplicáveis a cada relatório, valores JSON em centavos e CSV decimal sem ponto flutuante |
+| Relatórios | `GET .../business-reports/{kind}?start=YYYY-MM-DD&end=YYYY-MM-DD&account_id=&cost_center_id=&query=&status=&direction=&cfop=&ncm=&format=json|csv|xlsx|pdf`; filtros aplicáveis a cada relatório, valores JSON em centavos e CSV decimal sem ponto flutuante |
+| Modelos de impressão | `GET .../report-models` lista modelos autorizados com `id`, `kind`, `supported`, fonte, evidência, status e limitações. A consulta de relatório aceita `model=internal` (genérico) ou um ID compatível do catálogo, `first_page=1..99999` e `show_numbers=true` (Razão de referência). PDF com `purpose=print` usa permissão de impressão e disposição inline; demais arquivos exigem exportação. JSON de modelo específico inclui `model_evidence`. |
+| Excel dos movimentos pesquisados | `GET .../movement-exports/{documents|journals}.xlsx?year=AAAA&month=MM&query=&direction=&status=` exporta o resultado filtrado completo, sem limite de página/seleção. Exige consultar e exportar a rotina, empresa/módulo/exercício ativos. Operação/situação são filtros fiscais. |
 | Pré-apuração | `GET/POST .../assessments`; consulta com `period`, criação com bases/documentos/regras revisados, efeito e justificativa. Resposta sempre explicita `legal_validation:false`, memória e fingerprint de origem |
 | Ajustes | `GET/POST .../tax-adjustments`; `POST .../tax-adjustments/{id}/reverse {period,reason}`; sem exclusão da evidência original |
 | Prosoft | `POST .../prosoft/preview`, `POST .../prosoft/confirm`: período, modo, mapeamentos e confirmações. Confirmação exige hash da prévia e aceite explícito de transliteração quando houver. `GET .../exports/{id}/download` retorna lote persistido |
