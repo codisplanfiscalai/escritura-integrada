@@ -226,10 +226,20 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     expect(page.get_by_role('dialog')).to_have_count(0,timeout=30000)
     expect(main.get_by_text(re.compile('15638 linhas · 11096 NCMs completos'))).to_be_visible()
     main.get_by_label('Situação',exact=True).select_option('error')
-    expect(main.get_by_text('Página 1 · 6 resultados',exact=True)).to_be_visible()
+    expect(main.get_by_text('Página 1 · 3 resultados',exact=True)).to_be_visible()
     expect(main.get_by_role('button',name='Publicar após revisão',exact=True)).to_be_disabled()
     shot('auditor-catalogos-1440.png')
-    check('Catálogo original: 15.638 linhas recuperadas; seis linhas com erros visíveis; publicação impedida até revisão')
+    check('Catálogo original: 15.638 linhas recuperadas; três linhas com erros visíveis; publicação impedida até revisão')
+    for mode in ('Auditoria da escrituração','Auditoria avulsa'):
+        main.get_by_role('button',name=mode,exact=True).click()
+        expect(main.get_by_text('Catálogo importado não é catálogo ausente.',exact=False)).to_be_visible()
+        draft=main.get_by_label('Catálogo publicado',exact=True).locator('option').filter(has_text='Referência histórica Auditor 1.2.2')
+        expect(draft).to_have_js_property('disabled',True)
+        expect(draft).to_contain_text('4 erros para revisar')
+        main.get_by_role('button',name='Revisar catálogo',exact=True).click()
+        expect(main.get_by_role('button',name='Publicar após revisão',exact=True)).to_be_disabled()
+        expect(main.get_by_text('Este catálogo está salvo como rascunho',exact=False)).to_be_visible()
+    check('Avulsa e escrituração mostram catálogo importado com diagnóstico e navegam à revisão sem publicar')
     import sys
     sys.path.insert(0,str(root/'tests'))
     from auditor_samples import sample_archive
