@@ -88,13 +88,14 @@ def release_version(value: str):
     return result
 
 
-def choose_version(branch: str, current: str, main_version: str, stable_versions: list[str], run_number: int, same_head_tag: str | None = None):
+def choose_version(branch: str, current: str, main_version: str, stable_versions: list[str], run_number: int, same_head_tag: str | None = None, *, develop_reservations: list[str] | None = None):
     """Calculate a monotonic core while preserving explicit major/minor bumps."""
     if branch not in {"main", "develop"}:
         raise VersionError("Publicação permitida somente a partir de main ou develop.")
     if isinstance(run_number, bool) or not isinstance(run_number, int) or run_number < 1:
         raise VersionError("run_number deve ser inteiro positivo.")
-    desired = release_version(current).without_suffix()
+    current_value = release_version(current)
+    desired = current_value.without_suffix()
     main = release_version(main_version).without_suffix()
     reserved = [release_version(v) for v in stable_versions]
     if any(not v.stable for v in reserved):
@@ -107,7 +108,18 @@ def choose_version(branch: str, current: str, main_version: str, stable_versions
         return str(desired)
     baseline = max([main] + reserved, key=lambda v: v.core)
     desired = max(desired, baseline.next_patch(), key=lambda v: v.core)
-    return str(SemVer(*desired.core, ("dev", str(run_number))))
+    # run_number identifies the workflow, never the cycle-local SemVer counter.
+    number = 1
+    if (current_value.core == desired.core and len(current_value.prerelease) == 2
+            and current_value.prerelease[0] == 'dev'
+            and current_value.prerelease[1].isdigit()):
+        number = int(current_value.prerelease[1]) + 1
+    for value in develop_reservations or []:
+        reserved_dev = release_version(value)
+        if (reserved_dev.core == desired.core and len(reserved_dev.prerelease) == 2
+                and reserved_dev.prerelease[0] == 'dev' and reserved_dev.prerelease[1].isdigit()):
+            number = max(number, int(reserved_dev.prerelease[1]) + 1)
+    return str(SemVer(*desired.core, ("dev", str(number))))
 
 
 def develop_version_after_main(main_version: str, current_develop: str | None):

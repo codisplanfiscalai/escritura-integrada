@@ -80,6 +80,30 @@ def stable_tags(gh):
     return result
 
 
+def develop_reservations(gh, source):
+    """Prepared versions remain reserved in append-only ancestry, even after a merge.
+
+    A merge may restore an older VERSION; do not reuse an OCI tag from a failed
+    or superseded publication. No historical refs or assets are rewritten.
+    """
+    values = []
+    for commit in gh.pages(gh.base + '/commits', params={'sha': source, 'path': 'VERSION'}):
+        title = (commit.get('commit', {}).get('message') or '').split('\n', 1)[0]
+        prefix = 'chore(release): preparar '
+        if title.startswith(prefix):
+            try:
+                version = release_version(title[len(prefix):])
+            except ValueError:
+                continue
+            if version.prerelease:
+                values.append(str(version))
+    published = gh.release('develop', missing=True)
+    marker = release_marker(published) if published else None
+    if marker:
+        values.append(marker['version'])
+    return values
+
+
 def head(gh, branch, missing=False):
     if branch not in {'main', 'develop'}:
         raise ReleaseError('Branch não autorizada.')
@@ -138,7 +162,18 @@ def prepare(gh, *, branch, event_sha, run_number, run_id, run_attempt=1, expecte
     current_ref = reserved.get(current_core)
     coherent = all(v == current_core for v in manifest_versions(files).values())
     same_head_tag = 'v' + current_core if current_ref and gh.commit_sha(current_ref) == current and coherent else None
-    version = choose_version(branch, current_version, main_version, list(reserved), int(run_number), same_head_tag)
+    version = choose_version(branch, current_version, main_version, list(reserved), int(run_number), same_head_tag,
+        develop_reservations=develop_reservations(gh, current) if branch == 'develop' else None)
+    if retry_own_commit and branch == 'develop':
+        # A rerun must reuse its prepared immutable image tag, not consume N+1.
+        previous = release_version(current_version)
+        selected = release_version(version)
+        if (previous.core != selected.core or previous.prerelease[:1] != ('dev',)
+                or len(previous.prerelease) != 2 or not previous.prerelease[1].isdigit()
+                or int(previous.prerelease[1]) < 1
+                or any(value != current_version for value in manifest_versions(files).values())):
+            raise StaleRun('O ciclo da pré-release preparada foi encerrado; inicie nova execução.')
+        version = current_version
     tag = 'v' + version if branch == 'main' else 'develop'
     existing = gh.release(tag, missing=True)
     already = bool(branch == 'main' and existing and not existing.get('draft') and not existing.get('prerelease') and same_head_tag == tag)
@@ -187,13 +222,16 @@ def guard(gh, plan):
         raise StaleRun('O head atual não é o commit testado; publicação bloqueada.')
     if plan['branch'] == 'develop':
         current_main = release_version(gh.file('VERSION', head(gh, 'main')).strip()).without_suffix()
-        if version.compare(current_main) <= 0:
+        baseline = max([current_main] + [release_version(v) for v in stable_tags(gh)], key=lambda v: v.core)
+        if version.core <= baseline.core:
             raise StaleRun('A versão develop deixou de ser superior à main; gere uma nova execução.')
         current_release = gh.release('develop', missing=True)
         if current_release:
             marker = release_marker(current_release)
-            if marker and release_version(marker['version']).compare(version) > 0:
-                raise StaleRun('A pré-release atual é superior à desta execução; regressão recusada.')
+            if marker:
+                comparison = release_version(marker['version']).compare(version)
+                if comparison > 0 or (comparison == 0 and marker['source_sha'] != plan['source_sha']):
+                    raise StaleRun('A pré-release atual é superior ou já pertence a outro commit; regressão recusada.')
     else:
         reference = gh.ref('tags/' + plan['tag'], missing=True)
         if reference and gh.commit_sha(reference) != plan['source_sha']:
@@ -225,7 +263,7 @@ def reserve(gh, plan):
     """
     guard(gh, plan)
     if plan['branch'] != 'main':
-        return {'reserved': False, 'reason': 'develop uses its unique run number'}
+        return {'reserved': False, 'reason': 'develop number reserved by its preparation commit'}
     reference = gh.ref('tags/' + plan['tag'], missing=True)
     if reference is None:
         gh.request('POST', gh.base + '/git/refs', {'ref': 'refs/tags/' + plan['tag'], 'sha': plan['source_sha']})

@@ -35,6 +35,8 @@ class FakeGitHub:
     def __init__(self, value):
         self.plan = value
         self.branch = 'main' if value['aliases'] == ['latest'] else 'develop'
+        self.main_version = "0.7.3"
+        self.main = "b" * 40
         self.head = SOURCE
         self.tag_head = SOURCE
         self.marker = {'version': value['version'], 'source_sha': SOURCE, 'run_id': 123}
@@ -43,7 +45,7 @@ class FakeGitHub:
         self.jobs = [{'name': name, 'status': 'completed', 'conclusion': 'success'} for name in aliases.GATES]
 
     def ref(self, name):
-        return {'sha': self.tag_head if name.startswith('tags/') else self.head}
+        return {'sha': self.main if name == 'heads/main' and self.branch == 'develop' else self.tag_head if name.startswith('tags/') else self.head}
 
     def commit_sha(self, reference):
         return reference['sha']
@@ -52,7 +54,7 @@ class FakeGitHub:
         return {'draft': self.draft, 'body': '<!-- escritura-ci:' + json.dumps(self.marker) + ' -->', 'html_url': 'https://github.com/example/release'}
 
     def file(self, path, sha):
-        return self.plan['version'] + '\n'
+        return (self.main_version if sha == self.main else self.plan['version']) + '\n'
 
     def request(self, method, path):
         return {'status': self.run_status, 'conclusion': self.run_result,
@@ -103,6 +105,12 @@ class ImageAliasTests(unittest.TestCase):
 
     def promote(self, public=None):
         return aliases.promote(self.plan, self.gh, self.registry, public or self.registry, self.output, pull=self.pull)
+
+    def test_manual_promotion_cannot_reopen_stable_cycle(self):
+        self.gh.main_version = '0.8.0'
+        with self.assertRaisesRegex(RuntimeError, 'Ciclo develop encerrado'):
+            self.promote()
+        self.assertEqual(self.registry.writes, [])
 
     def test_channels_are_strict_even_if_override_is_supplied(self):
         self.assertEqual(aliases.validate_plan(plan()), 'develop')

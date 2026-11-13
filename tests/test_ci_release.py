@@ -89,6 +89,8 @@ class FakeGitHub:
         return self.releases.get(tag)
 
     def pages(self, path, **kwargs):
+        if path.endswith('/commits'):
+            return iter({'commit': {'message': c.get('message', '')}} for c in self.commits.values())
         if path.endswith('/assets'):
             return iter(list(self.asset_list))
         if path.endswith('/releases'):
@@ -166,10 +168,17 @@ class VersionTests(unittest.TestCase):
 
     def test_main_and_develop_are_monotonic(self):
         self.assertEqual(choose_version('main', '0.4.0-dev.1', '0.4.0-dev.1', [], 1), '0.4.0')
-        self.assertEqual(choose_version('develop', '0.4.0', '0.4.0', ['0.4.0'], 5), '0.4.1-dev.5')
+        self.assertEqual(choose_version('develop', '0.4.0', '0.4.0', ['0.4.0'], 5), '0.4.1-dev.1')
         self.assertEqual(choose_version('main', '0.4.0', '0.4.0', ['0.4.0'], 6), '0.4.1')
         self.assertEqual(choose_version('main', '0.4.0', '0.4.0', ['0.4.0'], 6, 'v0.4.0'), '0.4.0')
-        self.assertEqual(choose_version('develop', '1.0.0-dev.1', '0.4.0', ['0.4.0'], 7), '1.0.0-dev.7')
+        self.assertEqual(choose_version('develop', '1.0.0-dev.1', '0.4.0', ['0.4.0'], 7), '1.0.0-dev.2')
+
+    def test_develop_counter_belongs_to_core_not_workflow(self):
+        self.assertEqual(choose_version('develop', '0.8.0-dev.25', '0.8.0', ['0.8.0'], 999), '0.8.1-dev.1')
+        self.assertEqual(choose_version('develop', '0.8.1-dev.0', '0.8.0', ['0.8.0'], 999), '0.8.1-dev.1')
+        self.assertEqual(choose_version('develop', '0.8.1-dev.1', '0.8.0', ['0.8.0'], 1000), '0.8.1-dev.2')
+        self.assertEqual(choose_version('develop', '0.9.0-dev.0', '0.8.0', ['0.8.0'], 1001), '0.9.0-dev.1')
+        self.assertEqual(choose_version('develop', '0.8.1-dev.29', '0.8.1', ['0.8.1'], 1002), '0.8.2-dev.1')
 
     def test_post_release_develop_preserves_higher_explicit_core(self):
         self.assertEqual(develop_version_after_main('0.4.0', None), '0.4.1-dev.0')
@@ -288,6 +297,44 @@ class ReleaseTests(unittest.TestCase):
         retry = release.prepare(gh, branch='main', event_sha=A, run_number=1, run_id=99, run_attempt=2)
         self.assertEqual(retry['source_sha'], result['source_sha'])
         self.assertTrue(all(p['force'] is False for m, route, p in gh.writes if route.startswith('/git/refs/heads/')))
+
+    def test_develop_retry_reuses_own_number_but_closed_cycle_is_rejected(self):
+        gh = FakeGitHub()
+        first = release.prepare(gh, branch='develop', event_sha=B, run_number=90, run_id=900)
+        self.assertEqual(first['version'], '0.4.1-dev.4')
+        writes = list(gh.writes)
+        retry = release.prepare(gh, branch='develop', event_sha=B, run_number=90, run_id=900, run_attempt=2)
+        self.assertEqual(retry['version'], first['version'])
+        self.assertEqual(retry['source_sha'], first['source_sha'])
+        self.assertEqual(writes, gh.writes)
+        gh.files[A] = manifests('0.4.1')
+        with self.assertRaises(release.StaleRun):
+            release.prepare(gh, branch='develop', event_sha=B, run_number=90, run_id=900, run_attempt=3)
+        self.assertEqual(writes, gh.writes)
+
+    def test_counter_does_not_reuse_published_or_failed_preparation_after_merge(self):
+        gh = FakeGitHub()
+        gh.files[B] = manifests('0.4.1-dev.1'); gh.trees[B] = gh.files[B]
+        gh.releases['develop'] = {'body': '<!-- escritura-ci:' + json.dumps({
+            'version': '0.4.1-dev.8', 'source_sha': C}) + ' -->'}
+        gh.commits[C] = {'message': 'chore(release): preparar 0.4.1-dev.9'}
+        result = release.prepare(gh, branch='develop', event_sha=B, run_number=111, run_id=999)
+        self.assertEqual(result['version'], '0.4.1-dev.10')
+        self.assertTrue(release.guard(gh, result))
+
+    def test_same_version_with_another_source_cannot_publish(self):
+        gh = FakeGitHub()
+        gh.releases['develop'] = {'body': '<!-- escritura-ci:' + json.dumps({
+            'version': '0.4.1-dev.3', 'source_sha': C}) + ' -->'}
+        with self.assertRaises(release.StaleRun):
+            release.guard(gh, plan('develop', B))
+        self.assertEqual(gh.writes, [])
+
+    def test_reserved_stable_cycle_blocks_prerelease_publish(self):
+        gh = FakeGitHub(); gh.refs['tags/v0.4.1'] = A
+        with self.assertRaises(release.StaleRun):
+            release.guard(gh, plan('develop', B))
+        self.assertEqual(gh.writes, [])
 
     def test_stale_plan_and_stable_tag_collision_make_no_mutations(self):
         gh = FakeGitHub()

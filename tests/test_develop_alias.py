@@ -108,6 +108,20 @@ class DevelopAliasTests(unittest.TestCase):
         self.assertEqual(self.gh.jobs_path, self.gh.base + '/actions/runs/123/jobs')
         self.assertEqual(len(self.pulls), 2)
 
+    def test_closed_cycle_before_or_during_pull_never_promotes(self):
+        for during_pull in (False, True):
+            self.setUp()
+            before = copy.deepcopy(self.reg.values['latest'])
+            if not during_pull:
+                self.gh.main_version = '0.8.0'
+            def pull(*args):
+                self.gh.main_version = '0.8.0'
+                return self.pull(*args)
+            with self.subTest(during_pull=during_pull), self.assertRaisesRegex(RuntimeError, 'Ciclo develop encerrado'):
+                self.promote(pull=pull)
+            self.assertEqual(self.reg.writes, [])
+            self.assertEqual(self.reg.values['latest'], before)
+
     def test_dynamic_main_latest_and_missing_latest_are_allowed(self):
         self.gh.main = 'd' * 40
         self.reg.values.pop('latest')
