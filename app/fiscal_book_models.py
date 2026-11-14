@@ -16,6 +16,15 @@ BOOK_MODELS = {'reference-entries-p1a-v1': 'fiscal-entries',
                'reference-outputs-p2a-v1': 'fiscal-outputs'}
 WIDTH, HEIGHT = 842, 595
 
+# Presentation legend transcribed from the supplied P1/A reference. It explains
+# the printed column only; it must not assign or infer a treatment for any row.
+ENTRY_CODE_LEGEND = (
+    '(a) Códigos de Valores Fiscais',
+    '1-Oper.c/crédito do imposto',
+    '2-Oper.s/créd.imposto Isentas/Não Tribut.',
+    '3-Oper.s/créd.Imposto - Outras',
+)
+
 
 def _money(value):
     if value is None:
@@ -31,6 +40,12 @@ def _date(value):
 def _tax_id(value):
     value = str(value or '')
     return re.sub(r'^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$', r'\1.\2.\3/\4-\5', value)
+
+
+def _series(value, digits):
+    """Display the configured minimum width without inventing or truncating."""
+    value = str(value if value is not None else '')
+    return value.zfill(digits) if value.isascii() and value.isdigit() else value
 
 
 def _book_values(row):
@@ -154,6 +169,16 @@ def fiscal_book_pdf(result, model_id, first_page=1):
         text(502 if incoming else 495,72,'CNPJ: '+_tax_id(result.get('company_tax_id')),8)
         text(left+2,89,'Inscrição Estadual: '+str(result.get('company_ie') or ''),8)
         text(448,89,'Período: '+_date(result['start'])+' a '+_date(result['end']),8)
+        if incoming:
+            # The reference repeats this explanatory box on continuations and
+            # summaries too. Keep it clear of CNPJ, period and the table header.
+            legend_left,legend_right=689,794
+            line(legend_left,61,legend_right)
+            line(legend_left,94,legend_right)
+            line(legend_left,61,legend_left,94)
+            line(legend_right,61,legend_right,94)
+            for i,label in enumerate(ENTRY_CODE_LEGEND):
+                text(legend_left+2,64+i*7.2,label,5.5)
         if any(r.get('document_state')=='cancelled' for r in result.get('rows',[])):
             text(left,544,'Canceladas conforme livro validado: sem validação eletrônica/SEFAZ.',6)
         text(left,553,'EM HOMOLOGAÇÃO - Quadro ICMS. Campos em branco: não informados. Agrupamentos preservados.',6)
@@ -219,7 +244,8 @@ def fiscal_book_pdf(result, model_id, first_page=1):
         identity_lines=wrapped(identity,145) if incoming else ['']
         number=str(row.get('document') or '')
         number=number.zfill(10) if number.isascii() and number.isdigit() else number
-        scalar_cells=[(15,row.get('series','')),(31,number),(30,_date(row.get('issue_date'))),(39,_date(row.get('date')))] if incoming else [(27,row.get('series','')),(33,number),(9,row.get('partner_state',''))]
+        series=_series(row.get('series'),result.get('series_digits',3))
+        scalar_cells=[(15,series),(31,number),(30,_date(row.get('issue_date'))),(39,_date(row.get('date')))] if incoming else [(27,series),(33,number),(9,row.get('partner_state',''))]
         scalar_height=max(len(wrapped(v,w))*7.2 for w,v in scalar_cells)
         observations=_book_observations(row)
         obs_lines=wrapped(observations,180 if incoming else 237)
@@ -230,13 +256,12 @@ def fiscal_book_pdf(result, model_id, first_page=1):
         species={'55':'NF-E','65':'NFC-e','57':'CT-e'}.get(str(row.get('model')),str(row.get('model') or ''))
         number=str(row.get('document') or '');number=number.zfill(10) if number.isascii() and number.isdigit() else number
         if incoming:
-            for a,b,value in [(54,97,_date(row.get('date'))),(97,121,species),(121,140,row.get('series')),(140,175,number),(175,209,_date(row.get('issue_date')))]:cell(a,b,top,value)
+            for a,b,value in [(54,97,_date(row.get('date'))),(97,121,species),(121,140,series),(140,175,number),(175,209,_date(row.get('issue_date')))]:cell(a,b,top,value)
             cell(209,358,top,identity,6,align='left')
             for i,part in enumerate(name_lines):text(211,top+7.2*(i+len(identity_lines)),part)
             for a,b,value,align in [(358,402,_money(values['value']),'right'),(402,436,row.get('accounting_code',''),'center'),(436,471,row.get('cfop'),'center'),(471,494,'ICMS','center'),(494,503,values['code'],'center'),(503,552,_money(values['operation']),'right'),(552,574,values['rate'],'right'),(574,620,_money(values['tax']),'right')]:cell(a,b,top,value,6,align=align)
             cell(620,804,top,observations,6,align='left')
         else:
-            series=str(row.get('series') or '');series=series.zfill(result.get('series_digits',3)) if series.isascii() and series.isdigit() else series
             cell(72,99,top,species);cell(99,130,top,series)
             cell(130,168,top,number);cell(168,205,top,number)
             cell(205,218,top,str(row.get('date') or '')[-2:]);cell(218,231,top,row.get('partner_state',''))
