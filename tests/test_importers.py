@@ -144,6 +144,65 @@ class FiscalReaderTests(unittest.TestCase):
         orphan = b"\n".join(line for line in data.splitlines() if not line.startswith(b"|C140|"))
         self.assertIn("SPED_ORPHAN_INSTALLMENT", codes(parse_file("efd.txt", orphan, ALFA)))
 
+    def test_sped_installment_total_mismatch_is_informational_and_preserves_data(self):
+        original = fixture("sped_ficticio_020.txt")
+        code = "SPED_INSTALLMENT_TOTAL_MISMATCH"
+        self.assertNotIn(code, codes(parse_file("efd.txt", original, ALFA)))
+        for value, total, difference in (("39,00", "99.00", "-1.00"),
+                                         ("41,00", "101.00", "1.00"),
+                                         ("39,99", "99.99", "-0.01")):
+            with self.subTest(value=value):
+                raw = original.replace(b"|C141|02|05012027|40,00|",
+                                       f"|C141|02|05012027|{value}|".encode())
+                result = parse_file("efd.txt", raw, ALFA)
+                self.assertTrue(result["can_confirm"])
+                issue = next(row for row in result["issues"] if row["code"] == code)
+                self.assertEqual("info", issue["severity"])
+                self.assertEqual({"file": "efd.txt", "record": "C140", "line": 9,
+                                  "title_number": "FICT-42", "title_total": "100.00",
+                                  "installment_total": total, "difference": difference}, issue["source"])
+                doc = result["documents"][0]
+                self.assertEqual("100.00", doc["total"])
+                self.assertEqual("100.00", doc["invoices"][0]["amount"])
+                self.assertEqual(value.replace(",", "."), doc["invoices"][0]["installments"][1]["amount"])
+                self.assertFalse(doc["invoices"][0]["financial_posting_created"])
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), doc["source_hash"])
+                self.assertEqual([], result["transactions"])
+
+    def test_sped_installment_sum_uses_exact_decimal_values(self):
+        raw = (fixture("sped_ficticio_020.txt")
+               .replace(b"|FICT-42|2|100,00|", b"|FICT-42|2|0,30|")
+               .replace(b"|C141|01|05122026|60,00|", b"|C141|01|05122026|0,10|")
+               .replace(b"|C141|02|05012027|40,00|", b"|C141|02|05012027|0,20|"))
+        result = parse_file("efd.txt", raw, ALFA)
+        self.assertTrue(result["can_confirm"])
+        self.assertNotIn("SPED_INSTALLMENT_TOTAL_MISMATCH", codes(result))
+
+    def test_sped_installment_information_does_not_consume_error_budget(self):
+        raw = fixture("sped_ficticio_020.txt").replace(
+            b"|C141|02|05012027|40,00|", b"|C141|02|05012027|39,00|")
+        with patch("app.importers.MAX_ISSUES", 1):
+            result = parse_file("efd.txt", raw, ALFA)
+        self.assertTrue(result["can_confirm"])
+        self.assertNotIn("ISSUE_LIMIT", codes(result))
+        self.assertEqual({"SPED_INSTALLMENT_TOTAL_MISMATCH", "SPED_PARTIAL_READER"}, codes(result))
+
+    def test_sped_many_informational_mismatches_do_not_block_import(self):
+        lines = fixture("sped_ficticio_020.txt").splitlines()
+        block = b"\n".join(lines[7:13]).replace(b"|C141|02|05012027|40,00|", b"|C141|02|05012027|39,00|")
+        raw = b"\n".join(lines[:7] + [block] * 300 + lines[13:])
+        result = parse_file("efd.txt", raw, ALFA)
+        self.assertTrue(result["can_confirm"])
+        self.assertEqual(300, len(result["documents"]))
+        self.assertNotIn("ISSUE_LIMIT", codes(result))
+        issues = [row for row in result["issues"] if row["code"] == "SPED_INSTALLMENT_TOTAL_MISMATCH"]
+        self.assertEqual(1, len(issues))
+        self.assertEqual("info", issues[0]["severity"])
+        self.assertEqual(300, issues[0]["count"])
+        self.assertEqual(300, len(issues[0]["sources"]))
+        self.assertEqual([9, 15, 21], [source["line"] for source in issues[0]["sources"][:3]])
+        self.assertTrue(all(source["difference"] == "-1.00" for source in issues[0]["sources"]))
+
     def test_sped_unhandled_records_and_divergences_remain_visible(self):
         data = fixture("sped_ficticio_020.txt")
         data = data.replace(b"|C990|", b"|C197|AJUSTE-TESTE|0|0|0|\n|C990|")

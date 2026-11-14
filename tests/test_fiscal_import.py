@@ -81,6 +81,32 @@ class FiscalImportTests(unittest.TestCase):
         self.assertEqual([], self.core.journals(self.a['id'])); self.assertEqual([], self.core.titles(self.a['id']))
         self.assertTrue(self.confirm(batch, prepared)['duplicate'])
 
+    def test_c140_c141_total_information_does_not_block_posting_or_create_finance(self):
+        raw = (Path(__file__).parent / 'fixtures/sped_ficticio_020.txt').read_bytes()
+        raw = raw.replace(b'12345678000195', self.a['tax_id'].encode())
+        raw = raw.replace(b'|C141|02|05012027|40,00|', b'|C141|02|05012027|39,00|')
+        batch = self.preview(raw, 'origem.txt')
+        issue = next(row for row in batch['issues'] if row['code'] == 'SPED_INSTALLMENT_TOTAL_MISMATCH')
+        self.assertEqual('info', issue['severity'])
+        self.assertTrue(batch['can_confirm'])
+        prepared = self.prepared(batch)
+        self.assertTrue(prepared['documents'][0]['import_posting']['eligible'])
+        result = self.confirm(batch, prepared)
+        self.assertEqual(1, result['documents_booked'])
+        doc = self.core.documents(self.a['id'])[0]
+        self.assertEqual('booked', doc['status'])
+        self.assertEqual(10000, doc['total_cents'])
+        self.assertEqual('100.00', doc['invoices'][0]['amount'])
+        self.assertEqual(['60.00', '39.00'], [row['amount'] for row in doc['invoices'][0]['installments']])
+        self.assertFalse(doc['invoices'][0]['financial_posting_created'])
+        self.assertEqual([], self.core.titles(self.a['id']))
+        self.assertEqual([], self.core.journals(self.a['id']))
+        with self.app.state.db.read() as conn:
+            self.assertEqual(raw, conn.execute('SELECT original FROM imports WHERE id=?', (batch['id'],)).fetchone()[0])
+        self.assertTrue(self.confirm(batch, prepared)['duplicate'])
+        self.assertEqual(1, len(self.core.documents(self.a['id'])))
+        self.assertEqual([], self.core.titles(self.a['id']))
+
     def test_edit_review_and_reimport_preserve_original_and_latest_revision(self):
         self.mapping(); batch = self.preview(); self.confirm(batch, self.prepared(batch))
         doc = self.core.documents(self.a['id'])[0]
