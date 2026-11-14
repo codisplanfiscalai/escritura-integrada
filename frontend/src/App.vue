@@ -7,6 +7,7 @@ import {OVERVIEW_TAB_ID,removeWorkspaceTab} from './lib/workspace-tabs.js';
 import Icon from './components/Icon.vue';import BaseModal from './components/BaseModal.vue';import EmptyState from './components/EmptyState.vue';
 import AssessmentsView from './views/AssessmentsView.vue';import ProsoftView from './views/ProsoftView.vue';import UsersView from './views/UsersView.vue';
 import StorageView from './views/StorageView.vue';
+import GlobalPlansView from './views/GlobalPlansView.vue';
 import CfopView from './views/CfopView.vue';
 import AuditorView from './views/AuditorView.vue';
 import ModuleImportView from './views/ModuleImportView.vue';
@@ -28,6 +29,7 @@ const menus=[
 {id:'periods',label:'Competências fiscais',icon:'periods',component:PeriodsView,module:'fiscal',routine:'fiscal.periods',props:{module:'fiscal'}},
 {id:'journal',label:'Lançamentos contábeis',icon:'journal',component:JournalView,module:'accounting',routine:'accounting.journals',props:{initialSection:'journals'}},
 {id:'accounts',label:'Plano de contas',icon:'book',component:JournalView,module:'accounting',routine:'accounting.accounts',props:{initialSection:'accounts'}},
+{id:'global-plans',label:'Gerenciar planos globais',icon:'book',component:GlobalPlansView,module:'accounting',routine:'accounting.accounts',admin:true},
 {id:'histories',label:'Históricos e modelos',icon:'layers',component:MastersView,module:'accounting',routine:'accounting.histories',props:{area:'accounting'}},
 {id:'centers',label:'Centros de custo',icon:'building',component:JournalView,module:'accounting',routine:'accounting.cost_centers',props:{initialSection:'cost-centers'}},
 {id:'reports',label:'Livros e demonstrações',icon:'reports',component:ReportsView,module:'accounting',routine:'accounting.reports',props:{area:'accounting'}},
