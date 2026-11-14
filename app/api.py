@@ -54,6 +54,10 @@ def create_app(data_dir=None, demo=False):
     register_fiscal_library_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .fiscal_api import register_fiscal_routes
     register_fiscal_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .plan_manager import register as register_plan_manager
+    register_plan_manager(application, core, actor=lambda request: request.state.session["user"]["username"])
+    from .accounting_settings import register as register_accounting_settings
+    register_accounting_settings(application, core, actor=lambda request: request.state.session["user"]["username"])
     from .account_plan_api import register_account_plan_routes
     register_account_plan_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .fiscal_series_operations import register as register_fiscal_series
@@ -143,7 +147,7 @@ def create_app(data_dir=None, demo=False):
                     match = re.match(r"^/api/companies/(\d+)/", path)
                     # Company administration targets the opened registration, not movements.
                     # Permissions are still revalidated for that exact company in the transaction.
-                    if match and not re.fullmatch(r"/api/companies/\d+/operational-settings(?:/(?:templates|apply-template))?", path):
+                    if match and not re.fullmatch(r"/api/companies/\d+/(?:operational-settings(?:/(?:templates|apply-template))?|accounting-settings(?:/(?:plans/\d+/preview|previews/\d+/confirm|detach|plan-manager(?:/drafts(?:/[a-f0-9]{32}(?:/accounts(?:/[^/]+)?|/publish)?)?)?))?)", path):
                         cid = int(match.group(1))
                         if session["active_company_id"] != cid:
                             return JSONResponse({"detail": "A empresa ativa mudou. Reabra o lançamento no contexto correto.", "code": "stale_context"}, 409)

@@ -138,6 +138,14 @@ def route_policy(path, method, query, payload, session):
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
+    if root == 'accounting-entry-defaults':
+        return 'accounting.journals', 'read', False
+    if root == 'accounting-settings' and '/plan-manager' in tail:
+        return 'accounting.accounts', 'read', write or '/drafts/' in tail
+    if root == 'accounting-settings':
+        if tail.endswith('/confirm'): return 'accounting.accounts', 'create', False
+        if tail.endswith('/detach'): return 'accounting.accounts', 'edit', False
+        return 'accounting.accounts', 'edit' if method == 'PUT' else 'read', False
     if root == 'operational-settings':
         return ('system.companies', 'edit', True) if write else (None, 'read', False)
     if root == 'bulk-operations':

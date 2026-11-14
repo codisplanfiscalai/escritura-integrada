@@ -13,3 +13,20 @@ class RebuiltBrowserContracts(unittest.TestCase):
         self.assertIn("question.get_by_role('button',name='Voltar',exact=True).click()",code)
         self.assertIn('@click="answer(false)">Voltar</button>',(ROOT/'frontend/src/App.vue').read_text(encoding='utf-8'))
         self.assertNotIn("question.get_by_role('button',name='Cancelar'",code)
+
+    def test_journal_keyboard_waits_for_ready_button_and_visible_dialog(self):
+        code=(ROOT/'scripts/browser_evolution.py').read_text(encoding='utf-8')
+        start=code.index("nav('Lançamentos contábeis')")
+        end=code.index("keyboard(date_field('Data do lançamento *')",start)
+        block=code[start:end]
+        enabled=block.index('expect(new_journal).to_be_enabled()')
+        focus=block.index('new_journal.focus()')
+        focused=block.index('expect(new_journal).to_be_focused()')
+        enter=block.index("page.keyboard.press('Enter')")
+        dialog=block.index("name='Novo lançamento contábil'")
+        self.assertLess(enabled,focus);self.assertLess(focus,focused)
+        self.assertLess(focused,enter);self.assertLess(enter,dialog)
+        self.assertNotIn('wait_for_timeout',block)
+        view=(ROOT/'frontend/src/views/JournalView.vue').read_text(encoding='utf-8')
+        self.assertIn(':disabled="loading||state.contextBusy"',view)
+        self.assertIn('if(!afterSave&&(loading.value||state.contextBusy))return;',view)

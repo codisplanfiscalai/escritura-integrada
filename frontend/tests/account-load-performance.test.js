@@ -102,9 +102,9 @@ test('centros não buscam contas/lançamentos; lançamentos mantêm catálogos c
  try{assert.deepEqual(centers.requests.map(x=>x.url),['/companies/1/cost-centers']);centers.requests[0].resolve([{id:1,name:'Administração'}]);await flush();assert.equal(centers.view.visible.value.length,1);}finally{centers.close();}
  const journals=await harness('JournalView',{initialSection:'journals'});
  try{
-  assert.deepEqual(journals.requests.map(x=>x.url),['/companies/1/journals?year=2026','/companies/1/accounts','/companies/1/cost-centers','/companies/1/masters/history']);
+  assert.deepEqual(journals.requests.map(x=>x.url),['/companies/1/journals?year=2026','/companies/1/accounts','/companies/1/cost-centers','/companies/1/masters/history','/companies/1/accounting-entry-defaults']);
   journals.requests.forEach((r,i)=>r.resolve(i===0?Array.from({length:60},(_,j)=>({id:j+1,history:'Teste'})):[{id:i,name:'Sintético'}]));await flush();
-  assert.equal(journals.view.visible.value.length,50);journals.view.page.value=2;await flush();assert.equal(journals.requests.length,4);assert.equal(journals.view.visible.value.length,10);assert.equal(journals.view.data.value.accounts[0].id,1);
+  assert.equal(journals.view.visible.value.length,50);journals.view.page.value=2;await flush();assert.equal(journals.requests.length,5);assert.equal(journals.view.visible.value.length,10);assert.equal(journals.view.data.value.accounts[0].id,1);
  }finally{journals.close();}
 });
 
@@ -165,4 +165,35 @@ test('formatadores monetário e numérico reutilizam Intl.NumberFormat sem alter
   for(let i=0;i<500;i++){assert.equal(money(123456),new original('pt-BR',{style:'currency',currency:'BRL'}).format(1234.56));assert.equal(number(1234),new original('pt-BR').format(1234));}
   assert.equal(calls,2);assert.equal(money(null),money(0));assert.equal(number(),new original('pt-BR').format(0));
  }finally{Intl.NumberFormat=original;}
+});
+
+
+test('novo lançamento aguarda defaults e sugere valores sem substituir edição',async()=>{
+ const h=await harness('JournalView',{initialSection:'journals'});
+ try{
+  h.view.open('journal');assert.equal(h.view.show.value,false);
+  h.requests.forEach((r,i)=>r.resolve(i===4?{settings:{default_history:'Padrão da empresa',default_cost_center_id:7}}:i===2?[{id:7,name:'Centro'}]:[]));await flush();
+  h.view.open('journal');assert.equal(h.view.form.value.history,'Padrão da empresa');assert.equal(h.view.form.value.lines[0].cost_center_id,7);
+  h.view.form.value.history='Edição manual';assert.equal(h.view.data.value.defaults.default_history,'Padrão da empresa');
+ }finally{h.close();}
+});
+
+
+test('salvar e novo cria outra chave mesmo se refresh estiver carregando',async()=>{
+ const previousDocument=globalThis.document;globalThis.document={getElementById:()=>null};
+ const h=await harness('JournalView',{initialSection:'journals'});
+ try{
+  h.requests.forEach((r,i)=>r.resolve(i===4?{settings:{default_history:'Padrão',default_cost_center_id:null}}:[]));await flush();
+  h.view.open('journal');const old=h.view.form.value.idempotency_key;h.view.form.value.history='Manual';h.view.saveNext.value=true;
+  const saving=h.view.save(),write=h.requests.at(-1);h.state.refresh++;await flush();assert.equal(h.view.loading.value,true);
+  write.resolve({});await saving;assert.notEqual(h.view.form.value.idempotency_key,old);assert.equal(h.view.show.value,true);
+ }finally{h.close();if(previousDocument===undefined)delete globalThis.document;else globalThis.document=previousDocument;}
+});
+
+
+test('subconta própria sugere hierarquia sem reutilizar identidade do pai',async()=>{
+ const h=await harness('JournalView',{initialSection:'accounts'});try{
+ h.requests[0].resolve(pageResult([1]));await flush();h.view.open('account',null,false,{id:99,access_code:'100',classifier:'1.1',nature:'debit',requires_cost_center:true,report_group:'asset'});
+ assert.equal(h.view.form.value.access_code,'');assert.equal(h.view.form.value.classifier,'1.1.');assert.equal(h.view.form.value.analytical,true);assert.equal(h.view.form.value.id,undefined);assert.equal(h.view.form.value.requires_cost_center,true);
+ }finally{h.close();}
 });

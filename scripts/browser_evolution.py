@@ -66,7 +66,15 @@ def run(page,browser,url,cid,csrf,nav,check,shot):
     check('Usuário só contábil: menu próprio, CSV com mês aberto/fechado/outro ano, seleção explícita e Fiscal recusado')
     # Teclado: rejeição conserva o formulário, salvar e novo limpa a identidade.
     nav('Lançamentos contábeis')
-    page.get_by_role('button',name='Novo lançamento',exact=True).focus();page.keyboard.press('Enter')
+    # focus() does not wait for enabled: Enter on a disabled button is lost
+    # while journal defaults load. Keep this a keyboard acceptance test, but
+    # synchronize with the real ready state rather than a fixed delay.
+    new_journal=page.get_by_role('button',name='Novo lançamento',exact=True)
+    expect(new_journal).to_be_enabled()
+    new_journal.focus()
+    expect(new_journal).to_be_focused()
+    page.keyboard.press('Enter')
+    expect(page.get_by_role('dialog',name='Novo lançamento contábil',exact=True)).to_be_visible()
     keyboard(date_field('Data do lançamento *'),'01032026')
     page.keyboard.press('Tab');expect(page.get_by_role('button',name='Abrir calendário',exact=True)).to_be_focused()
     page.keyboard.press('Tab');expect(page.get_by_label('Documento',exact=True)).to_be_focused()
