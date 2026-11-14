@@ -73,7 +73,11 @@ def _issue(result, code, message, source, severity="error"):
     aggregate_codes = {"DOCUMENT_REVIEW_REQUIRED", "HOMOLOGATION_DOCUMENT", "CFOP_CLASSIFICATION_REQUIRED"}
     # Billing details remain complete on each document; repeated financial
     # warnings must not consume the fiscal error budget for large batches.
-    if severity == "warning" and (code in aggregate_codes or code.startswith("FINANCIAL_BILLING_")):
+    # Informational C140/C141 comparisons must not exhaust the diagnostic
+    # budget and turn a large, otherwise valid fiscal batch into an error.
+    if (severity == "warning" and (code in aggregate_codes or code.startswith("FINANCIAL_BILLING_"))) or (
+        severity == "info" and code == "SPED_INSTALLMENT_TOTAL_MISMATCH"
+    ):
         existing = next((item for item in result["issues"] if item["code"] == code and item["severity"] == severity), None)
         if existing is not None:
             sources = existing.setdefault("sources", [existing["source"]])
@@ -81,7 +85,8 @@ def _issue(result, code, message, source, severity="error"):
             existing["count"] = len(sources)
             existing["message"] = f"{message} ({len(sources)} ocorrências; origens preservadas na prévia.)"
             return
-    if len(result["issues"]) < MAX_ISSUES:
+    diagnostic_count = sum(item["severity"] != "info" for item in result["issues"])
+    if severity == "info" or diagnostic_count < MAX_ISSUES:
         result["issues"].append({"severity": severity, "code": code, "message": message, "source": source})
     elif not any(x["code"] == "ISSUE_LIMIT" for x in result["issues"]):
         result["issues"].append({"severity": "error", "code": "ISSUE_LIMIT", "message": "Há mais ocorrências que o limite da prévia; divida o arquivo e corrija as inconsistências.", "source": source})
@@ -726,6 +731,15 @@ def _sped(filename, data, company, result, digest):
         for invoice in doc["invoices"]:
             if len(invoice["installments"]) != invoice["declared_installment_count"]:
                 _issue(result, "SPED_INSTALLMENT_COUNT", "Quantidade de parcelas C141 diverge do C140.", invoice["source"])
+            installment_total = sum((Decimal(row["amount"]) for row in invoice["installments"]), Decimal("0"))
+            title_total = Decimal(invoice["amount"])
+            if installment_total != title_total:
+                source = {**invoice["source"], "title_number": invoice["number"],
+                          "title_total": invoice["amount"], "installment_total": format(installment_total, ".2f"),
+                          "difference": format(installment_total - title_total, ".2f")}
+                _issue(result, "SPED_INSTALLMENT_TOTAL_MISMATCH",
+                       "O valor do título C140 difere da soma das parcelas C141. Os valores originais são preservados; esta informação não impede a importação nem gera títulos financeiros.",
+                       source, "info")
         if doc["analytics"]:
             for field in ("VL_BC_ICMS", "VL_ICMS", "VL_BC_ICMS_ST", "VL_ICMS_ST", "VL_IPI"):
                 if field in doc["taxes"] and all(field in x["taxes"] for x in doc["analytics"]):
