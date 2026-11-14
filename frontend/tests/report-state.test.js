@@ -65,9 +65,32 @@ test('componente: consultas interrompidas não substituem o contexto novo e expo
   pending[0].resolve({rows:[],company_id:1,kind:'trial-balance'});await first;
   assert.equal(view.busy.value,true,'old finally must not clear new request');assert.equal(view.result.value,null);
   pending[1].resolve({rows:[],company_id:2,kind:'trial-balance'});await second;
-  const captured=view.result.value.url;view.start.value='2026-02-01';await nextTick();
+  const captured=view.result.value.url;
+  const rows=Array.from({length:5001},(_,id)=>({id}));
+  view.result.value={...view.result.value,rows,totals:{count:5001}};await nextTick();
+  assert.deepEqual(view.pageSizes,[50,100,500,1000,2500,5000]);
+  assert.equal(view.visible.value.length,50);assert.equal(view.pages.value,101);
+  view.page.value=101;assert.deepEqual(view.visible.value,[rows[5000]]);
+  view.page.value=1;
+  for(const size of view.pageSizes){
+   view.pageSize.value=size;await nextTick();
+   assert.equal(view.page.value,1);assert.equal(view.visible.value.length,size);
+   assert.equal(view.pages.value,Math.ceil(rows.length/size));
+   view.page.value=view.pages.value;assert.equal(view.visible.value.at(-1).id,5000);
+   assert.equal(view.result.value.url,captured,'pagination never changes export URL');
+   assert.equal(view.result.value.rows.length,5001,'pagination never truncates report data');
+   assert.deepEqual(view.result.value.totals,{count:5001});
+  }
+  view.result.value={...view.result.value,rows:rows.slice(0,2)};await nextTick();
+  assert.equal(view.page.value,1);assert.equal(view.pages.value,1);assert.equal(view.visible.value.length,2);
+  view.result.value={...view.result.value,rows:[]};await nextTick();
+  assert.equal(view.pages.value,1);assert.deepEqual(view.visible.value,[]);
+  view.result.value={...view.result.value,rows};view.pageSize.value=100;await nextTick();view.page.value=2;
+  view.start.value='2026-02-01';await nextTick();assert.equal(view.page.value,1,'filter changes reset the visible page');
+  view.page.value=2;
+
   assert.equal(view.filtersChanged.value,true);assert.equal(view.result.value.url,captured);
-  view.kind.value='ledger';await nextTick();assert.equal(view.result.value,null);
+  view.kind.value='ledger';await nextTick();assert.equal(view.result.value,null);assert.equal(view.page.value,1);
   assert.equal(view.model.value,'prosoft-ledger-v1','Razão usa o modelo de referência por padrão');
   view.firstPage.value=19;view.showNumbers.value=true;
   assert.equal(view.parameters().get('first_page'),'19');
@@ -88,6 +111,10 @@ test('componente: consultas interrompidas não substituem o contexto novo e expo
   view.kind.value='fiscal-entries';await nextTick();assert.equal(view.model.value,'reference-entries-p1a-v1');
   view.kind.value='fiscal-outputs';await nextTick();assert.equal(view.model.value,'reference-outputs-p2a-v1');
   view.kind.value='fiscal-items';await nextTick();assert.equal(view.model.value,'internal-fiscal-items');
+  view.result.value={rows};view.page.value=2;state.period='2026-03';await nextTick();
+  assert.equal(view.page.value,1);assert.equal(view.result.value,null);
+  view.result.value={rows};view.page.value=2;state.companyId=3;await nextTick();
+  assert.equal(view.page.value,1);assert.equal(view.result.value,null);
  }finally{app.unmount();delete globalThis.__reportTest;}
 });
 
