@@ -72,3 +72,14 @@ Os modelos `reference-entries-p1a-v1` e `reference-outputs-p2a-v1` reproduzem o 
 Não preencher códigos contábeis dos exemplares no novo livro sem mapeamento efetivo da empresa. Não inferir isentas, IE/UF, código 2, ajustes ou observações a partir do simples valor de um XML. Resumos por contribuinte/UF e subquadros IPI exigem origem compatível, ainda não reproduzida. Número inicial/final do P2/A repete a identidade de cada linha, sem compactar intervalos.
 
 Os ajustes do Razão restringem-se a métricas diretamente comprovadas no exemplar (bordas monetárias, cabeçalho CRÉDITO, espaçamento de SALDO FINAL e traço inferior). Históricos privados e regras de partição não foram codificados. Os testes de regressão usam exclusivamente dados sintéticos.
+
+O cabeçalho P1/A inclui o quadro explicativo de códigos de valores fiscais
+observado no exemplar fornecido: operações com crédito (1), isentas/não
+tributadas sem crédito (2) e outras sem crédito (3). A legenda é repetida nas
+continuações e resumos e não atribui tratamento a linhas sem decisão fiscal.
+Esta correção de apresentação não implementa o código 2 nem preenche isenções,
+não altera valores e não aprova as demais dimensões da homologação.
+
+P1/A e P2/A usam a mesma largura mínima de série configurada na empresa
+(`series_digits`, padrão 3). A formatação é apenas de impressão: não modifica
+a origem, não encurta séries maiores e mantém vazio um campo não informado.

@@ -4,7 +4,7 @@ from io import BytesIO
 import unittest
 from pypdf import PdfReader
 from app.core import DomainError
-from app.fiscal_book_models import BOOK_MODELS, fiscal_book_pdf, _book_values
+from app.fiscal_book_models import BOOK_MODELS, ENTRY_CODE_LEGEND, fiscal_book_pdf, _book_values, _series
 
 
 def sample(incoming=True,count=1):
@@ -26,6 +26,64 @@ def render(result,first_page=2):
 
 
 class FiscalBookModelTests(unittest.TestCase):
+    def test_max_series_width_reserves_height_across_page_breaks(self):
+        for incoming in (True,False):
+            result=sample(incoming,40)
+            result['series_digits']=20
+            before=deepcopy(result)
+            pdf,text=render(result)
+            self.assertGreater(len(pdf.pages),2)
+            parts=[]
+            def visit(value,cm,tm,font,size):
+                a,b=(121,140) if incoming else (99,130)
+                if a <= tm[4] <= b and 70 <= tm[5] <= 440 and value.strip().isdigit():
+                    parts.append(value.strip())
+            for page in pdf.pages:
+                page.extract_text(visitor_text=visit)
+            self.assertEqual('4'.zfill(20)*40,''.join(parts))
+            self.assertIn('49.382,40',text)
+            self.assertIn('A Transportar',text)
+            self.assertIn('De Transporte',text)
+            self.assertEqual(before,result)
+
+    def test_series_uses_company_width_in_both_books_without_mutation(self):
+        for incoming in (True,False):
+            for value,digits,expected in [('4',3,'004'),('4',5,'00004'),
+                                          ('123456',3,'123456'),('0004',3,'0004'),
+                                          ('',3,''),(None,3,''),('AB4',3,'AB4'),(0,3,'000')]:
+                with self.subTest(incoming=incoming,value=value,digits=digits):
+                    result=sample(incoming)
+                    result['series_digits']=digits
+                    result['rows'][0]['series']=value
+                    before=deepcopy(result)
+                    pdf,_=render(result)
+                    self.assertEqual(expected,_series(value,digits))
+                    # Read only the series cell; a blank must not become 000.
+                    texts=[]
+                    def visit(text,cm,tm,font,size):
+                        a,b=(121,140) if incoming else (99,130)
+                        if a <= tm[4] <= b and 420 <= tm[5] <= 440:
+                            texts.append(text.strip())
+                    pdf.pages[0].extract_text(visitor_text=visit)
+                    self.assertEqual(expected,''.join(texts))
+                    self.assertEqual(before,result)
+
+    def test_entry_code_legend_repeats_without_assigning_missing_treatment(self):
+        result=sample(True,90)
+        result['rows'][0]['treatment']={}
+        before=deepcopy(result)
+        pdf,_=render(result)
+        self.assertGreater(len(pdf.pages),2)
+        for page in pdf.pages:
+            text=page.extract_text()
+            for label in ENTRY_CODE_LEGEND:
+                self.assertEqual(1,text.count(label))
+        self.assertEqual(before,result)
+        self.assertEqual('',_book_values(result['rows'][0])['code'])
+        # The codes are an entries-model key, not a new outgoing-book feature.
+        _,text=render(sample(False))
+        self.assertNotIn(ENTRY_CODE_LEGEND[0],text)
+
     def test_headers_identity_columns_and_no_mutation(self):
         for incoming in (True,False):
             result=sample(incoming);before=deepcopy(result);pdf,text=render(result)
