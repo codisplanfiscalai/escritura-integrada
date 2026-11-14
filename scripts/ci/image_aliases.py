@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, build_opener
@@ -173,6 +174,25 @@ def pull_identity(reference, plan, image_id):
     return {'image_id': image['Id'], 'platform': 'linux/amd64', 'pull_verified': True}
 
 
+
+def verify_alias_visibility(registry, alias, digest, verify_proof, *, sleep=time.sleep):
+    """Wait for GHCR read-after-write propagation, never repeat a PUT.
+
+    Only a valid but stale digest is retried. Authentication, transport and
+    malformed-manifest errors remain failures, not an excuse to mutate again.
+    Recheck source ownership before every read because a newer run may supersede us.
+    """
+    delays = (2, 4, 8, 16, 30, 30)
+    for attempt in range(len(delays) + 1):
+        verify_proof()
+        observed = registry.manifest(alias)['digest']
+        if observed == digest:
+            return
+        if attempt < len(delays):
+            sleep(delays[attempt])
+    raise RuntimeError('Alias não aponta para o digest solicitado após propagação: ' + alias
+                       + '; observado=' + observed + '; esperado=' + digest)
+
 def promote(plan, gh, registry, public_registry, output, *, pull=pull_identity, context=None):
     report = {'schema_version': 1, 'status': 'checking', 'plan': plan, 'aliases': {},
               'started_at': datetime.now(timezone.utc).isoformat()}
@@ -202,12 +222,11 @@ def promote(plan, gh, registry, public_registry, output, *, pull=pull_identity, 
                 item['status'] = 'writing'
                 write_json(output, report)
                 registry.put_alias(alias, source)
-            if registry.manifest(alias)['digest'] != plan['digest']:
-                raise RuntimeError('Alias não aponta para o digest solicitado: ' + alias)
+            verify_proof = (lambda: context.verify_proof(gh, plan)) if context is not None else (lambda: check_head(gh, plan, branch))
+            verify_alias_visibility(registry, alias, plan['digest'], verify_proof)
             item.update(status='published', digest=plan['digest'])
             write_json(output, report)
-            if public_registry.manifest(alias)['digest'] != plan['digest']:
-                raise RuntimeError('Pull anônimo do manifesto divergente: ' + alias)
+            verify_alias_visibility(public_registry, alias, plan['digest'], verify_proof)
             item.update(public_pullable=True, **pull(GHCR_PREFIX + ':' + alias, plan, image_id))
             item['status'] = 'verified'
             write_json(output, report)

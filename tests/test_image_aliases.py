@@ -138,6 +138,35 @@ class ImageAliasTests(unittest.TestCase):
         self.assertTrue(report['aliases']['develop']['public_pullable'])
         self.assertEqual(self.registry.values[self.plan['version']]['digest'], DIGEST)
 
+    def test_alias_read_propagates_without_repeating_put(self):
+        old = dict(MANIFEST, digest='sha256:' + 'd' * 64)
+        reads = iter([old, old, MANIFEST])
+        with patch.object(self.registry, 'manifest', side_effect=lambda *a, **k: next(reads)) as read:
+            checks = []
+            sleeps = []
+            aliases.verify_alias_visibility(self.registry, 'develop', DIGEST, lambda: checks.append(True), sleep=sleeps.append)
+        self.assertEqual(read.call_count, 3)
+        self.assertEqual(sleeps, [2, 4])
+        self.assertEqual(len(checks), 3)
+        self.assertEqual(self.registry.writes, [])
+
+    def test_alias_permanently_wrong_digest_fails_bounded(self):
+        self.registry.values['develop'] = dict(MANIFEST, digest='sha256:' + 'd' * 64)
+        sleeps = []
+        with self.assertRaisesRegex(RuntimeError, 'após propagação'):
+            aliases.verify_alias_visibility(self.registry, 'develop', DIGEST, lambda: None, sleep=sleeps.append)
+        self.assertEqual(sum(sleeps), 90)
+        self.assertEqual(self.registry.writes, [])
+
+    def test_alias_superseded_while_waiting_stops(self):
+        self.registry.values['develop'] = dict(MANIFEST, digest='sha256:' + 'd' * 64)
+        def wait(_):
+            self.gh.head = 'b' * 40
+        with self.assertRaisesRegex(RuntimeError, 'head'):
+            aliases.verify_alias_visibility(self.registry, 'develop', DIGEST,
+                lambda: aliases.check_head(self.gh, self.plan, 'develop'), sleep=wait)
+        self.assertEqual(self.registry.writes, [])
+
     def test_idempotent_alias_does_not_write(self):
         self.registry.values['develop'] = MANIFEST
         self.promote()
