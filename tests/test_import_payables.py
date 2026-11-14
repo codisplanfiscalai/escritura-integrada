@@ -101,6 +101,40 @@ class ImportPayablesTests(unittest.TestCase):
                          [(t['document'], t['due_date'], t['amount_cents']) for t in titles])
         self.assertTrue(all(t['company_id'] == self.a['id'] and not t['settlements'] for t in titles))
 
+    def test_failure_creating_second_installment_rolls_back_and_can_retry(self):
+        from unittest.mock import patch
+        from app.core import DomainError
+        self.mapping()
+        raw = self.xml().replace(b'<vDup>100.00</vDup>', b'<vDup>40.00</vDup>').replace(
+            b'</cobr>', b'<dup><nDup>002</nDup><dVenc>2027-01-05</dVenc><vDup>60.00</vDup></dup></cobr>')
+        batch = self.preview(raw)
+        prepared = self.prepared(batch, create_payables=True)
+        create = self.core._create_title
+        created_ids = []
+
+        def fail_second(conn, cid, payload, actor, **kwargs):
+            if created_ids:
+                raise DomainError('Falha sintética na segunda duplicata.', 409, 'synthetic_title_failure')
+            title = create(conn, cid, payload, actor, **kwargs)
+            created_ids.append(title['id'])
+            return title
+
+        with patch.object(self.core, '_create_title', side_effect=fail_second):
+            error = self.confirm(batch, prepared, status=409)
+        self.assertEqual('synthetic_title_failure', error['code'])
+        self.assertEqual(1, len(created_ids), 'a primeira escrita deve ocorrer antes da falha simulada')
+        self.assertEqual([], self.core.documents(self.a['id']))
+        self.assertEqual([], self.core.titles(self.a['id']))
+        self.assertEqual([], self.core.journals(self.a['id']))
+        with self.core.db.read() as conn:
+            self.assertEqual(0, conn.execute('SELECT count(*) FROM settlements').fetchone()[0])
+            self.assertEqual('preview', conn.execute('SELECT status FROM imports WHERE id=?', (batch['id'],)).fetchone()[0])
+        retried = self.confirm(batch, prepared)
+        self.assertEqual((1, 2), (retried['documents_created'], retried['titles_created']))
+        titles = self.core.titles(self.a['id'])
+        self.assertEqual(10000, sum(t['amount_cents'] for t in titles))
+        self.assertTrue(all(t['document_id'] == retried['document_ids'][0] and not t['settlements'] for t in titles))
+
     def test_permission_denial_rolls_back_fiscal_and_is_visible_in_preview(self):
         from unittest.mock import patch
         from app.core import DomainError
