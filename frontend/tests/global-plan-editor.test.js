@@ -1,0 +1,14 @@
+import test from 'node:test';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const source=fs.readFileSync(new URL('../src/components/GlobalPlanEditor.vue',import.meta.url),'utf8').split('<script setup>')[1].split('</script>')[0].replace(/^import .*;$/gm,'');
+function harness(){const calls=[],responses=[];const state={companyId:7,module:'accounting',period:'2026-11',contextBusy:false,session:{user:{role:'admin'}}};const ctx={ref:v=>({value:v}),computed:f=>({get value(){return f()}}),watch:()=>{},markRaw:v=>v,onActivated:()=>{},onDeactivated:()=>{},onUnmounted:()=>{},state,ask:async()=>true,captureContext:()=>({companyId:state.companyId}),contextMatches:c=>c.companyId===state.companyId,scope:(p,id)=>`/companies/${id}${p}`,api:async(p,o)=>{calls.push([p,o]);return responses.shift()},clearTimeout,setTimeout};vm.createContext(ctx);vm.runInContext(source+'\nglobalThis.test={plans,drafts,canManage,source,newName,draft,form,account,previous,dirty,busy,error,message,accept,create,save,edit,saveAccount,remove,request,fetchPage,suspend};',ctx);return {...ctx,test:ctx.test,calls,responses};}
+test('gerenciador preserva versão, acesso textual, rascunho e contexto',async()=>{
+ let h=harness(),t=h.test; t.canManage.value=true;t.newName.value='Teste';h.responses.push({id:1,name:'Teste',version:1,accounts:[],properties:{}},{can_manage:true,plans:[],drafts:[]});await t.create();assert.equal(h.calls[0][1].body.properties.mask,'#.#.##.###');assert.equal(t.draft.value.id,1);
+ t.form.value.name='Alterado';h.responses.push({id:1,name:'Alterado',version:2,accounts:[],properties:{}},{id:20},{can_manage:true,plans:[],drafts:[]});await t.save();assert.equal(h.calls[2][1].method,'PUT');assert.equal(h.calls[3][1].body.version,2);assert.match(h.calls[3][0],/publish$/);assert.equal(t.draft.value,null);
+ h=harness();t=h.test;t.canManage.value=true;t.accept({id:1,name:'050',version:4,accounts:[],properties:{}});t.edit({access_code:'00050',classifier:'1.1',name:'Conta',nature:'debit',analytical:1,active:1,requires_cost_center:0,report_group:'asset',prosoft_code:'00050'});t.account.value.name='Outra';h.responses.push({id:1,name:'050',version:5,accounts:[],properties:{}},{id:1,name:'050',version:5,accounts:[],total:0});await t.saveAccount();assert.equal(h.calls[0][1].body.previous_access_code,'00050');assert.equal(h.calls[0][1].body.account.access_code,'00050');assert.equal(h.calls[0][1].body.version,4);
+ t.form.value.name='Não salvo';let before=h.calls.length;await t.fetchPage(2);assert.equal(h.calls.length,before);
+ h=harness();let resolve;h.api;h.responses.push(new Promise(r=>resolve=r));const pending=h.test.request();h.state.companyId=8;resolve({id:99});assert.equal(await pending,null);
+ console.log('PASS: create defaults, save/publish version ordering, string access identity, dirty pagination guard, stale company response suppression');
+});
