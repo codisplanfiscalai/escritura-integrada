@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "original_pr42_head": "8a74a6846004f6d5e0bb14f4c334edd49405f3a3",
+  "tested_develop": "34e816c798daf4f2cb30aaac188065599f912cce",
+  "develop_version": "0.9.0-dev.14",
+  "pr39_merged_commit": "ee24f21f0199ac3b4ad2faca7ad6a1551fb9cbec",
+  "conflict_paths": [
+    ".github/workflows/ci.yml"
+  ],
+  "resolution": "Union of both allowed-base lists; upstream jobs/permissions unchanged, preserving the original UI browser step and artifact upload.",
+  "ci_branches": [
+    "main",
+    "develop",
+    "feat/postgres-foundation-validation",
+    "feat/sped-native-consolidation",
+    "feat/fiscal-sales-daily-accounting-20261115"
+  ],
+  "ci_permissions": {
+    "contents": "read"
+  },
+  "ui_files_identical_to_original": {
+    "frontend/src/App.vue": "3172437b7b10b51122b9d39db3d5ce805e627a82",
+    "frontend/src/views/FiscalSalesAccountingView.vue": "6b8f05a10e373762e60851aeee412ab7b94957e7",
+    "frontend/tests/fiscal-sales-accounting.test.js": "b2de7326ee0c52914262c721a6c9c865a51d3003",
+    "scripts/browser_fiscal_sales_accounting.py": "bf38f948aa4f854b2895bf60eb0c79353c1164e7"
+  },
+  "backend_files_identical_to_develop": {
+    "count": 111,
+    "manifest_sha256": "ca8a085fe1dd6518c099a3cda3a4fc4383577ddf97c57d1f679d7bc3c370ae0d"
+  },
+  "planned_pr_base": "develop",
+  "previous_ci": {
+    "run_id": 43690988098,
+    "conclusion": "success",
+    "commit_sha": "8a74a6846004f6d5e0bb14f4c334edd49405f3a3"
+  },
+  "synthetic_only": true,
+  "backend": {
+    "modules": [
+      "test_core",
+      "test_business",
+      "test_company_accounting_settings",
+      "test_account_plans",
+      "test_global_account_plans",
+      "test_lazy_account_refs",
+      "test_journal_participants",
+      "test_accounting_report_models",
+      "test_report_models_api",
+      "test_fiscal_import",
+      "test_import_revision",
+      "test_import_reprocessing",
+      "test_reprocessing_linked_effects",
+      "test_generated_payables",
+      "test_import_package_cleanup",
+      "test_book_cancellation",
+      "test_bulk_operations",
+      "test_bulk_security",
+      "test_operational_settings",
+      "test_workspace_context",
+      "test_fiscal_sales_accounting",
+      "test_fiscal_sales_composition",
+      "test_journal_query_loading",
+      "test_sped_generator",
+      "test_sped_native_export",
+      "test_sped_bookkeeping",
+      "test_fiscal_analytics",
+      "test_fiscal_analytical_reports",
+      "test_fiscal_series",
+      "test_import_payables",
+      "test_purchase_reclassification",
+      "test_document_totals",
+      "test_movement_exports",
+      "test_deploy_storage",
+      "test_infrastructure",
+      "test_ci_release",
+      "test_ci_artifacts_cache",
+      "test_image_aliases",
+      "test_develop_alias",
+      "test_latest_alias",
+      "test_browser_script_bootstrap"
+    ],
+    "tests_run": 585,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "ok": true,
+    "duration_seconds": 222.338,
+    "synthetic_only": true
+  },
+  "frontend": {
+    "tests_run": 156,
+    "failures": 0,
+    "errors": 0,
+    "duration_ms": 3069.042363,
+    "build": "Vite 7.3.1 / dev.14 passed",
+    "bundle_main_kb": 810.9,
+    "warning": "Existing chunk-size warning above 500 kB"
+  },
+  "browsers": {
+    "sales_accounting": {
+      "ok": true,
+      "synthetic_only": true,
+      "checks": [
+        "Pagination, empty/combined/rapid filters and KeepAlive navigation are read-only",
+        "Daily: 0.01 + 10.02 => one balanced 10.03 journal; lost response after commit and exact-key retry do not duplicate; both sources traced",
+        "Individual: three notes/dates/CFOP/accounts => three journals; company B has two independent journals; saved company mode and previous movements preserved",
+        "Fiscal fields, original single journal and receivable preserved; independent daily report read-only and balanced at 43.22",
+        "Closed accounting month refuses UI generation even with permissive legacy defaults; reopening permits it; FK and all journals balanced",
+        "Configuration and controls remain within the 1100px viewport; wide table scroll is contained"
+      ],
+      "console_errors": [],
+      "browser_version": "141.0.7390.37",
+      "read_only_hashes": {
+        "before": {
+          "documents": "933cbc30270c9c9f858800ad533b192ad7e738210e20bcbf3956856bfb23e252",
+          "journals": "a1331971e287fdc1c2e097c2d38c50bf12e3ec849bb3087593aec5829691f0f5",
+          "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+          "titles": "fe8facd1500cebc966501961ca6f5449a681a2c5ce1452e348e9ca4344974012",
+          "audit": "b9b4e8f16f41a9da14903cc62addef0a31aa3e422dba6648df25422e85c80e70"
+        },
+        "after": {
+          "documents": "933cbc30270c9c9f858800ad533b192ad7e738210e20bcbf3956856bfb23e252",
+          "journals": "a1331971e287fdc1c2e097c2d38c50bf12e3ec849bb3087593aec5829691f0f5",
+          "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+          "titles": "fe8facd1500cebc966501961ca6f5449a681a2c5ce1452e348e9ca4344974012",
+          "audit": "b9b4e8f16f41a9da14903cc62addef0a31aa3e422dba6648df25422e85c80e70"
+        }
+      },
+      "replay_hashes": {
+        "before": {
+          "documents": "e2f59039aaf6c3895fede302664d5c2d718fb1eb326f29f9cb9b59c4b3c2055f",
+          "journals": "48d5ffadfb2f6365a05af045ae8a0bcaf47df2ef6849537389543f8a0e011572",
+          "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+          "titles": "fe8facd1500cebc966501961ca6f5449a681a2c5ce1452e348e9ca4344974012",
+          "audit": "5213c473ac889af38e8c7035e8e061932b9d3c46783f36d8469a90b68b239cf9"
+        },
+        "after": {
+          "documents": "e2f59039aaf6c3895fede302664d5c2d718fb1eb326f29f9cb9b59c4b3c2055f",
+          "journals": "48d5ffadfb2f6365a05af045ae8a0bcaf47df2ef6849537389543f8a0e011572",
+          "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+          "titles": "fe8facd1500cebc966501961ca6f5449a681a2c5ce1452e348e9ca4344974012",
+          "audit": "5213c473ac889af38e8c7035e8e061932b9d3c46783f36d8469a90b68b239cf9"
+        }
+      },
+      "report_hashes": {
+        "before": {
+          "documents": "54c4e9f76a10c5d3e3c3f0e3304a3400d99293a7c6231bcebb0857497c1abc31",
+          "journals": "b96a4c4cedfecd646b1fe7052a3adb57a8d490ec6ac85de888eaed5ce4dad5e5",
+          "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+          "titles": "fe8facd1500cebc966501961ca6f5449a681a2c5ce1452e348e9ca4344974012",
+          "audit": "cc17350d5cb2375c526f945d206fed7bca1232a92e9f6b39440e83a01c707817"
+        },
+        "after": {
+          "documents": "54c4e9f76a10c5d3e3c3f0e3304a3400d99293a7c6231bcebb0857497c1abc31",
+          "journals": "b96a4c4cedfecd646b1fe7052a3adb57a8d490ec6ac85de888eaed5ce4dad5e5",
+          "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+          "titles": "fe8facd1500cebc966501961ca6f5449a681a2c5ce1452e348e9ca4344974012",
+          "audit": "cc17350d5cb2375c526f945d206fed7bca1232a92e9f6b39440e83a01c707817"
+        }
+      },
+      "final_journals": {
+        "A": 6,
+        "B": 2
+      }
+    },
+    "workspace_context": {
+      "ok": true,
+      "checks": [
+        "Dashboard fiscal/accounting cards follow suggested August/September and company, without changing operational November",
+        "F8 code with leading zeros, suggested September, table wheel reaches page scrolling",
+        "manual July survives navigation; F8 and F9 are blocked while editing",
+        "sidebar scrolls by keyboard with thin scrollbar",
+        "F9 clears company and persisted year/month without deleting records",
+        "Document, journal, journal-line, title and audit hashes unchanged by context/filter navigation"
+      ],
+      "console_errors": [],
+      "screenshots": [
+        "dashboard-monthly-indicators.png",
+        "workspace-context.png"
+      ],
+      "source_sha": "8a74a6846004f6d5e0bb14f4c334edd49405f3a3",
+      "stage": "complete"
+    },
+    "document_summary": {
+      "ok": true,
+      "checks": [
+        "September: 52 documents across two pages; August: 1; October: zero cards/grid/export count",
+        "Combined operation/status/search, rapid month changes and KeepAlive navigation retain correct cards",
+        "Company B and next exercise empty; returning to A/current exercise restores September",
+        "Documents, journals, journal lines, titles and audit hashes unchanged after UI filtering/navigation"
+      ],
+      "console_errors": [],
+      "synthetic_only": true,
+      "browser_version": "141.0.7390.37"
+    }
+  },
+  "source_note": "Tests ran on the merged working tree before committing. Existing browser source_sha records the original PR42 HEAD; the backend manifest and UI blob hashes identify the tested code."
+}

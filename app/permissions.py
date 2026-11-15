@@ -126,7 +126,7 @@ def route_policy(path, method, query, payload, session):
     action = {'POST': 'create', 'PUT': 'edit', 'PATCH': 'edit', 'DELETE': 'delete'}.get(method, 'read')
     if path in {'/api/context', '/api/logout', '/api/permissions/me', '/api/permissions/catalog'}:
         return None, None, False
-    if re.match(r'^/api/(users|groups|access-audit|storage)(/|$)', path):
+    if re.match(r'^/api/(users|groups|access-audit|storage|docker-updates)(/|$)', path):
         return None, None, True
     if path == '/api/companies':
         return None, None, write
@@ -138,6 +138,10 @@ def route_policy(path, method, query, payload, session):
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
+    if root == 'fiscal-sales-accounting':
+        if tail.endswith('/settings'):
+            return 'accounting.accounts', 'edit' if write else 'read', False
+        return 'accounting.journals', 'create' if write else 'read', False
     if root == 'accounting-entry-defaults':
         return 'accounting.journals', 'read', False
     if root == 'accounting-settings' and '/plan-manager' in tail:

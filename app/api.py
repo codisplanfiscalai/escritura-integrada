@@ -56,6 +56,8 @@ def create_app(data_dir=None, demo=False):
     register_fiscal_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .plan_manager import register as register_plan_manager
     register_plan_manager(application, core, actor=lambda request: request.state.session["user"]["username"])
+    from .fiscal_sales_accounting import register as register_sales_accounting
+    register_sales_accounting(application, core, actor=lambda request: request.state.session["user"]["username"])
     from .accounting_settings import register as register_accounting_settings
     register_accounting_settings(application, core, actor=lambda request: request.state.session["user"]["username"])
     from .account_plan_api import register_account_plan_routes
@@ -68,6 +70,8 @@ def create_app(data_dir=None, demo=False):
     register_third_party_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .lookups import LookupService
     application.state.lookups = LookupService(database)
+    from .docker_updates import register as register_docker_updates
+    register_docker_updates(application, core)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
     @application.exception_handler(DomainError)
