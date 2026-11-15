@@ -1,6 +1,6 @@
 # Preparação de atualização Docker pela interface
 
-Incremento sobre develop `21b6e7679f1730207457ba17d86666641f1b8323` (0.9.0-dev.11). **Consultar e baixar uma imagem funciona quando o executor externo está instalado e autorizado; substituir a aplicação ainda não está implementado.** A interface diz isso antes da confirmação e em cada resultado. Não existe endpoint de corte, recriação, backup, migração ou rollback, nem sucesso fictício de atualização.
+Incremento sobre develop `955404e6b504f809514e9ead3c54ed62b258df56` (0.9.0-dev.12). **Consultar e baixar uma imagem funciona quando o executor externo está instalado e autorizado; substituir a aplicação ainda não está implementado.** A interface diz isso antes da confirmação e em cada resultado. Não existe endpoint de corte, recriação, backup, migração ou rollback, nem sucesso fictício de atualização.
 
 ## Escopo e separação de autoridade
 
