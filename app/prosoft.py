@@ -1,4 +1,4 @@
-"""Exportação CTBLCTOS LC1/LC2 conforme o PDF fornecido, sem escrita no destino."""
+"""Exportação CTBLCTOS CTA/LC1/LC2 conforme o PDF fornecido, sem escrita no destino."""
 import base64
 import json
 import re
@@ -18,7 +18,7 @@ def ascii_field(value,label,width,changes):
 
 def numeric(value,width,label,zero=False):
     value=str(value)
-    if not re.fullmatch(r'\d{1,'+str(width)+'}',value) or (not zero and int(value)==0):
+    if not re.fullmatch(r'[0-9]{1,'+str(width)+'}',value) or (not zero and int(value)==0):
         raise DomainError(f'{label}: informe de 1 a {width} dígitos'+(' maiores que zero.' if not zero else '.'))
     return value.zfill(width)
 
@@ -33,11 +33,82 @@ def put(out,start,width,value):
     out[start-1:start-1+width]=value
 
 
+def encode_account_registrations(journals, mappings, changes):
+    """CTA is opt-in, for used accounts explicitly absent in the destination."""
+    used_lines = {}
+    for journal in journals:
+        for line in journal['lines']: used_lines.setdefault(str(line['account_id']), []).append(line)
+    used = set(used_lines)
+    if not any(mappings.get(key, {}).get('create_account') is not None for key in used): return [], []
+    target_lines, target_modes = {}, {}
+    for local_id, lines in used_lines.items():
+        mapping = mappings.get(local_id, {})
+        code = numeric(mapping.get('code', ''), 5, 'Acesso contábil')
+        target_lines.setdefault(code, []).extend(lines)
+        target_modes.setdefault(code, set()).add(str(mapping.get('third_mode')))
+    records, trace, destinations = [], [], {}
+    for account_id in sorted(used, key=int):
+        mapping = mappings.get(account_id, {})
+        registration = mapping.get('create_account')
+        if registration is None: continue
+        if not isinstance(registration, dict) or registration.get('destination_missing') is not True:
+            raise DomainError('CTA exige confirmação explícita de conta ausente no destino.')
+        if mapping.get('confirmed') is not True:
+            raise DomainError('Confirme o mapeamento da conta antes de gerar CTA.')
+        if set(registration) - {'destination_missing','classifier','name','cost_center_mode','reconciliation','special_classifier','special_name'}:
+            raise DomainError('CTA contém propriedades não suportadas pelo perfil.')
+        account = numeric(mapping.get('code', ''), 5, 'Acesso CTA')
+        third_mode = mapping.get('third_mode')
+        mode = {'none':'1','optional':'2','required':'3'}.get(third_mode) if isinstance(third_mode,str) else None
+        center = str(registration.get('cost_center_mode', ''))
+        reconciliation = str(registration.get('reconciliation', ''))
+        if mode is None or center not in {'0','1','2','3'} or reconciliation not in {'0','1'}:
+            raise DomainError('CTA exige políticas explícitas de terceiro, centro e conciliação.')
+        def classifier(value, width, optional=False):
+            value = str(value or '')
+            if optional and not value: return ' ' * width
+            if not re.fullmatch(r'[0-9]+(?:\.[0-9]+)*', value): raise DomainError('Classificador CTA inválido.')
+            value = value.replace('.', '')
+            if len(value) > width: raise DomainError('Classificador CTA excede o leiaute; sem truncamento.')
+            return value.ljust(width, '0')
+        name = registration.get('name')
+        if not isinstance(name, str) or not name.strip(): raise DomainError('Informe o nome da conta CTA no destino.')
+        # Record order is assigned after deduplication; identical destination definitions share one CTA.
+        out = list(' ' * 208)
+        for pos,width,value in [(1,3,'CTA'),(12,5,account),
+                (17,15,classifier(registration.get('classifier'),15)),
+                (32,30,ascii_field(name,'Nome CTA',30,changes)),(62,1,mode),(63,1,center),
+                (64,20,classifier(registration.get('special_classifier'),20,True)),
+                (84,80,ascii_field(registration.get('special_name',''),'Nome especial CTA',80,changes)),
+                (164,1,reconciliation)]: put(out,pos,width,value)
+        definition = ''.join(out)
+        previous = destinations.get(account)
+        if previous and previous['definition'] != definition:
+            raise DomainError('Contas locais mapeiam CTA divergentes para o mesmo acesso no destino.',409,'account_mapping_conflict')
+        if target_modes[account] != {str(mapping.get('third_mode'))}:
+            raise DomainError('CTA conflita com a política de terceiro de outra conta no mesmo acesso.')
+        for line in target_lines[account]:
+            if center == '0' and line.get('cost_center_id'):
+                raise DomainError('CTA sem centro conflita com partida que possui centro.')
+            if center in {'2','3'} and not line.get('cost_center_id'):
+                raise DomainError('CTA exige centro em todas as partidas da conta.')
+        if not previous:
+            order = len(records) + 1
+            put(out,4,5,numeric(order,5,'Ordem CTA'))
+            records.append(''.join(out))
+            previous = {'definition': definition, 'order': order}
+            destinations[account] = previous
+        trace.append({'account_id':int(account_id),'destination_code':account,'order':previous['order']})
+    return records, trace
+
+
 def encode_journals(journals,mappings,centers,batch,allow_ascii=False,participants=None):
     participants = participants or {}
     if not isinstance(participants,dict) or any(not isinstance(v,dict) for v in participants.values()):raise DomainError('Mapeamento de terceiros inválido.')
     if not isinstance(mappings,dict) or not isinstance(centers,dict) or any(not isinstance(v,dict) for v in [*mappings.values(),*centers.values()]):raise DomainError('Mapeamentos devem ser objetos de contas e centros.')
-    records=[];trace=[];changes=[]
+    changes=[]
+    records,account_trace=encode_account_registrations(journals,mappings,changes)
+    trace=[]
     if not journals or len(journals)>99999:raise DomainError('Selecione de 1 a 99999 lançamentos.')
     for order,j in enumerate(journals,1):
         if not 2<=len(j['lines'])<=200:raise DomainError(f'Lançamento {j["number"]}: CTBLCTOS permite até 200 partidas.')
@@ -91,12 +162,14 @@ def encode_journals(journals,mappings,centers,batch,allow_ascii=False,participan
         trace.append({'order':order,'journal_id':j['id'],'journal_number':j['number'],'line_count':len(resolved),'total_cents':j['total_cents']})
     raw=('\r\n'.join(records)+'\r\n').encode('ascii')
     return raw,{'layout':LAYOUT,'records':len(records),'journals':len(journals),'trace':trace,'text_changes':changes,
+        'account_registrations':account_trace,'record_counts':{kind:sum(r.startswith(kind) for r in records) for kind in ('CTA','LC1','LC2')},
         'debit_cents':sum(j['total_cents'] for j in journals),'credit_cents':sum(j['total_cents'] for j in journals),
         'needs_ascii_review':bool(changes) and not allow_ascii,'homologated_in_destination':False}
 
 class ProsoftMixin:
     def export_prosoft(self,cid,payload,actor,confirm=False):
         competence=period(payload.get('period'));code=numeric(payload.get('company_code',''),4,'Empresa Prosoft')
+        plan_code=numeric(payload.get('plan_code','050'),4,'Plano no destino')
         ids=payload.get('journal_ids')
         with self.db.transaction() as conn:
             query='SELECT id FROM journals WHERE company_id=? AND period=? ORDER BY date,id'
@@ -127,8 +200,13 @@ class ProsoftMixin:
                         if not line.get('participant_id'):raise DomainError('Partida histórica sem terceiro obrigatório. Revise antes de exportar.')
                         if canonical.get(str(line['account_id']),{}).get('third_mode')!='required':raise DomainError('Conta com terceiro obrigatório exige esse modo no destino.')
             raw,manifest=encode_journals(journals,canonical,payload.get('centers',{}),payload.get('batch','1'),payload.get('allow_ascii') is True,participants=payload.get('participants',{}))
-            fingerprint=digest({'content_sha256':digest(raw),'configuration':canonical,
-                'participants':payload.get('participants',{}),'centers':payload.get('centers'),'company_code':code,'period':competence,'journals':journals})
+            manifest['plan_code']=plan_code
+            manifest['limitations']=['Plano é parâmetro de conferência no destino, não campo do CTBLCTOS.','CTA opcional somente para contas movimentadas ausentes no destino. TRC e SLD não gerados.','Idempotência local não impede duplicação ao reimportar o arquivo no Prosoft.']
+            fingerprint_data={'content_sha256':digest(raw),'configuration':canonical,
+                'participants':payload.get('participants',{}),'centers':payload.get('centers'),'company_code':code,'period':competence,'journals':journals}
+            # Preserve the historical identity for the default office plan, including old persisted batches.
+            if plan_code!='0050':fingerprint_data['plan_code']=plan_code
+            fingerprint=digest(fingerprint_data)
             filename=f'CTBLCTOS{code}_{competence.replace("-","")}.TXT'
             result={'preview_hash':fingerprint,'filename':filename,'manifest':manifest,'sha256':digest(raw),'sample':raw.decode('ascii').splitlines()[:5]}
             if not confirm:return result
