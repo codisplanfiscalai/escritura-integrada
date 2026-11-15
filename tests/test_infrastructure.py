@@ -99,6 +99,20 @@ class InfrastructureTests(unittest.TestCase):
             self.assertIn(pin, text)
         self.assertNotIn("--extra-index-url", text)
 
+    def test_a1_runtime_platform_markers_preserve_macos_intel_base_app(self):
+        from packaging.requirements import Requirement
+        from scripts.ci.dependencies import runtime_constraints
+        pins=[Requirement(line) for line in runtime_constraints((ROOT/'docker/runtime.lock').read_text()).splitlines()]
+        a1=[pin for pin in pins if pin.name in {'cryptography','cffi','pycparser'}]
+        self.assertEqual(3,len(a1))
+        for system,machine,expected in [('darwin','x86_64',False),('darwin','arm64',True),('linux','x86_64',True),('win32','AMD64',True)]:
+            for pin in a1:
+                self.assertEqual(expected,pin.marker.evaluate({'sys_platform':system,'platform_machine':machine}))
+        requirement=next(Requirement(line) for line in (ROOT/'requirements.txt').read_text().splitlines() if line.startswith('cryptography=='))
+        self.assertFalse(requirement.marker.evaluate({'sys_platform':'darwin','platform_machine':'x86_64'}))
+        spec=(ROOT/'escritura-integrada-macos.spec').read_text()
+        self.assertIn("if platform.machine() != 'x86_64':",spec)
+
     def test_distribution_names_are_safe_and_semver_plus_maps_to_oci(self):
         self.assertEqual(validate_version("1.2.3-dev.4+build.5"), "1.2.3-dev.4_build.5")
         for invalid in ("latest", "../1.2.3", "1.2.3\nTOKEN=bad", "1.2.3;rm", "1.2"):

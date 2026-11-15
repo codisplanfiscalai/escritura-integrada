@@ -14,6 +14,8 @@ import uuid
 from .core import DomainError, audit, company_row, digest, now, pack, period
 from .file_store import read_file, store_file
 from .permissions import require
+from .importers import ImportProblem
+from .reception_adn import load_adn_json, read_adn_distribution
 from .reception import (ADN_ENDPOINTS, NFE_ENDPOINTS, adn_rejection, adn_request,
                         nfe_request, read_nfe_distribution)
 from .reception_credentials import LocalA1Credentials, _cnpj
@@ -164,14 +166,20 @@ class ReceptionService:
             return metadata|{'state':'rejected','status_code':response['status_code']},cursor,max(3600,response['cooldown_seconds'])
         if provider == 'nfse_adn':
             try:
-                payload = json.loads(reply.body)
-                rejection = adn_rejection(payload,cursor)
-                return metadata|{'state':rejection['state'],'error_codes':rejection['error_codes']},cursor,3600
-            except (ValueError,UnicodeError):
-                # A successful JSON wire layout is not inferred from a PDF which
-                # documents methods/authorization but not the success schema.
+                payload = load_adn_json(reply.body)
+                # Rejection defaults are never proof of authorization, even if
+                # accompanied by an inconsistent success status/HTTP 200.
+                if isinstance(payload,dict) and payload.get('Erros'):
+                    rejection = adn_rejection(payload,cursor)
+                    return metadata|{'state':rejection['state'],'error_codes':rejection['error_codes']},cursor,3600
+                if reply.status != 200:
+                    raise ImportProblem('ADN_RESPONSE_UNSUPPORTED','Retorno ADN pendente.')
+                response = read_adn_distribution(payload,cursor,environment,expected_mode)
+                proposed = response.pop('reported_last_nsu')
+                return metadata|response|{'state':'received'},proposed,3600
+            except (ValueError,UnicodeError,RecursionError) as error:
                 return metadata|{'state':'received_unparsed' if reply.status == 200 else 'unparsed_rejection',
-                                 'code':'adn_success_contract_pending','review_pending':True},cursor,3600
+                                 'code':getattr(error,'code','ADN_RESPONSE_INVALID'),'review_pending':True},cursor,3600
         return metadata|{'state':'rejected'},cursor,3600
 
     def _finish(self,cid,uid,actor,key,identity,state_key,lease,target,competence,result,proposed,cooldown,raw):
@@ -183,7 +191,9 @@ class ReceptionService:
             if state['lease_id'] != lease or state['lease_until'] <= self.clock():
                 raise DomainError('A reserva expirou ou mudou. Resultado não aplicado; cursor preservado.',409,'reception_lease_lost')
             from .operational_settings import ensure_import_allowed
-            ensure_import_allowed(conn,cid,len(raw or b''))
+            entries = result.get('entries',[])
+            packet_bytes = sum(len(entry.get('xml',b'')) for entry in entries)
+            ensure_import_allowed(conn,cid,len(raw or b'')+packet_bytes)
             provider,environment,_ = state_key.split(':')
             result.update(provider=provider,environment=environment,period=competence,receipt_key=key,
                           cursor_before=state['cursor'],cursor_after=proposed,cursor_advanced=proposed!=state['cursor'])
@@ -193,6 +203,15 @@ class ReceptionService:
                 result.update(file_id=file_id,sha256=digest(raw),bytes=len(raw))
             elif proposed != state['cursor']:
                 raise DomainError('Cursor só pode avançar após guardar o retorno íntegro.',409,'reception_original_required')
+            # Packet originals and envelope share the cursor transaction. A
+            # failed packet write rolls back ALL canonical files and the cursor.
+            for entry in entries:
+                xml = entry.pop('xml',None)
+                if xml is not None:
+                    entry['file_id'] = store_file(self.db,conn,cid,int(competence[:4]),'originals',
+                        'adn-'+key+'-'+entry['nsu']+'.xml',xml,actor)
+                if provider == 'nfse_adn' and proposed != state['cursor'] and not entry.get('file_id'):
+                    raise DomainError('XML íntegro obrigatório antes de avançar NSU ADN.',409,'reception_original_required')
             state.update(cursor=proposed,lease_id=None,lease_until=0,next_allowed_at=self.clock()+max(60,cooldown),last_receipt=key)
             self._save_state(conn,cid,state_key,state)
             conn.execute('UPDATE operations SET result_json=? WHERE company_id=? AND scope=? AND key=? AND request_hash=?',
@@ -215,10 +234,30 @@ class ReceptionService:
                 return result,file['content']
             return result
 
+    def document(self,cid,key,number,uid):
+        from .reception import adn_nsu
+        try:
+            number=adn_nsu(number)
+        except ValueError:
+            raise DomainError('NSU de documento inválido.',400,'ADN_NSU') from None
+        with self.db.read(snapshot=True) as conn:
+            self._access(conn,uid,cid,'export')
+            row=self._operation(conn,cid,RUN_SCOPE,self._key(key))
+            if not row:
+                raise DomainError('Recepção não localizada nesta empresa.',404,'not_found')
+            result=json.loads(row['result_json'])
+            entry=next((item for item in result.get('entries',[]) if item.get('nsu')==number),None)
+            if result.get('provider')!='nfse_adn' or not entry or not entry.get('file_id'):
+                raise DomainError('XML não disponível neste recibo.',404,'not_found')
+            file=read_file(conn,cid,entry['file_id'])
+            if file['sha256']!=entry['sha256'] or len(file['content'])!=entry['bytes']:
+                raise DomainError('Integridade do XML do recibo comprometida.',409,'file_integrity')
+            return entry,file['content']
+
     def preview(self,cid,key,payload,actor,uid):
         result,raw=self._preview_source(cid,key,uid)
         if result['provider'] != 'nfe_distribution':
-            raise DomainError('Resposta ADN preservada; contrato de sucesso e leitor nacional ainda pendentes. Não foi criada escrituração.',409,'adn_success_contract_pending')
+            raise DomainError('Recepção ADN preservada; consulte os XMLs disponíveis no recibo. Leitor de escrituração nacional ainda pendente.',409,'nfse_bookkeeping_reader_pending')
         if not isinstance(payload,dict) or set(payload)-{'period','options'}:
             raise DomainError('Informe somente competência e opções de revisão.')
         return self.core.preview_import(cid,{'filename':'recepcao-'+key+'.xml','period':payload.get('period'),

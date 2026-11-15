@@ -65,7 +65,7 @@ class ReceptionProtocolTests(unittest.TestCase):
     def test_adn_explicit_target_cpf_or_cnpj_and_separate_environments(self):
         for environment, endpoint in ADN_ENDPOINTS.items():
             request = adn_request('11222333000181', environment, '42')
-            self.assertEqual(endpoint+'/DFe/000000000000042?cnpjConsulta=11222333000181',request['url'])
+            self.assertEqual(endpoint+'/DFe/000000000000042?cnpjConsulta=11222333000181&lote=true',request['url'])
             self.assertEqual('GET', request['method'])
             self.assertFalse(request['network_executed'])
             self.assertFalse(request['authorization_verified'])

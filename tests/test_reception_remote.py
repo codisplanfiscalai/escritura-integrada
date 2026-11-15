@@ -77,6 +77,13 @@ class CredentialTests(unittest.TestCase):
         write_private(root/'profiles.json',json.dumps(config).encode())
         return cert
 
+    def test_macos_intel_remote_a1_is_explicitly_disabled_before_credentials(self):
+        with patch('app.reception_credentials.sys.platform','darwin'),patch('app.reception_credentials.platform.machine',return_value='x86_64'):
+            with patch('app.reception_credentials._private_file') as read,self.assertRaises(DomainError) as error:
+                LocalA1Credentials('/synthetic/not-read').load(1,MATRIX,'nfse_adn','restricted_production')
+            self.assertEqual('reception_platform_unsupported',error.exception.code)
+            read.assert_not_called()
+
     def test_pfx_uses_actual_certificate_cnpj_and_ephemeral_key_is_removed(self):
         with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,{'ESCRITURA_RECEPTION_PASSWORD_SYNTHETIC':PASSWORD.decode()}):
             root=Path(directory);self.profile(root,target=BRANCH)
@@ -396,12 +403,13 @@ class TransportTests(unittest.TestCase):
             def local(host,**kwargs):hosts.append(host);return actual('127.0.0.1',server.server_port,**kwargs)
             try:
                 with patch('app.reception_transport.HTTPSConnection',side_effect=local):
-                    reply=MtlsTransport().send(self.plan(),ClientIdentity(MATRIX,client))
+                    reply=MtlsTransport().send(adn_request(MATRIX,'restricted_production','9223372036854775807')|{'provider':'nfse_adn'},ClientIdentity(MATRIX,client))
                 self.assertEqual(200,reply.status)
                 self.assertEqual(b'{"synthetic":"local mTLS only"}',reply.body)
                 self.assertEqual(['adn.producaorestrita.nfse.gov.br'],hosts)
                 self.assertEqual(client_cert.public_bytes(serialization.Encoding.DER),observed[0][1])
-                self.assertTrue(observed[0][0].startswith('/contribuintes/DFe/'))
+                self.assertIn('/contribuintes/DFe/9223372036854775807?',observed[0][0])
+                self.assertIn('lote=true',observed[0][0])
                 with patch('app.reception_transport.HTTPSConnection',side_effect=local):
                     nfe=MtlsTransport().send(nfe_request(MATRIX,'35','homologation','0')|{'provider':'nfe_distribution'},ClientIdentity(MATRIX,client))
                 self.assertEqual(200,nfe.status)

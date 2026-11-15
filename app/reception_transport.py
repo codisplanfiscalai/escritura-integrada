@@ -37,7 +37,7 @@ class MtlsTransport:
                 raise DomainError('Somente distribuição por NSU é permitida.', 400, 'reception_operation')
         elif provider == 'nfse_adn':
             import re
-            if plan['method'] != 'GET' or plan.get('body') or not re.fullmatch(r'/contribuintes/DFe/[0-9]{15}', url.path):
+            if plan['method'] != 'GET' or plan.get('body') or not re.fullmatch(r'/contribuintes/DFe/[0-9]{15,19}', url.path):
                 raise DomainError('Somente consulta ADN por NSU é permitida.', 400, 'reception_operation')
         else:
             raise DomainError('Provedor não autorizado.', 400, 'reception_operation')

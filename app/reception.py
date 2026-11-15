@@ -35,6 +35,15 @@ def nsu(value):
     return value.zfill(15)
 
 
+def adn_nsu(value):
+    """ADN uses signed int64, unlike the 15-digit NF-e distribution NSU."""
+    if type(value) is int:
+        value = str(value)
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9]{1,19}', value) or int(value) > 9223372036854775807:
+        raise ImportProblem('ADN_NSU', 'NSU ADN deve ser um inteiro não negativo de até 64 bits.')
+    return str(int(value)).zfill(15)
+
+
 def _tax_id(value):
     # No silent removal of letters from the application's alphanumeric CNPJ.
     if not isinstance(value, str) or not re.fullmatch(r'(?:[0-9]{11}|[0-9]{14})', value):
@@ -73,15 +82,16 @@ def adn_request(tax_id, environment, last_nsu, *, certificate_tax_id=None, allow
     if certificate_tax_id is not None:
         from .reception_credentials import adn_access_mode
         mode = adn_access_mode(tax_id, certificate_tax_id, allow_procuration)
-    query = '' if mode == 'InscricaoCertificado' else urlencode({'cnpjConsulta' if len(tax_id) == 14 else 'cpfConsulta': tax_id})
-    return {'method': 'GET', 'url': ADN_ENDPOINTS[environment] + '/DFe/' + nsu(last_nsu) + ('?' + query if query else ''),
+    params = {} if mode == 'InscricaoCertificado' else {'cnpjConsulta' if len(tax_id) == 14 else 'cpfConsulta': tax_id}
+    query = urlencode(params | {'lote':'true'})
+    return {'method': 'GET', 'url': ADN_ENDPOINTS[environment] + '/DFe/' + adn_nsu(last_nsu) + ('?' + query if query else ''),
             'expected_authorization_mode': mode,
             'network_executed': False, 'authorization_verified': False}
 
 
 def adn_rejection(payload, last_nsu):
-    """Normalize documented rejections only. Do not guess the success JSON schema."""
-    cursor = nsu(last_nsu)
+    """Normalize documented rejections without trusting authorization defaults."""
+    cursor = adn_nsu(last_nsu)
     if not isinstance(payload, dict) or not isinstance(payload.get('Erros'), list) or not payload['Erros']:
         raise ImportProblem('ADN_RESPONSE_UNSUPPORTED', 'Resposta de sucesso ADN ainda não integrada; preserve a origem e o cursor.')
     codes = []

@@ -23,6 +23,12 @@ def register(app,core,actor,check_period):
         return Response(raw,media_type='application/octet-stream',headers={
             'Content-Disposition':f'attachment; filename="recepcao-{key}{extension}"'})
 
+    @app.get('/api/companies/{cid}/imports/reception/receipts/{key}/documents/{nsu}/download')
+    def document(cid:int,key:str,nsu:str,request:Request):
+        metadata,raw=app.state.reception.document(cid,key,nsu,request.state.session['user']['id'])
+        return Response(raw,media_type='application/octet-stream',headers={
+            'Content-Disposition':f'attachment; filename="adn-{key}-{metadata["nsu"]}.xml"'})
+
     @app.post('/api/companies/{cid}/imports/reception/receipts/{key}/preview')
     def preview(cid:int,key:str,request:Request,payload:dict=Body(...)):
         check_period(request,payload.get('period'))

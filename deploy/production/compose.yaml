@@ -148,7 +148,7 @@
       }
     },
     "minio": {
-      "image": "${MINIO_IMAGE:-ghcr.io/codisplanfiscalai/escritura-integrada-minio:RELEASE.2025-10-15T17-29-55Z-bc397837ad53a933}",
+      "image": "${MINIO_IMAGE:-ghcr.io/codisplanfiscalai/escritura-integrada-minio:RELEASE.2025-10-15T17-29-55Z-73ab5d784ed7b369}",
       "pull_policy": "missing",
       "platform": "linux/amd64",
       "profiles": [

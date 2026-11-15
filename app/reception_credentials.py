@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
 import os
+import platform
+import sys
 from pathlib import Path
 import re
 import secrets
@@ -78,6 +80,8 @@ class LocalA1Credentials:
         self.directory = directory
 
     def load(self, company_id, target, provider, environment):
+        if sys.platform == 'darwin' and platform.machine() == 'x86_64':
+            raise DomainError('Recepção mTLS ainda não habilitada no macOS Intel: runtime A1 sem distribuição binária suportada. A recepção por arquivo continua disponível.',503,'reception_platform_unsupported')
         configured = self.directory or os.environ.get('ESCRITURA_RECEPTION_CREDENTIALS_DIR')
         if not configured:
             raise DomainError('Recepção remota não configurada. Configure o A1 localmente de forma segura; não envie certificado ou senha pelo chat.', 503, 'reception_not_configured')

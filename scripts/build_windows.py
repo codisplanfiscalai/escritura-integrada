@@ -181,7 +181,9 @@ def collect_notices(bundle: Path) -> dict:
     """Preserva textos e metadados dos pacotes instalados, sem relicenciar o app."""
     from packaging.requirements import Requirement
     names = ["PySide6", "PySide6_Essentials", "PySide6_Addons", "shiboken6", "pyinstaller",
-             "fastapi", "pydantic", "uvicorn", "python-multipart", "py7zr", "rarfile", "reportlab", "openpyxl", "lxml", "BrazilFiscalReport", "cryptography"]
+             "fastapi", "pydantic", "uvicorn", "python-multipart", "py7zr", "rarfile", "reportlab", "openpyxl", "lxml", "BrazilFiscalReport"]
+    if sys.platform != "darwin" or platform.machine() != "x86_64":
+        names.append("cryptography")
     licenses = bundle / "licenses"
     licenses.mkdir()
     shutil.copy2(ROOT/"app/auditor_engine/LICENSE",licenses/"AuditorFiscal-1.2.2-LICENSE.txt")
