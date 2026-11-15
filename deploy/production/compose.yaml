@@ -15,7 +15,14 @@
         "ESCRITURA_COOKIE_SECURE": "${ESCRITURA_COOKIE_SECURE:-0}"
       },
       "volumes": [
-        "app-data:/data"
+        {
+          "type": "bind",
+          "source": "./data/${COMPOSE_PROJECT_NAME:-escritura-production}/app",
+          "target": "/data",
+          "bind": {
+            "create_host_path": false
+          }
+        }
       ],
       "networks": [
         "application",
@@ -57,7 +64,14 @@
         "REDIS_PASSWORD": "${REDIS_PASSWORD:-}"
       },
       "volumes": [
-        "redis-data:/data"
+        {
+          "type": "bind",
+          "source": "./data/${COMPOSE_PROJECT_NAME:-escritura-production}/redis",
+          "target": "/data",
+          "bind": {
+            "create_host_path": false
+          }
+        }
       ],
       "networks": [
         "internal"
@@ -91,7 +105,14 @@
         "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:-}"
       },
       "volumes": [
-        "postgres-data:/var/lib/postgresql/data"
+        {
+          "type": "bind",
+          "source": "./data/${COMPOSE_PROJECT_NAME:-escritura-production}/postgres",
+          "target": "/var/lib/postgresql/data",
+          "bind": {
+            "create_host_path": false
+          }
+        }
       ],
       "networks": [
         "internal"
@@ -126,7 +147,14 @@
         "MYSQL_ROOT_PASSWORD": "${MYSQL_ROOT_PASSWORD:-}"
       },
       "volumes": [
-        "mysql-data:/var/lib/mysql"
+        {
+          "type": "bind",
+          "source": "./data/${COMPOSE_PROJECT_NAME:-escritura-production}/mysql",
+          "target": "/var/lib/mysql",
+          "bind": {
+            "create_host_path": false
+          }
+        }
       ],
       "networks": [
         "internal"
@@ -159,7 +187,14 @@
         "MINIO_ROOT_PASSWORD": "${MINIO_ROOT_PASSWORD:-}"
       },
       "volumes": [
-        "minio-data:/data"
+        {
+          "type": "bind",
+          "source": "./data/${COMPOSE_PROJECT_NAME:-escritura-production}/minio",
+          "target": "/data",
+          "bind": {
+            "create_host_path": false
+          }
+        }
       ],
       "networks": [
         "internal"
@@ -190,13 +225,6 @@
         "ALL"
       ]
     }
-  },
-  "volumes": {
-    "app-data": {},
-    "redis-data": {},
-    "postgres-data": {},
-    "mysql-data": {},
-    "minio-data": {}
   },
   "networks": {
     "application": {},

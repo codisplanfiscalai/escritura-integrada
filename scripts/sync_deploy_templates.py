@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from image_tools import ROOT, OPTIONAL_NAMES, image_plan
+from deploy_storage import TARGETS
 
 
 def sync(root=ROOT, check=False):
@@ -20,6 +21,14 @@ def sync(root=ROOT, check=False):
         # ESCRITURA_IMAGE pode apontar para os aliases mutáveis develop/latest.
         # O override compose.release.yaml preserva a política offline/fixada.
         data["services"]["app"]["pull_policy"] = "always"
+        for name, target in TARGETS.items():
+            data["services"][name]["volumes"] = [{
+                "type": "bind",
+                "source": "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name,
+                "target": target,
+                "bind": {"create_host_path": False},
+            }]
+        data.pop("volumes", None)
         for name in OPTIONAL_NAMES:
             data["services"][name]["image"] = "${" + name.upper() + "_IMAGE:-" + plan["images"][name]["reference"] + "}"
         wanted = json.dumps(data, ensure_ascii=False, indent=2) + "\n"

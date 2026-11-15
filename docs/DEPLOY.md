@@ -13,7 +13,7 @@ O aplicativo é uma única imagem: API Python, interface Vue compilada e SQLite 
 | `escritura-integrada-mysql` | MySQL upstream + validação de credenciais | Perfil `mysql`, opcional e interno |
 | `escritura-integrada-minio` | MinIO compilado do fonte oficial fixado | Perfil `minio`, opcional e interno |
 
-**Redis, PostgreSQL, MySQL e MinIO ainda não são consumidos pelo backend.** Ativar um perfil não migra dados, não troca SQLite e não cria armazenamento de anexos ou filas no aplicativo. Essas integrações exigem desenvolvimento, migração e validação próprios. O runtime atual usa um processo/worker Uvicorn e um volume SQLite por ambiente; não escale réplicas nem compartilhe o mesmo arquivo SQLite entre hosts.
+**Redis, PostgreSQL, MySQL e MinIO ainda não são consumidos pelo backend.** Ativar um perfil não migra dados, não troca SQLite e não cria armazenamento de anexos ou filas no aplicativo. Essas integrações exigem desenvolvimento, migração e validação próprios. O runtime atual usa um processo/worker Uvicorn e um diretório SQLite por ambiente; não escale réplicas nem compartilhe o mesmo arquivo SQLite entre hosts.
 
 As imagens e o bundle desta entrega são `linux/amd64`. Windows usa Docker Desktop com containers Linux quando a opção escolhida for Docker; o aplicativo gráfico Windows tem distribuição separada. ARM64 não é anunciado como validado.
 
@@ -21,7 +21,9 @@ As imagens e o bundle desta entrega são `linux/amd64`. Windows usa Docker Deskt
 
 Baixe `EscrituraIntegrada-<versão>-production-deploy.zip` ou `EscrituraIntegrada-<versão>-develop-deploy.zip`. Cada pacote contém `compose.yaml`, `compose.release.yaml` (override fixado), `.env` preenchido com imagens publicadas, manifesto de imagens e instruções. Não contém código da aplicação, banco, senha de administrador nem material recuperado dos sistemas de referência.
 
-Dentro do diretório extraído:
+**Stack existente com volumes nomeados:** siga primeiro [STORAGE.md](DOCKER_STORAGE.md). Trocar o mount por uma pasta vazia não copia os dados e pode apresentar uma instalação nova.
+
+Instalação nova, dentro do diretório extraído (Python 3.10+ e Docker local): baixe/carregue a imagem do app e execute `python3 deploy_storage.py init --project <nome-exato-do-.env> --helper-image <imagem-local-do-app>`. No checkout, use `python3 scripts/deploy_storage.py`. A ferramenta prepara diretórios com permissões próprias e recusa destinos existentes. Depois:
 
 ```sh
 docker compose up -d
@@ -35,10 +37,10 @@ Abra `http://127.0.0.1:8000` em produção ou `http://127.0.0.1:8001` em desenvo
 | Projeto Compose padrão | `escritura-production` | `escritura-develop` |
 | Porta padrão no host | `8000` | `8001` |
 | Bind padrão | `127.0.0.1` | `127.0.0.1` |
-| Volume SQLite padrão | `escritura-production_app-data` | `escritura-develop_app-data` |
+| Diretório SQLite padrão | `./data/escritura-production/app` | `./data/escritura-develop/app` |
 | Estado inicial | Vazio; administrador criado pelo operador | Vazio; administrador criado pelo operador |
 
-Só o serviço `app` declara uma porta publicada no host. Bancos, Redis, S3 e console MinIO permanecem na rede interna, mesmo quando os perfis estão ativos. Os arquivos não têm `build`, bind mount de fontes, `network_mode: host` ou bancos expostos.
+Só o serviço `app` declara uma porta publicada no host. Bancos, Redis, S3 e console MinIO permanecem na rede interna, mesmo quando os perfis estão ativos. Os arquivos não têm `build`, bind mount de fontes, `network_mode: host` ou bancos expostos. Cada serviço persistente usa um bind em `./data/<COMPOSE_PROJECT_NAME>/<serviço>`, com `create_host_path: false`. Não há volumes nomeados novos. Veja [preparação, permissões e migração](DOCKER_STORAGE.md).
 
 No `.env`, ajuste `ESCRITURA_PORT` quando necessário. `ESCRITURA_BIND` controla a interface publicada; o padrão loopback restringe o acesso à máquina. Para acesso por rede, planeje o endpoint HTTP/HTTPS e as permissões do host antes de alterar o bind. `ESCRITURA_COOKIE_SECURE=1` destina-se a um endpoint HTTPS já configurado; marcá-lo em HTTP impede o navegador de enviar o cookie de sessão. Os arquivos entregues não instalam proxy TLS, certificados ou serviço Windows.
 
@@ -84,6 +86,7 @@ Confira a integridade:
 ```sh
 sha256sum -c EscrituraIntegrada-<versão>-linux-amd64-images.tar.gz.sha256
 docker load -i EscrituraIntegrada-<versão>-linux-amd64-images.tar.gz
+# Em instalação nova, execute init com o nome do projeto e a tag versionada local do app.
 docker compose -f compose.yaml -f compose.release.yaml up -d --pull never
 ```
 
@@ -97,12 +100,12 @@ O app usa `pull_policy: always` nos três templates online (raiz, produção e d
 
 Os nomes dos perfis são `redis`, `postgres`, `mysql` e `minio`. Antes de ativá-los, preencha apenas as variáveis correspondentes no `.env` privado do ambiente.
 
-| Perfil | Variáveis obrigatórias | Volume interno |
+| Perfil | Variáveis obrigatórias | Diretório relativo |
 |---|---|---|
-| Redis | `REDIS_PASSWORD`, mínimo 16 caracteres | `redis-data:/data` |
-| PostgreSQL | `POSTGRES_PASSWORD`, mínimo 16; banco/usuário configuráveis | `postgres-data:/var/lib/postgresql/data` |
-| MySQL | `MYSQL_ROOT_PASSWORD` e `MYSQL_PASSWORD`, mínimo 16 | `mysql-data:/var/lib/mysql` |
-| MinIO | `MINIO_ROOT_USER`, mínimo 3; `MINIO_ROOT_PASSWORD`, mínimo 16 | `minio-data:/data` |
+| Redis | `REDIS_PASSWORD`, mínimo 16 caracteres | `./data/<projeto>/redis` |
+| PostgreSQL | `POSTGRES_PASSWORD`, mínimo 16; banco/usuário configuráveis | `./data/<projeto>/postgres` |
+| MySQL | `MYSQL_ROOT_PASSWORD` e `MYSQL_PASSWORD`, mínimo 16 | `./data/<projeto>/mysql` |
+| MinIO | `MINIO_ROOT_USER`, mínimo 3; `MINIO_ROOT_PASSWORD`, mínimo 16 | `./data/<projeto>/minio` |
 
 Exemplo:
 
@@ -115,20 +118,20 @@ Para iniciar mais de um perfil, repita `--profile`. Para uso offline, use `docke
 
 A validação fica no entrypoint de cada imagem e é executada apenas quando o serviço é iniciado. Assim, a configuração de app-only não exige segredos de perfis inativos. Isso evita exigir `${VAR:?}` para credenciais opcionais durante a fase global de interpolação. As senhas não são passadas por build args e não entram nas camadas das imagens.
 
-Se um perfil for iniciado com credenciais ausentes, ele termina com código 64 e uma mensagem com os nomes das variáveis a preencher. O aplicativo mantém seu volume SQLite e sua inicialização independentes. Não confunda a saúde do container de banco com uma integração funcional do aplicativo.
+Se um perfil for iniciado com credenciais ausentes, ele termina com código 64 e uma mensagem com os nomes das variáveis a preencher. O aplicativo mantém seu diretório SQLite e sua inicialização independentes. Não confunda a saúde do container de banco com uma integração funcional do aplicativo.
 
 ## Persistência, backup e atualização
 
-O aplicativo grava `/data/escritura.sqlite3` no volume `app-data`, inclusive arquivos auxiliares de WAL quando ativos. O filesystem raiz do container é somente leitura, `/tmp` é temporário e o processo executa como UID/GID `10001`. O encerramento recebe prazo de 30 segundos.
+O aplicativo grava `/data/escritura.sqlite3` em `./data/<COMPOSE_PROJECT_NAME>/app`, inclusive arquivos auxiliares de WAL quando ativos. Tudo em `/data` persiste no mesmo bind, incluindo documentos e relatórios. Nos templates novos os cinco serviços usam subpastas relativas distintas. Volumes nomeados de instalações antigas só são convertidos pelo procedimento administrativo explícito de [STORAGE.md](DOCKER_STORAGE.md); este código não migra automaticamente dados. O filesystem raiz do container é somente leitura, `/tmp` é temporário e o processo executa como UID/GID `10001`. O encerramento recebe prazo de 30 segundos.
 
-Uma cópia consistente do SQLite pode ser criada pela API de backup do próprio SQLite, com o container em execução. O comando abaixo grava somente uma cópia no volume e usa a imagem já instalada:
+Uma cópia consistente do SQLite pode ser criada pela API de backup do próprio SQLite, com o container em execução. O comando abaixo grava somente uma cópia no diretório de dados e usa a imagem já instalada:
 
 ```sh
 docker compose exec -T app python -c "import sqlite3; s=sqlite3.connect('/data/escritura.sqlite3'); d=sqlite3.connect('/data/backup.sqlite3'); s.backup(d); d.close(); s.close()"
 docker compose cp app:/data/backup.sqlite3 ./backup.sqlite3
 ```
 
-Esse nome substitui a cópia anterior; renomeie o arquivo externo com a data e mantenha backups fora do volume. Proteja os arquivos, pois contêm dados do escritório. Teste restauração em um projeto/volume separado antes de depender do procedimento. Não copie apenas o `.sqlite3` enquanto há gravações sem usar um mecanismo consistente.
+Esse nome substitui a cópia anterior; renomeie o arquivo externo com a data e mantenha backups fora do diretório da stack. Proteja os arquivos, pois contêm dados do escritório. Teste restauração em um projeto/volume separado antes de depender do procedimento. Não copie apenas o `.sqlite3` enquanto há gravações sem usar um mecanismo consistente.
 
 Antes de atualizar: guarde backup, preserve o `.env` e o nome do projeto Compose do ambiente e revise a versão de destino. Em produção, altere `ESCRITURA_IMAGE` para a tag publicada e execute `docker compose up -d`.
 
@@ -140,7 +143,7 @@ Antes de atualizar: guarde backup, preserve o `.env` e o nome do projeto Compose
 
 **Stacks já instaladas, inclusive as criadas pelo Compose da raiz/produção:** incorpore uma única vez `services.app.pull_policy: always` no Compose efetivamente usado pela stack. Se quiser acompanhar um canal, ajuste também `ESCRITURA_IMAGE` para uma das referências acima. Com `missing`, uma imagem em cache pode levar `docker compose pull app` a informar `Skipped Image is already present locally`, e recriar o container mantém a imagem antiga. O novo código e os futuros ZIPs não modificam stacks existentes nem assets de releases já publicados.
 
-Não substitua todo o `.env` pelo exemplo: preserve credenciais, nome de projeto, bind, portas e volumes. Copiar um ZIP novo sobre a instalação pode apagar configurações privadas. Não mude o projeto existente para `escritura-develop`: isso apontaria para outro volume.
+Não substitua todo o `.env` pelo exemplo: preserve credenciais, nome de projeto, bind, portas e volumes. Copiar um ZIP novo sobre a instalação pode apagar configurações privadas. Não mude o projeto existente para `escritura-develop`: isso apontaria para outro conjunto de dados.
 
 O workflow de release promove o alias no job final **Promover alias develop após publicação**, somente em develop e depois de todos os gates e da publicação. Esse job usa a imagem já construída, exige a mesma versão, commit, execução e recibos dos assets, confere o inventário remoto e valida o pull público por digest. A prova é repetida imediatamente antes e depois da gravação. As referências main/latest são conferidas e não são escritas por esse job. Imagens opcionais continuam fixadas por conteúdo e requerem atualização deliberada do pacote/configuração.
 
@@ -171,9 +174,9 @@ python scripts/export_images.py --images-manifest artifacts/images-published.jso
 
 `validate` não publica. `--dry-run` gera somente um plano, com status `planned`; o empacotador recusa esse plano como publicação. O modo `publish` é orquestrado pelo workflow somente após os gates Linux/Windows. A base é enviada para ser usada por digest; app e serviços são enviados após seu smoke real. O builder `default` usa o driver Docker local, permitindo ao modo de validação resolver a base recém-construída sem publicar em PRs.
 
-O smoke confere dependências da base; health/versão/modo sem demo; HTML, JavaScript e CSS compilados; criação de administrador sem senha predefinida; persistência de sessão e SQLite após reinício; processo sem root; credenciais obrigatórias e health dos quatro serviços; ausência de portas host nesses serviços. A avaliação visual/funcional das telas continua sendo uma etapa própria, além desses checks técnicos.
+O smoke confere dependências da base; health/versão/modo sem demo; HTML, JavaScript e CSS compilados; criação de administrador sem senha predefinida; persistência de sessão e SQLite após reinício; processo sem root; credenciais obrigatórias e health dos quatro serviços; ausência de portas host nesses serviços. O smoke de armazenamento também prepara binds, copia friamente os cinco volumes de fixtures para diretórios novos, confere seus inventários e testa persistência após recriação e leitura dos volumes originais. A avaliação visual/funcional das telas continua sendo uma etapa própria, além desses checks técnicos.
 
-Para manutenção do catálogo, confira novas versões/digests oficiais, regenere o lock quando necessário e execute `python scripts/sync_deploy_templates.py`. O modo `--check` identifica exemplos desatualizados sem editar. Não há atualização silenciosa de versão upstream, pacote Python ou imagem já publicada.
+Para manutenção do catálogo, confira novas versões/digests oficiais, regenere o lock quando necessário e execute `python scripts/sync_deploy_templates.py`. O modo `--check` identifica exemplos desatualizados sem editar, incluindo os binds relativos e a política de pull do app. Não há atualização silenciosa de versão upstream, pacote Python ou imagem já publicada.
 
 ## Limites da validação e materiais excluídos
 
