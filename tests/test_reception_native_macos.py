@@ -49,8 +49,21 @@ class Fixtures:
     def make(self,name,san,eku='clientAuth',days='1'):
         self.run('req','-newkey','rsa:2048','-nodes','-keyout',name+'.key','-out',name+'.csr','-subj','/CN=SYNTHETIC-'+name)
         (self.root/(name+'.ext')).write_text('basicConstraints=CA:FALSE\nextendedKeyUsage='+eku+'\n'+('subjectAltName='+san+'\n' if san else ''))
-        self.run('x509','-req','-in',name+'.csr','-CA','ca.pem','-CAkey','ca.key','-CAcreateserial',
-                 '-out',name+'.pem','-days',days,'-extfile',name+'.ext')
+        if days=='-1':
+            # x509 -days requires a positive value on the CI OpenSSL versions.
+            # Use documented CA absolute dates; keep the expiry assertion intact.
+            (self.root/'issued').mkdir(exist_ok=True)
+            (self.root/'expired-index').write_text('')
+            (self.root/'expired-serial').write_text('1000\n')
+            (self.root/'expired-ca.conf').write_text(
+                '[ca]\ndefault_ca=issuer\n[issuer]\ndatabase=expired-index\nserial=expired-serial\n'
+                'new_certs_dir=issued\ncertificate=ca.pem\nprivate_key=ca.key\ndefault_md=sha256\n'
+                'policy=policy\n[policy]\ncommonName=supplied\n[leaf]\n'+(self.root/(name+'.ext')).read_text())
+            self.run('ca','-config','expired-ca.conf','-batch','-in',name+'.csr','-out',name+'.pem',
+                     '-startdate','20000101000000Z','-enddate','20000102000000Z','-extensions','leaf')
+        else:
+            self.run('x509','-req','-in',name+'.csr','-CA','ca.pem','-CAkey','ca.key','-CAcreateserial',
+                     '-out',name+'.pem','-days',days,'-extfile',name+'.ext')
         self.run('pkcs12','-export','-in',name+'.pem','-inkey',name+'.key','-out',name+'.p12',
                  '-keypbe','AES-256-CBC','-certpbe','AES-256-CBC','-macalg','sha256','-passout','stdin',input=(PASSWORD+'\n').encode())
         for path in self.root.glob(name+'.*'):path.chmod(0o600)
