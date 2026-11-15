@@ -10,6 +10,7 @@ from .reconciliation import ReconciliationMixin
 from .reports import ReportsMixin
 from .prosoft import ProsoftMixin
 from .prosoft_fiscal import ProsoftFiscalMixin
+from .prosoft_settings import ProsoftSettingsMixin
 from .access import AccessMixin
 from .periods import PeriodMixin
 from .tax_assessment import TaxAssessmentMixin
@@ -29,7 +30,7 @@ from .import_payables import ImportPayablesMixin
 
 from .fiscal_library import FiscalLibraryMixin
 
-class BusinessCore(ProsoftFiscalMixin, GlobalAccountPlansMixin, FiscalLibraryMixin, ThirdPartiesMixin, ImportPayablesMixin, ImportReprocessingMixin, AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
+class BusinessCore(ProsoftSettingsMixin, ProsoftFiscalMixin, GlobalAccountPlansMixin, FiscalLibraryMixin, ThirdPartiesMixin, ImportPayablesMixin, ImportReprocessingMixin, AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
     def _validate_document_links(self,conn,cid,payload,*,_existing_document_id=None):
         for k,kind in [('participant_id','participant'),('establishment_id','establishment')]:
             if payload.get(k):

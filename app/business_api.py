@@ -157,6 +157,20 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
     def adjust(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
         check_period(request,payload.get('period'));return core.save_tax_adjustment(cid,payload,actor(request))
 
+    @app.get('/api/companies/{cid}/prosoft/settings')
+    def prosoft_settings(cid:int):return core.prosoft_settings(cid,'accounting')
+
+    @app.put('/api/companies/{cid}/prosoft/settings')
+    def save_prosoft_settings(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
+        return core.save_prosoft_settings(cid,'accounting',payload,actor(request))
+
+    @app.get('/api/companies/{cid}/prosoft-fiscal/settings')
+    def prosoft_fiscal_settings(cid:int):return core.prosoft_settings(cid,'fiscal')
+
+    @app.put('/api/companies/{cid}/prosoft-fiscal/settings')
+    def save_prosoft_fiscal_settings(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
+        return core.save_prosoft_settings(cid,'fiscal',payload,actor(request))
+
     @app.post('/api/companies/{cid}/prosoft/preview')
     def export_preview(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
         check_period(request,payload.get('period'));return core.export_prosoft(cid,payload,actor(request))

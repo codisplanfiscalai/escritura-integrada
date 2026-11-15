@@ -1,6 +1,6 @@
 # Exportação Prosoft fiscal e contábil — incremento parcial
 
-A API prepara arquivos para intercâmbio e conferência no Prosoft, sem escrever na instalação de destino. O fiscal passa a gerar notas de entrada/saída; o contábil existente ganha CTA opcional. **Não há homologação no Prosoft, geração de EFD oficial, transmissão, encerramento, merge ou implantação nesta entrega.** A interface existente não foi ampliada: as capacidades novas são utilizáveis pela API autenticada, com sessão, contexto de empresa/exercício e CSRF do aplicativo.
+A API prepara arquivos para intercâmbio e conferência no Prosoft, sem escrever na instalação de destino. O fiscal passa a gerar notas de entrada/saída; o contábil existente ganha CTA opcional. **Não há homologação no Prosoft, geração de EFD oficial, transmissão, encerramento, merge ou implantação nesta entrega.** O incremento seguinte acrescenta [interface, seleção dos layouts e mapeamentos persistentes por empresa](PROSOFT_INTERFACE_E_MAPEAMENTOS.md), mantendo a API autenticada, contexto e CSRF do aplicativo.
 
 ## Fontes técnicas e confronto
 
@@ -18,7 +18,7 @@ Somente código, documentação e testes construídos com dados fictícios entra
 | Notas fiscais de saída | ASCII/CRLF, 2611 posições, modelos 55/65 já escriturados | Uma nota por documento; sem consolidação diária ou transformação de NFC-e |
 | Origem e reconciliação fiscal | Competência pela escrituração, emissão separada, chave, fontes conhecidas, hash de snapshot e total por linha | Não reconstitui campos ausentes nem substitui o XML/SPED original |
 | Tratamento fiscal | Valores já produzidos por `fiscal_posting_lines`, incluindo C190 existente | CFOP/regime não autorizam crédito ou classificam a operação automaticamente |
-| Plano e contas | Plano de conferência padrão `0050` (050), escolhível; conta fiscal por CFOP e empresa da requisição | Plano não é um campo desses arquivos; selecionar o mesmo plano no destino. Mapeamentos enviados por chamada, sem novo cadastro persistente |
+| Plano e contas | Plano de conferência padrão `0050` (050), escolhível; conta fiscal por CFOP e empresa da requisição | Plano não é um campo desses arquivos; selecionar o mesmo plano no destino. Mapeamentos explícitos por chamada; interface salva versões próprias por empresa/área |
 | CTA | Conta movimentada declarada ausente no destino; 208 posições antes de LC1/LC2 | Inclusão opcional explícita; não exporta o plano inteiro nem verifica cadastro remoto |
 | LC1/LC2 | Fluxo anterior preservado, 448/342 posições, hash, lote e download | Não cria lançamentos novos; não muda contabilização diária da outra frente |
 | TRC | Não gerado; referência de terceiro do LC1/LC2 continua disponível | Resolver divergência CPF na convenção geral versus tabela TRC e sobreposição de posições 501–508 no PDF antes de perfil cadastral |
@@ -122,7 +122,7 @@ Prévia, confirmação e download não editam documentos, originais, fontes, lan
 
 Exportar leitura é permitido com a competência aberta, fechada ou reaberta; os fechamentos continuam protegendo as alterações de escrituração pelos serviços existentes. O download fiscal só aceita lotes do layout fiscal da mesma empresa. O download contábil legado também revalida a permissão fiscal antes de servir um lote fiscal, impedindo usar a rota antiga para contornar a autorização.
 
-## Validação e próxima homologação
+## Validação da base PR40 e próxima homologação
 
 Validação local: **295 testes de backend passaram em 123,890 s**, em 21 módulos: 30 novos e 265 regressões. Cenários novos cobrem offsets/formatos fiscais e CTA; desdobramentos e centavos; ausência de decisões; documentos não cobertos; datas/seleção/empresa; plano escolhido; todas as referências de origem; hash obsoleto; ASCII; replay/concorrência; rollback do lote e auditoria; permissões/CSRF; competência aberta, fechada e reaberta; hashes dos registros econômicos preservados; compatibilidade com fingerprints contábeis históricos. **138 testes de frontend e build Vite passaram**, com o aviso preexistente de chunk acima de 500 kB. Sintaxe dos seis arquivos Python alterados/novos e `git diff --check` passaram. Os comandos estão abaixo. A descoberta de testes do CI existente inclui automaticamente `tests/test_prosoft_increment.py`; nenhuma etapa de release/deploy é habilitada.
 
@@ -138,4 +138,6 @@ As dependências DANFE exigidas pela aplicação foram disponibilizadas por dire
 
 Pendências para homologação: confirmar versão e rotina fiscal/contábil instaladas; conferir espécie e políticas cadastrais do destino; ensaiar TXT sintético de cada direção, desdobramentos, caracteres, brancos e plano escolhido; reconciliar quantidades/valores importados; testar reimportação/rollback numa base de homologação e registrar aceite. Não é necessário reenviar indiscriminadamente os layouts já disponíveis. Acesso ao Windows/RDP/Prosoft e comprovação de aceite desta versão continuam faltando.
 
-Não executados: suíte integral do aplicativo, navegador deste incremento sem UI nova, PostgreSQL operacional, testes de escala, Prosoft/PVA/Windows, binários/instaladores, imagens e produção. CI remoto deve ser avaliado nos checks da PR. A primeira invocação ampliada citou dois nomes de módulos inexistentes; a rodada final acima usa os 21 módulos existentes e passou integralmente.
+Na base PR40 não foram executados: suíte integral do aplicativo, navegador daquele incremento sem UI nova, PostgreSQL operacional, testes de escala, Prosoft/PVA/Windows, binários/instaladores, imagens e produção. CI remoto deve ser avaliado nos checks da PR. A primeira invocação ampliada citou dois nomes de módulos inexistentes; a rodada final acima usa os 21 módulos existentes e passou integralmente.
+
+A validação posterior da interface e persistência, incluindo navegador, está em [Prosoft: interface e mapeamentos](PROSOFT_INTERFACE_E_MAPEAMENTOS.md).
