@@ -25,6 +25,9 @@ def consolidation_preview(core, cid, competence):
 
 
 def register_sped_generator_routes(app, core, check_period):
+    from .obligations import register_obligation_routes
+    register_obligation_routes(app)
+
     @app.get('/api/companies/{cid}/sped-generator/nfce-consolidation')
     def nfce_consolidation(cid: int, request: Request, period: str):
         competence = check_period(request, period)
