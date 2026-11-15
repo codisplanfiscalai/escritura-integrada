@@ -29,7 +29,15 @@ def main():
     if sys.platform != 'darwin':
         print(json.dumps({'ok':False,'state':'not_executed','reason':'native_macos_required'}))
         return 2
-    openssl = '/usr/bin/openssl'
+    # The first native run used Apple's LibreSSL 3.3.6 and was rejected.
+    # Isolate the producer: test modern OpenSSL 3, without installing anything.
+    candidates = ['/usr/local/opt/openssl@3/bin/openssl','/opt/homebrew/opt/openssl@3/bin/openssl']
+    openssl = next((path for path in candidates if Path(path).is_file()),None)
+    if not openssl:
+        raise RuntimeError('Preinstalled OpenSSL 3 fixture generator unavailable')
+    version = run([openssl,'version']).decode().strip()
+    if not version.startswith('OpenSSL 3.'):
+        raise RuntimeError('Expected modern OpenSSL 3 fixture generator')
     swift = shutil.which('swiftc')
     if not swift:
         raise RuntimeError('Native Swift toolchain unavailable')
@@ -54,6 +62,8 @@ def main():
             password='SYNTHETIC-ONLY-'+uuid.uuid4().hex
             run([openssl,'pkcs12','-export','-in','client.pem','-inkey','client.key','-out','client.p12',
                  '-keypbe','AES-256-CBC','-certpbe','AES-256-CBC','-macalg','sha256','-passout','stdin'],
+                cwd=root,input=(password+'\n').encode())
+            run([openssl,'pkcs12','-in','client.p12','-noout','-passin','stdin'],
                 cwd=root,input=(password+'\n').encode())
             der = command('x509','-in','client.pem','-outform','DER')
             (root/'ca.der').write_bytes(command('x509','-in','ca.pem','-outform','DER'))

@@ -27,9 +27,10 @@ var items: CFArray?
 let options: [String: Any] = [kSecImportExportPassphrase as String: input.password,
                              kSecImportToMemoryOnly as String: true]
 let status = SecPKCS12Import(blob as CFData, options as CFDictionary, &items)
-guard status == errSecSuccess,
-      let imported = items as? [[String: Any]], imported.count == 1,
-      let value = imported.first?[kSecImportItemIdentity as String] else { stop("probe_identity_import",10) }
+guard status == errSecSuccess else { stop("probe_identity_import_status_\(status)",10) }
+guard let imported = items as? [[String: Any]] else { stop("probe_identity_array",10) }
+let identities = imported.compactMap { $0[kSecImportItemIdentity as String] }
+guard identities.count == 1, let value = identities.first else { stop("probe_identity_count_\(identities.count)",10) }
 let identity = value as! SecIdentity
 var leaf: SecCertificate?
 guard SecIdentityCopyCertificate(identity, &leaf) == errSecSuccess, let certificate = leaf,
