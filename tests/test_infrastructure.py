@@ -141,7 +141,7 @@ class InfrastructureTests(unittest.TestCase):
                 self.assertNotIn("build", service)
                 self.assertNotIn("network_mode", service)
                 self.assertNotIn("privileged", service)
-                self.assertEqual(service["pull_policy"], "always" if environment == "develop" and name == "app" else "missing")
+                self.assertEqual(service["pull_policy"], "always" if name == "app" else "missing")
                 self.assertIn("healthcheck", service)
                 for mount in service.get("volumes", []):
                     self.assertIn(mount.split(":")[0], data["volumes"])
@@ -191,6 +191,33 @@ class InfrastructureTests(unittest.TestCase):
 
     def test_deploy_examples_follow_current_content_tags(self):
         self.assertEqual(sync(check=True), [])
+
+    def test_sync_repairs_online_app_policy_without_changing_optional_services_or_state(self):
+        plan = image_plan((ROOT / "VERSION").read_text().strip(), "develop", "0" * 40)
+        with tempfile.TemporaryDirectory() as temporary, mock.patch("sync_deploy_templates.image_plan", return_value=plan):
+            root = Path(temporary)
+            shutil.copytree(ROOT / "deploy", root / "deploy")
+            shutil.copy2(ROOT / "VERSION", root / "VERSION")
+            shutil.copy2(ROOT / "compose.yaml", root / "compose.yaml")
+            before = {}
+            for environment in ("production", "develop"):
+                path = root / "deploy" / environment / "compose.yaml"
+                data = json.loads(path.read_text())
+                data["services"]["app"]["pull_policy"] = "missing"
+                path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+                before[environment] = copy.deepcopy(data)
+            (root / "compose.yaml").write_bytes((root / "deploy/production/compose.yaml").read_bytes())
+            expected = {"compose.yaml", "deploy/production/compose.yaml", "deploy/develop/compose.yaml"}
+            self.assertEqual(set(sync(root=root, check=True)), expected)
+            for environment in before:
+                path = root / "deploy" / environment / "compose.yaml"
+                self.assertEqual(json.loads(path.read_text()), before[environment])
+            self.assertEqual(set(sync(root=root)), expected)
+            self.assertEqual(sync(root=root, check=True), [])
+            for environment, old in before.items():
+                old["services"]["app"]["pull_policy"] = "always"
+                self.assertEqual(json.loads((root / "deploy" / environment / "compose.yaml").read_text()), old)
+            self.assertEqual((root / "compose.yaml").read_bytes(), (root / "deploy/production/compose.yaml").read_bytes())
 
     def test_generated_env_is_ready_for_app_and_has_no_fixed_password(self):
         data = published_fixture()
@@ -301,6 +328,9 @@ class InfrastructureTests(unittest.TestCase):
                     bundled_compose = json.loads(archive.read(compose_name))
                     template = json.loads((root / "deploy" / entry["environment"] / "compose.yaml").read_text())
                     self.assertEqual(bundled_compose, template)
+                    # Assert the shipped bytes, not just equality to a possibly stale template.
+                    for service_name, service in bundled_compose["services"].items():
+                        self.assertEqual(service["pull_policy"], "always" if service_name == "app" else "missing")
                     release_name = next(name for name in archive.namelist() if Path(name).name == "compose.release.yaml")
                     self.assertEqual(json.loads(archive.read(release_name)), release_compose(data))
                     readme_name = next(name for name in archive.namelist() if Path(name).name == "LEIA-ME.txt")
