@@ -56,6 +56,8 @@ def create_app(data_dir=None, demo=False):
     register_fiscal_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .plan_manager import register as register_plan_manager
     register_plan_manager(application, core, actor=lambda request: request.state.session["user"]["username"])
+    from .fiscal_sales_accounting import register as register_sales_accounting
+    register_sales_accounting(application, core, actor=lambda request: request.state.session["user"]["username"])
     from .accounting_settings import register as register_accounting_settings
     register_accounting_settings(application, core, actor=lambda request: request.state.session["user"]["username"])
     from .account_plan_api import register_account_plan_routes
