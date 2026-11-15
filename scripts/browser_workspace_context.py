@@ -1,6 +1,6 @@
 """Synthetic Chromium acceptance for context shortcuts, suggested month and scrolling."""
 from datetime import date
-import json, os, socket, subprocess, sys, tempfile, time, traceback, urllib.request
+import hashlib, json, os, socket, sqlite3, subprocess, sys, tempfile, time, traceback, urllib.request
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'artifacts'/'browser-workspace-context'
@@ -61,9 +61,18 @@ def main():
                             response=page.request.post(url+'/api'+path,data=payload,headers=headers)
                             assert response.ok,response.text()
                             return response.json()
-                        cid=post('/companies',{'code':'00123','name':'Contexto sintético','tax_id':'TEST0001000120','regime':'outros','state':'SP'})['id']
+                        cid=post('/companies',{'code':'00123','name':'Contexto sintético','tax_id':'TEST0001000120','regime':'outros','state':'SP','create_default_accounts':True})['id']
                         year=str(date.today().year);post('/context',{'company_id':cid,'module':'fiscal','period':year+'-09'})
                         for i in range(24):post(f'/companies/{cid}/documents',{'direction':'incoming','number':str(1000+i),'model':'55','series':'1','issue_date':year+'-09-01','posting_date':year+'-09-01','partner_name':'Fornecedor sintético','cfop':'1102','total':'10.00'})
+                        post(f'/companies/{cid}/documents',{'direction':'incoming','number':'SYN-AUG','model':'55','series':'1','issue_date':year+'-08-01','posting_date':year+'-08-01','partner_name':'Fornecedor sintético','cfop':'1102','total':'10.00'})
+                        accounts={a['access_code']:a['id'] for a in page.request.get(url+f'/api/companies/{cid}/accounts').json()}
+                        for month,amount in [('08','11.00'),('09','22.00')]:
+                            post(f'/companies/{cid}/journals',{'date':year+'-'+month+'-01','document':'SYN-'+month,'history':'Synthetic context','idempotency_key':'context-'+month,'lines':[{'account_id':accounts['3'],'debit':amount,'credit':'0'},{'account_id':accounts['5'],'credit':amount,'debit':'0'}]})
+                        post('/context',{'company_id':cid,'module':'fiscal','period':year+'-11'})
+                        def movement_hashes():
+                            with sqlite3.connect(f'file:{Path(data)/"escritura.sqlite3"}?mode=ro',uri=True) as conn:
+                                return {table:hashlib.sha256(repr(conn.execute(f'SELECT * FROM {table} ORDER BY id').fetchall()).encode()).hexdigest() for table in ('documents','journals','journal_lines','titles','audit')}
+                        before_movements=movement_hashes()
                         page.reload()
                         # reload only waits for navigation; session hydration mounts the shortcut listener later.
                         expect(page.locator('#active-company')).to_have_value(str(cid))
@@ -74,6 +83,18 @@ def main():
                         expect(dialog.get_by_label('Empresa',exact=True)).to_have_value(str(cid))
                         dialog.get_by_label('Ano a fixar (opcional)').fill(year);dialog.get_by_label('Competência a fixar (opcional)').select_option('09')
                         dialog.get_by_role('button',name='Aplicar contexto').click();expect(dialog).to_have_count(0)
+                        def indicators(documents,amount):
+                            expect(page.locator('.metric-card').filter(has_text='Documentos na competência').locator('strong')).to_have_text(str(documents))
+                            expect(page.locator('.metric-card').filter(has_text='Movimento contábil na competência').locator('strong')).to_have_text(amount)
+                        indicators(24,'R$ 22,00')
+                        assert page.request.get(url+'/api/session').json()['period']==year+'-11'
+                        page.keyboard.press('F8');dialog.get_by_label('Competência a fixar (opcional)').select_option('08');dialog.get_by_role('button',name='Aplicar contexto').click();expect(dialog).to_have_count(0)
+                        indicators(1,'R$ 11,00')
+                        page.keyboard.press('F8');dialog.get_by_label('Empresa',exact=True).select_option('2');dialog.get_by_label('Competência a fixar (opcional)').select_option('09');dialog.get_by_role('button',name='Aplicar contexto').click();expect(dialog).to_have_count(0)
+                        indicators(0,'R$ 0,00')
+                        page.keyboard.press('F8');dialog.get_by_label('Empresa',exact=True).select_option(str(cid));dialog.get_by_role('button',name='Aplicar contexto').click();expect(dialog).to_have_count(0)
+                        indicators(24,'R$ 22,00');shot('dashboard-monthly-indicators.png')
+                        report['checks'].append('Dashboard fiscal/accounting cards follow suggested August/September and company, without changing operational November')
                         nav('Escrituração e documentos');month=page.get_by_label('Competência da consulta',exact=True);expect(month).to_have_value('09')
                         table=page.locator('.table-scroll').first;expect(table.locator('tbody tr')).to_have_count(24)
                         main=page.locator('.main-content');main.evaluate('(el)=>el.scrollTop=0');table.hover(position={'x':100,'y':50});before=main.evaluate('(el)=>el.scrollTop');page.mouse.wheel(0,500)
@@ -98,6 +119,8 @@ def main():
                         session=page.request.get(url+'/api/session').json();assert session['active_company_id'] is None
                         page.keyboard.press('F8');expect(dialog.get_by_label('Ano a fixar (opcional)')).to_have_value('');expect(dialog.get_by_label('Competência a fixar (opcional)')).to_have_value('');dialog.get_by_role('button',name='Cancelar',exact=True).click()
                         report['checks'].append('F9 clears company and persisted year/month without deleting records')
+                        assert before_movements==movement_hashes(), 'Context navigation changed persisted movements'
+                        report['checks'].append('Document, journal, journal-line, title and audit hashes unchanged by context/filter navigation')
                         shot('workspace-context.png');assert not report['console_errors'],report['console_errors'];report['ok']=True;report['stage']='complete'
                     except Exception:
                         try:shot('failure.png')
