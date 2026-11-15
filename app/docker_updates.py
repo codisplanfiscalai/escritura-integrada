@@ -84,3 +84,24 @@ def register(application, core):
         if any(not isinstance(v, str) or not re.fullmatch(r'[a-f0-9]{32}', v) for v in payload.values()):
             raise DomainError('Identificador de preparação inválido.', 422, 'invalid_request')
         return invoke(request, 'prepare', **payload, actor=str(request.state.session['user']['id']))
+
+    @application.post('/api/docker-updates/cutover')
+    def cutover(request: Request, payload: dict = Body(...)):
+        fields(payload,['prepared_id','idempotency_key'])
+        if any(not isinstance(v,str) or not re.fullmatch('[a-f0-9]{32}',v) for v in payload.values()):
+            raise DomainError('Identificador inválido.',422,'invalid_request')
+        return invoke(request,'cutover',**payload,actor=str(request.state.session['user']['id']))
+
+    @application.post('/api/docker-updates/recover-previous')
+    def recover_previous(request: Request, payload: dict = Body(...)):
+        fields(payload,['cutover_id'])
+        if not isinstance(payload['cutover_id'],str) or not re.fullmatch('[a-f0-9]{32}',payload['cutover_id']):
+            raise DomainError('Identificador inválido.',422,'invalid_request')
+        return invoke(request,'recover-previous',**payload,actor=str(request.state.session['user']['id']))
+
+    @application.post('/api/docker-updates/reconcile-target')
+    def reconcile_target(request: Request, payload: dict = Body(...)):
+        fields(payload,['cutover_id'])
+        if not isinstance(payload['cutover_id'],str) or not re.fullmatch('[a-f0-9]{32}',payload['cutover_id']):
+            raise DomainError('Identificador inválido.',422,'invalid_request')
+        return invoke(request,'reconcile-target',**payload,actor=str(request.state.session['user']['id']))

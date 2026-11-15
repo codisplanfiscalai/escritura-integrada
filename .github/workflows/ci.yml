@@ -3,7 +3,7 @@ name: CI de pull request
 on:
   pull_request:
     # Inclui a base da PR encadeada do ensaio de migração; sem permissões de publicação.
-    branches: [main, develop, feat/postgres-foundation-validation]
+    branches: [main, develop, feat/postgres-foundation-validation, feat/docker-update-control]
 
 permissions:
   contents: read
@@ -329,6 +329,25 @@ jobs:
       # The default Docker driver resolves the locally built base during validate.
       # PR has no packages:write, registry login, or release operation.
       - run: python scripts/build_images.py validate --version "$RELEASE_VERSION" --channel develop --revision "$SOURCE_SHA" --output artifacts/images-validated.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: frontend-dist
+          path: frontend/dist
+      - name: Provar corte e recuperação com dados e imagens locais sintéticos
+        run: |
+          python -m pip install httpx==0.28.1 playwright==1.62.0
+          python -m playwright install --with-deps chromium
+          python scripts/smoke_docker_cutover.py --browser
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: docker-cutover-synthetic
+          path: |
+            artifacts/docker-cutover/report.json
+            artifacts/docker-cutover/*.png
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

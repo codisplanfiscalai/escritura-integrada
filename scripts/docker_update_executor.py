@@ -211,7 +211,7 @@ class Docker:
 
 
 class Executor:
-    def __init__(self, ledger, docker):
+    def __init__(self, ledger, docker, cutover_enabled=False):
         self.ledger, self.docker = ledger, docker
         self.lock = threading.RLock()
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='docker-prepare')
@@ -222,6 +222,9 @@ class Executor:
                 CREATE UNIQUE INDEX IF NOT EXISTS one_active ON jobs((1)) WHERE state IN ('queued','pulling','validating');''')
             db.execute("UPDATE jobs SET state='interrupted', error=?, updated=? WHERE state IN ('queued','pulling','validating')",
                        ('Executor reiniciado. Nenhum corte foi feito; confira o cache antes de preparar novamente.', time.time()))
+
+        from docker_update_cutover import Cutovers
+        self.cutovers = Cutovers(self, enabled=cutover_enabled)
 
     @contextmanager
     def db(self):
@@ -249,7 +252,9 @@ class Executor:
         except Refusal as exc:
             installed, error = None, exc.detail
         return {'configured': True, 'installed': installed, 'installed_error': error,
-                'jobs': [self.job(r) for r in rows], 'cutover_supported': False, 'limitation': LIMITATION}
+                'jobs': [self.job(r) for r in rows], 'cutovers': self.cutovers.list(),
+                'cutover_supported': self.cutovers.enabled,
+                'limitation': 'Corte exige contrato compatível, janela exclusiva e backup verificado.' if self.cutovers.enabled else LIMITATION}
 
     def check(self, channel):
         with self.lock:
@@ -283,7 +288,7 @@ class Executor:
             old = db.execute('SELECT * FROM jobs WHERE plan_id=?', (plan_id,)).fetchone()
             if old:
                 return self.job(old)
-            if db.execute("SELECT 1 FROM jobs WHERE state IN ('queued','pulling','validating')").fetchone():
+            if self.cutovers.busy() or db.execute("SELECT 1 FROM jobs WHERE state IN ('queued','pulling','validating')").fetchone():
                 raise Refusal('Já existe preparação em andamento.', 'operation_in_progress')
             if db.execute('SELECT count(*) FROM jobs').fetchone()[0] >= 200:
                 raise Refusal('Histórico atingiu 200 operações. Arquivamento administrativo necessário.', 'history_limit')
@@ -329,10 +334,17 @@ class Executor:
         if type(payload) is not dict:
             raise Refusal('Requisição inválida.', 'invalid_request', 422)
         action = payload.get('action')
+        cuts={'cutover':{'action','prepared_id','idempotency_key','actor'},
+              'recover-previous':{'action','cutover_id','actor'}, 'reconcile-target':{'action','cutover_id','actor'}}
+        if isinstance(action,str) and action in cuts:
+            if set(payload)!=cuts[action] or not isinstance(payload['actor'],str) or not re.fullmatch(r'(?:[1-9][0-9]{0,17}|host:[0-9]+)',payload['actor']):
+                raise Refusal('Campos/ator inválidos.', 'invalid_request',422)
+            if action=='cutover':return self.cutovers.begin(payload['prepared_id'],payload['idempotency_key'],payload['actor'])
+            return self.cutovers.recover(payload['cutover_id'],'previous' if action=='recover-previous' else 'target',payload['actor'])
         fields = {'status': {'action'}, 'check': {'action', 'channel'},
                   'prepare': {'action', 'plan_id', 'idempotency_key', 'actor'}}
         if not isinstance(action, str) or action not in fields or set(payload) != fields[action]:
-            raise Refusal('Operação não suportada. Corte/rollback não estão implementados.', 'unsupported_operation', 422)
+            raise Refusal('Operação não suportada pelo protocolo limitado.', 'unsupported_operation', 422)
         if action == 'status':
             return self.status()
         if action == 'check':
@@ -342,18 +354,23 @@ class Executor:
         return self.prepare(payload['plan_id'], payload['idempotency_key'], payload['actor'])
 
 
-def make_server(executor, socket_path, allowed_uid):
+def make_server(executor, socket_path, allowed_uid, host_recovery=False):
     class Handler(socketserver.StreamRequestHandler):
         def handle(self):
             self.connection.settimeout(5)
             _, uid, _ = struct.unpack('3i', self.connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-            if uid != allowed_uid:
+            if uid != allowed_uid and not (host_recovery and uid == os.getuid()):
                 return
             try:
                 raw = self.rfile.readline(4097)
                 if len(raw) > 4096 or not raw.endswith(b'\n'):
                     raise Refusal('Requisição excede o limite.', 'invalid_request', 422)
-                data = executor.dispatch(json.loads(raw))
+                payload=json.loads(raw)
+                if isinstance(payload,dict) and isinstance(payload.get('actor'),str) and payload['actor'].startswith('host'):
+                    if payload['actor']!='host' or not host_recovery or uid!=os.getuid():
+                        raise Refusal('Ator de recuperação reservado ao operador local.', 'forbidden',403)
+                    payload['actor']='host:'+str(uid)
+                data = executor.dispatch(payload)
                 reply = {'status': 200, 'data': data}
             except Refusal as exc:
                 reply = {'status': exc.status, 'data': {'detail': exc.detail, 'code': exc.code}}
@@ -368,8 +385,8 @@ def make_server(executor, socket_path, allowed_uid):
     return server
 
 
-def serve(executor, socket_path, allowed_uid):
-    with make_server(executor, socket_path, allowed_uid) as server:
+def serve(executor, socket_path, allowed_uid, host_recovery=False):
+    with make_server(executor, socket_path, allowed_uid, host_recovery) as server:
         server.serve_forever(poll_interval=0.5)
 
 
@@ -379,11 +396,15 @@ def main():
     parser.add_argument('--project-name', required=True)
     parser.add_argument('--app-data-bind', default='./data/app')
     parser.add_argument('--allowed-uid', type=int, default=10001)
+    parser.add_argument('--enable-cutover',action='store_true',help='Autoridade adicional explícita: parar/recriar somente o app.')
+    parser.add_argument('--exclusive-data-writer',action='store_true',help='Administrador confirmou ausência de escritores externos e operadores concorrentes.')
     args = parser.parse_args()
     if os.name != 'posix' or not hasattr(socket, 'SO_PEERCRED'):
         parser.error('Requer Linux com SO_PEERCRED.')
     if not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,62}', args.project_name):
         parser.error('Nome de projeto inválido.')
+    if args.enable_cutover and not args.exclusive_data_writer:
+        parser.error('Corte exige declaração administrativa --exclusive-data-writer e janela exclusiva.')
     project = args.project_directory.resolve(strict=True)
     bind = Path(args.app_data_bind)
     if bind.is_absolute() or '..' in bind.parts:
@@ -400,16 +421,17 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         run = state / 'run'
         # Parent and socket permissions must be provisioned by administrator.
-        if not run.is_dir() or run.is_symlink():
-            parser.error('Administrador deve preparar .docker-updater/run e seu grupo antes de iniciar.')
+        if (not run.is_dir() or run.is_symlink() or run.stat().st_uid != os.getuid()
+                or run.stat().st_mode & 0o022):
+            parser.error('Administrador deve preparar .docker-updater/run com owner executor, sem escrita de grupo/outros.')
         path = run / 'control.sock'
         if path.exists():
             if not path.is_socket():
                 parser.error('control.sock existente não é socket.')
             path.unlink()  # Single executor lease already obtained.
-        executor = Executor(state / 'state.sqlite3', Docker(args.project_name, data))
+        executor = Executor(state / 'state.sqlite3', Docker(args.project_name, data),cutover_enabled=args.enable_cutover)
         try:
-            serve(executor, path, args.allowed_uid)
+            serve(executor, path, args.allowed_uid, host_recovery=args.enable_cutover)
         finally:
             executor.close()
             path.unlink(missing_ok=True)

@@ -1,13 +1,13 @@
 # Preparação de atualização Docker pela interface
 
-Incremento sobre develop `955404e6b504f809514e9ead3c54ed62b258df56` (0.9.0-dev.12). **Consultar e baixar uma imagem funciona quando o executor externo está instalado e autorizado; substituir a aplicação ainda não está implementado.** A interface diz isso antes da confirmação e em cada resultado. Não existe endpoint de corte, recriação, backup, migração ou rollback, nem sucesso fictício de atualização.
+A preparação consulta e baixa uma imagem quando o executor externo está instalado e autorizado. **`prepared` confirma somente download verificado.** O corte opcional exige autoridade adicional explícita e ambas as imagens compatíveis: veja [protocolo, recuperação e limites do corte](DOCKER_CUTOVER.md). O padrão permanece somente preparação, sem parada/recriação. Nenhum serviço foi instalado ou autorizado no VPS.
 
 ## Escopo e separação de autoridade
 
 - **Sistema → Atualização Docker**, exclusivo do administrador e utilizável sem empresa ativa. A API exige sessão ativa, perfil admin vigente e CSRF/origem nas mutações. Demonstração não executa operações.
 - `app/docker_updates.py` conversa somente com o socket Unix configurado pelo administrador em `ESCRITURA_UPDATE_SOCKET`. A aplicação continua UID/GID 10001:10001; não recebe socket Docker, grupo Docker ou root. Ausência/falha do executor é indisponibilidade explícita.
 - `scripts/docker_update_executor.py` é um programa opcional de host Linux, separado do app. Usa Python 3.10+, Docker CLI/Buildx e exclusivamente `unix:///var/run/docker.sock`. Não usa shell nem comandos, imagens, serviços ou caminhos recebidos do navegador. Sua conta precisa da autoridade Docker no host; essa concessão é relevante e **não foi feita por esta PR**. A instalação deve ser deliberada, com código revisado e inacessível para escrita pelo app.
-- O protocolo aceita apenas `status`, `check(channel)` e `prepare(plan_id,idempotency_key,actor)`. `SO_PEERCRED` restringe o UID cliente. O diretório de socket é a única pasta compartilhada com o app, somente leitura. O ledger privado fica fora dessa montagem.
+- O protocolo padrão aceita `status`, `check(channel)` e `prepare(plan_id,idempotency_key,actor)`; os comandos de corte/recuperação exigem o opt-in separado documentado. `SO_PEERCRED` restringe o UID cliente. O diretório de socket é a única pasta compartilhada com o app, somente leitura. O ledger privado fica fora dessa montagem.
 - O repositório da imagem é constante: `ghcr.io/codisplanfiscalai/escritura-integrada`. Canais aceitos: `develop` (pré-release) e `latest` (main estável). A seleção só consulta/prepara o canal escolhido: não altera `.env`, Compose, aliases ou releases. `latest` recusa versão com pré-release/metadados. Não promove develop para estável.
 
 ## O que acontece em cada operação
@@ -17,15 +17,15 @@ Incremento sobre develop `955404e6b504f809514e9ead3c54ed62b258df56` (0.9.0-dev.1
 3. Guarda snapshot com TTL de cinco minutos: container, ID/digest anterior, versão, alvo e hash de configuração/mounts. O hash cobre env/HostConfig/mounts; seus conteúdos e caminhos não saem do executor. Não captura bancos, documentos, backups ou credenciais.
 4. **Baixar imagem por digest** registra o job em SQLite privado antes de responder. Revalida a instalação/configuração e o mesmo canal/digest antes do pull. Se o canal avançou antes dessa revalidação, exige nova consulta/confirmação. Se avançar depois, o download continua preso ao digest aprovado; não seleciona silenciosamente outro alvo.
 5. Confere espaço no filesystem Docker (mínimo indicativo de 2 GiB; o download pode exigir mais). No Docker rootless, se o diretório privado não puder ser percorrido, consulta o mountpoint correspondente em `/proc/self/mountinfo` e usa `statvfs` ali. Isso exige executor **no próprio host e namespace de mounts do daemon**, sem socket encaminhado/daemon remoto; não abre, monta ou altera o conteúdo de armazenamento Docker. Execute a homologação dessa condição antes de instalar.
-6. Executa apenas `docker pull --platform linux/amd64 <repositório>@sha256:...`, com prazo de dez minutos. Confere ID da configuração, RepoDigest, plataforma, UID/GID, origem, versão e commit. Revalida que a instalação original não mudou. Resultado `prepared` significa **imagem em cache verificada**, sempre com `application_updated=false` e `cutover_supported=false`. Não chama `up`, `restart`, `stop`, `rm`, `prune`, backup, migração ou restauração.
+6. Executa apenas `docker pull --platform linux/amd64 <repositório>@sha256:...`, com prazo de dez minutos. Confere ID da configuração, RepoDigest, plataforma, UID/GID, origem, versão e commit. Revalida que a instalação original não mudou. Resultado `prepared` significa **imagem em cache verificada**, sempre com `application_updated=false`. Sem opt-in de corte, `cutover_supported=false`; preparar não chama `up`, `restart`, `stop`, `rm`, `prune`, backup, migração ou restauração.
 
-A aplicação e os dados continuam em uso durante o download. Não há manutenção global neste incremento porque não há corte. Nenhum backup é anunciado como realizado. Healthcheck/HTTP do alvo ainda não podem ser comprovados sem iniciar essa imagem, o que fica fora do executor atual.
+A aplicação e os dados continuam em uso durante o download. Preparar não cria manutenção ou backup e não confirma saúde do alvo. Essas verificações pertencem ao corte opcional, cujo resultado é independente.
 
 ## Concorrência, persistência e recuperação
 
 Estados: `queued → pulling → validating → prepared`, ou `failed`; operações ativas encontradas no reinício viram `interrupted`. O estado representa fases, sem porcentagem de download inventada. O histórico exibe as dez solicitações mais recentes, com ID do ator administrativo, timestamps, snapshot anterior e alvo.
 
-Existe uma só operação ativa, com índice único no ledger e lease `flock` no processo do host. Mesma chave/corpo retorna o mesmo job; outra intenção com a mesma chave é 409; um snapshot não agenda dois pulls mesmo com outra chave. A interface impede cliques simultâneos e conserva a intenção para repetição após erro de transporte. Desativar/desmontar a tela invalida respostas antigas e interrompe polling; reabrir consulta o histórico persistente. Polling só ocorre enquanto há preparação em andamento.
+Existe uma só operação ativa, com índice único no ledger e lease `flock` no processo do host. Mesma chave/corpo retorna o mesmo job; outra intenção com a mesma chave é 409; um snapshot não agenda dois pulls mesmo com outra chave. A interface impede cliques simultâneos e conserva a intenção para repetição após erro de transporte. Desativar/desmontar a tela invalida respostas antigas e interrompe polling; reabrir consulta o histórico persistente. Polling ocorre enquanto há preparação/corte em andamento; recuperação pendente exige conferência explícita.
 
 Limites: 12 consultas de canal/hora (inclusive consultas que falharam), seis preparações/hora, 200 jobs conservados, TTL de cinco minutos, entrada do socket de 4 KiB e resposta web de 64 KiB. Ao atingir o histórico, novas operações são recusadas; arquivamento do ledger exige procedimento administrativo separado. Não apaga histórico automaticamente. O servidor serializa admissões; pull roda em um worker independente. O polling pode esperar uma consulta em curso; erros de transporte são apresentados como resultado pendente/indisponível.
 
@@ -67,21 +67,11 @@ Após autorização do administrador, homologue primeiro em stack descartável:
    A nova origem é relativa à stack. **Não substitua a lista existente de volumes por este trecho.** Mantenha exatamente o atual `./data/app:/data`, usuário e demais opções. Essa alteração da stack exige a autorização de instalação que está pendente e não deve ser feita enquanto uma atualização estiver em andamento. Não monte o ledger, o diretório pai ou `/var/run/docker.sock` no app.
 5. Confirme que o cliente autorizado conecta, UID estranho é recusado, o app não consegue editar o socket/ledger nem acessar Docker, a versão/digest instalada está correta e um pull sintético deixa o container, montagem e dados intactos. Valide SELinux, userns e filesystem da instalação concreta. Uma indisponibilidade de executor não autoriza afrouxar essas restrições.
 
-A PR35 continua independente. Este incremento não copia `deploy_storage.py`, não altera templates/overrides de armazenamento e não depende de sua integração. O host config aponta ao bind que **já existe**; para o VPS descrito é `./data/app`. Quando a #35 for integrada, mantenha seu override de instalação existente e `ESCRITURA_APP_DATA_BIND=./data/app`; não use este recurso para migração ou troca de origem.
+A PR35 continua independente. Este incremento não copia `deploy_storage.py`, não altera templates/overrides de armazenamento e não depende de sua integração. O host config aponta ao bind que **já existe**; para o VPS descrito é `./data/app`. A #35 foi integrada em develop; mantenha seu override de instalação existente e `ESCRITURA_APP_DATA_BIND=./data/app`; não use este recurso para migração ou troca de origem.
 
-## O que falta para atualizar de fato
+## Corte opcional e homologação pendente
 
-Um próximo incremento precisa implementar e homologar, antes de expor uma confirmação de corte:
-
-- lease contra check/pull/recreate concorrentes, incluindo outro operador do Dockge;
-- encerramento controlado e janela breve sem escritas de **todos** os escritores relevantes; trava atual não existe;
-- espaço suficiente e backup consistente de banco/arquivos/configuração, verificado e privado, preservando dados e backups existentes;
-- compatibilidade explicitamente comprovada para esquema/dados e plano que não execute migrações automaticamente como efeito deste recurso;
-- recriação estrita do único app por digest aprovado, preservando mounts, env, secrets, redes, portas, usuário, labels e opções, sem imprimir Compose renderizado com segredos;
-- confirmação do digest/versão realmente em execução, **healthcheck e resposta HTTP do app**, prazo e estado de recuperação verificável;
-- tratamento de falhas de backup/saúde/corte/interrupção. Rollback de imagem só com compatibilidade comprovada. Gravações novas não podem ser substituídas por backup antigo. Esquema incompatível exige recuperação assistida; não prometer reversão sem perda.
-
-Os testes que recusam backup/health/rollback validam a **ausência de autoridade** no protocolo atual; não são testes de um backup, atualização ou rollback implementado. Nenhuma operação foi executada no VPS ou em dados reais.
+A [continuação de corte](DOCKER_CUTOVER.md) implementa operação de host limitada, backup frio, coordenação de escritas, recriação, saúde efetiva e recuperação explícita sob contrato compatível. Continua desabilitada por padrão e depende de instalação, bootstrap e janela exclusiva autorizados. Os testes originais que recusam backup/health/rollback verificam o protocolo padrão sem essa autoridade; a matriz separada prova as operações reais em containers e dados sintéticos. Nenhuma operação foi executada no VPS ou em dados reais.
 
 ## Validação reproduzível
 

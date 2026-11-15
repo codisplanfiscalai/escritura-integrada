@@ -32,9 +32,14 @@ def create_app(data_dir=None, demo=False):
     worker=AuditorWorker(core)
     @asynccontextmanager
     async def lifespan(application):
-        worker.recover()
-        from .import_package_cleanup import scheduler
-        cleanup_task = asyncio.create_task(scheduler(database))
+        from .update_guard import hold
+        async def start_services():
+            while hold(database.data_dir):
+                await asyncio.sleep(.25)
+            worker.recover()
+            from .import_package_cleanup import scheduler
+            await scheduler(database)
+        cleanup_task = asyncio.create_task(start_services())
         try: yield
         finally:
             cleanup_task.cancel()
@@ -76,6 +81,11 @@ def create_app(data_dir=None, demo=False):
     async def domain_error(request, exc):
         return JSONResponse({"detail": exc.detail, "code": exc.code}, status_code=exc.status)
 
+    from .update_guard import UpdateHeld
+    @application.exception_handler(UpdateHeld)
+    async def update_held(request, exc):
+        return JSONResponse({'detail': str(exc), 'code': 'update_maintenance'}, status_code=503)
+
     @application.exception_handler(ContextConflict)
     async def context_error(request, exc):
         return JSONResponse({"detail": str(exc), "code": "stale_context"}, status_code=409)
@@ -97,6 +107,13 @@ def create_app(data_dir=None, demo=False):
     @application.middleware("http")
     async def session_and_security(request: Request, call_next):
         path, method = request.url.path, request.method
+        from .update_guard import hold
+        marker = hold(database.data_dir)
+        if marker and path.startswith('/api/') and path not in {
+                '/api/health', '/api/session', '/api/docker-updates',
+                '/api/docker-updates/recover-previous', '/api/docker-updates/reconcile-target'}:
+            return JSONResponse({'detail': 'Atualização em manutenção. Escritas e rotinas estão temporariamente bloqueadas.',
+                                 'code': 'update_maintenance'}, 503)
         mutating = method in {"POST", "PUT", "PATCH", "DELETE"}
         public = {"/api/health", "/api/session", "/api/setup", "/api/login", "/api/demo-login"}
         ctx_token = None
@@ -160,9 +177,12 @@ def create_app(data_dir=None, demo=False):
                     ctx_token = request_context.set(expected)
                 else:
                     ctx_token = request_context.set({"token_hash":digest(token.encode()),"user_id":session["user"]["id"],"write":False,"permission_company_id":permission_cid,"routine":routine,"action":action or "read"})
+        from .update_guard import admitted
+        admission_token=admitted.set(marker is None)
         try:
             response = await call_next(request)
         finally:
+            admitted.reset(admission_token)
             if ctx_token is not None:
                 request_context.reset(ctx_token)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -210,7 +230,10 @@ def create_app(data_dir=None, demo=False):
 
     @application.get("/api/health")
     def health():
-        return {"status": "ok", "version": __version__, "demo": demo}
+        from .update_guard import hold, PROTOCOL
+        marker=hold(database.data_dir)
+        return {"status": "ok", "version": __version__, "demo": demo,
+                "update_protocol": PROTOCOL, "update_hold": marker['job_id'] if marker else None}
 
     @application.get("/api/session")
     def session(request: Request):

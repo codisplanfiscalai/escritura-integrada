@@ -202,6 +202,13 @@ class Database:
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.path = self.data_dir / "escritura.sqlite3"
+        from .update_guard import hold, schema, abi, UpdateHeld
+        marker = hold(self.data_dir)
+        if marker:
+            if marker['schema'] != schema(self.path) or marker['abi'] != abi():
+                raise UpdateHeld('Esquema/contrato de dados incompatível; nenhuma migração foi executada.')
+            self.upgrade_backup = None
+            return  # A held update MUST NOT initialize or migrate existing data.
         from .maintenance import backup_before_schema
         self.upgrade_backup = backup_before_schema(self.path)
         with self.read() as conn:
@@ -226,7 +233,10 @@ class Database:
             self.path.chmod(0o600)
 
     def connect(self):
-        conn = sqlite3.connect(self.path, timeout=15, isolation_level=None)
+        from .update_guard import hold, admitted
+        held = hold(self.data_dir) and not admitted.get()
+        conn = sqlite3.connect(self.path.as_uri() + '?mode=ro' if held else self.path,
+                               uri=bool(held), timeout=15, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=15000")
@@ -246,6 +256,9 @@ class Database:
 
     @contextmanager
     def transaction(self):
+        from .update_guard import hold, UpdateHeld, admitted
+        if hold(self.data_dir) and not admitted.get():
+            raise UpdateHeld('Atualização em manutenção: novas escritas estão bloqueadas.')
         conn = self.connect()
         try:
             conn.execute("BEGIN IMMEDIATE")
