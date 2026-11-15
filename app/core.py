@@ -473,12 +473,35 @@ class Core:
         result["lines"] = [dict(r) for r in conn.execute("SELECT l.*,a.access_code,a.classifier,a.name AS account_name,c.name AS cost_center_name,p.name AS participant_name,p.tax_id AS participant_tax_id FROM journal_lines l JOIN effective_accounts a ON a.id=l.account_id LEFT JOIN cost_centers c ON c.id=l.cost_center_id LEFT JOIN masters p ON p.id=l.participant_id AND p.company_id=l.company_id WHERE l.journal_id=? AND l.company_id=? ORDER BY l.position", (item_id, cid))]
         return result
 
-    def journals(self, cid, competence=None):
-        with self.db.read() as conn:
+    def journals(self, cid, competence=None, *, year=None):
+        # Bound both reads to the same company/period and snapshot. Fetching every
+        # journal through _journal repeatedly expands the effective account view.
+        with self.db.read(snapshot=True) as conn:
             company_row(conn, cid)
-            clause, params = (" AND period=?", (cid, period(competence))) if competence else ("", (cid,))
-            ids = [r["id"] for r in conn.execute("SELECT id FROM journals WHERE company_id=?" + clause + " ORDER BY date DESC,id DESC", params)]
-            return [self._journal(conn, cid, key) for key in ids]
+            clause, params = (" AND j.period=?", (cid, period(competence))) if competence else ("", (cid,))
+            if year is not None:
+                year = integer(year, "Exercício", 1900)
+                if year > 2199: raise DomainError("Exercício inválido.")
+                clause, params = " AND j.period BETWEEN ? AND ?", (cid, f"{year:04d}-01", f"{year:04d}-12")
+            journals = []
+            for row in conn.execute("SELECT j.* FROM journals j WHERE j.company_id=?" + clause + " ORDER BY j.date DESC,j.id DESC", params):
+                result = dict(row)
+                result.pop("request_hash", None)
+                result["status"] = "reversed" if result["reversed_by"] else "posted"
+                result["lines"] = []
+                journals.append(result)
+            if not journals:
+                return []
+            by_id = {j["id"]: j for j in journals}
+            for row in conn.execute("""SELECT l.*,a.access_code,a.classifier,a.name AS account_name,
+                c.name AS cost_center_name,p.name AS participant_name,p.tax_id AS participant_tax_id
+                FROM journal_lines l JOIN journals j ON j.id=l.journal_id AND j.company_id=l.company_id
+                JOIN effective_accounts a ON a.id=l.account_id AND a.company_id=l.company_id
+                LEFT JOIN cost_centers c ON c.id=l.cost_center_id
+                LEFT JOIN masters p ON p.id=l.participant_id AND p.company_id=l.company_id
+                WHERE j.company_id=?""" + clause + " ORDER BY l.journal_id,l.position", params):
+                by_id[row["journal_id"]]["lines"].append(dict(row))
+            return journals
 
     def _normalize_lines(self, conn, cid, lines, allow_inactive=False, materialize=False, actor=None):
         if not isinstance(lines, list) or not 2 <= len(lines) <= 1000:
