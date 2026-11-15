@@ -551,15 +551,15 @@ class Core:
             raise DomainError("Total do lançamento excede o limite suportado.")
         return result, debit
 
-    def _create_journal(self, conn, cid, payload, actor, reversal_of=None):
+    def _create_journal(self, conn, cid, payload, actor, reversal_of=None, *, source_reversal=False):
         from .permissions import effect
-        effect(conn, cid, "accounting.journals", "reverse" if reversal_of else "create")
+        effect(conn, cid, "accounting.journals", "reverse" if reversal_of or source_reversal else "create")
         company_row(conn, cid)
         day = iso_date(payload.get("date"))
         document = text(payload.get("document"), "Documento", False, 100)
         history = text(payload.get("history"), "Histórico", True, 2000)
         key = text(payload.get("idempotency_key"), "Chave de idempotência", True, 200)
-        lines, total = self._normalize_lines(conn, cid, payload.get("lines"), allow_inactive=reversal_of is not None,materialize=True,actor=actor)
+        lines, total = self._normalize_lines(conn, cid, payload.get("lines"), allow_inactive=reversal_of is not None or source_reversal,materialize=True,actor=actor)
         hashed = digest({"date": day, "document": document, "history": history, "lines": lines, "reversal_of": reversal_of})
         existing = conn.execute("SELECT * FROM journals WHERE company_id=? AND idempotency_key=?", (cid, key)).fetchone()
         if existing:
@@ -576,7 +576,7 @@ class Core:
             conn.execute("INSERT INTO journal_lines(company_id,journal_id,position,account_id,debit_cents,credit_cents,cost_center_id,participant_id) VALUES(?,?,?,?,?,?,?,?)", (cid, jid, index, line["account_id"], line["debit_cents"], line["credit_cents"], line["cost_center_id"], line.get("participant_id")))
         if reversal_of:
             conn.execute("UPDATE journals SET reversed_by=? WHERE id=? AND company_id=?", (jid, reversal_of, cid))
-        audit(conn, cid, actor, "reverse" if reversal_of else "post", "journal", jid, {"period": day[:7], "total_cents": total, "reversal_of": reversal_of})
+        audit(conn, cid, actor, "reverse" if reversal_of or source_reversal else "post", "journal", jid, {"period": day[:7], "total_cents": total, "reversal_of": reversal_of})
         return self._journal(conn, cid, jid)
 
     def create_journal(self, cid, payload, actor):
