@@ -213,6 +213,9 @@ def accounting_snapshot(core, cid, start, end):
         for routine, action in [('accounting.journals', 'read'), ('accounting.journals', 'export'), ('accounting.accounts', 'read')]:
             effect(conn, cid, routine, action)
         snapshot = _snapshot(conn, cid, start, end)
+        from .ecd_contracts import declared_metadata, preparation_review
+        snapshot['schema_version'] = 2
+        snapshot['preparation_review'] = preparation_review(snapshot, declared_metadata(conn, cid))
         return {'snapshot': snapshot, 'snapshot_sha256': digest(snapshot)}
 
 
