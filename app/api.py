@@ -190,6 +190,9 @@ def create_app(data_dir=None, demo=False):
             raise DomainError("A data de escrituração pertence a outro exercício. Selecione o ano correto e reabra a operação.", 409, "stale_context")
         return competence
 
+    from .reception_api import register as register_reception
+    register_reception(application,core,actor,check_period)
+
     def check_date(request, value, label="Data"):
         check_period(request, iso_date(value, label)[:7])
 
@@ -285,7 +288,7 @@ def create_app(data_dir=None, demo=False):
     def journals(cid: int, request: Request, period: str | None = None, year: int | None = None):
         if year:
             check_period(request,f'{year:04d}-01')
-            return [r for r in core.journals(cid) if r['period'][:4]==str(year)]
+            return core.journals(cid, year=year)
         return core.journals(cid, active_period(request, period))
 
     @application.post("/api/companies/{cid}/journals", status_code=201)

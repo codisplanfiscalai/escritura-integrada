@@ -64,13 +64,18 @@ def nfe_request(tax_id, uf_code, environment, last_nsu):
             'network_executed': False}
 
 
-def adn_request(tax_id, environment, last_nsu):
+def adn_request(tax_id, environment, last_nsu, *, certificate_tax_id=None, allow_procuration=False):
     """Always target the selected company, including same-base/procuration queries."""
     tax_id = _tax_id(tax_id)
     if environment not in ADN_ENDPOINTS:
         raise ImportProblem('RECEPTION_ENVIRONMENT', 'Escolha produção ou produção restrita para NFS-e ADN.')
-    query = urlencode({'cnpjConsulta' if len(tax_id) == 14 else 'cpfConsulta': tax_id})
-    return {'method': 'GET', 'url': ADN_ENDPOINTS[environment] + '/DFe/' + nsu(last_nsu) + '?' + query,
+    mode = None
+    if certificate_tax_id is not None:
+        from .reception_credentials import adn_access_mode
+        mode = adn_access_mode(tax_id, certificate_tax_id, allow_procuration)
+    query = '' if mode == 'InscricaoCertificado' else urlencode({'cnpjConsulta' if len(tax_id) == 14 else 'cpfConsulta': tax_id})
+    return {'method': 'GET', 'url': ADN_ENDPOINTS[environment] + '/DFe/' + nsu(last_nsu) + ('?' + query if query else ''),
+            'expected_authorization_mode': mode,
             'network_executed': False, 'authorization_verified': False}
 
 

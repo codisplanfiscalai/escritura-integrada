@@ -26,3 +26,9 @@ release-output/
 *.tar
 *.tar.gz
 *.qcow2
+
+# Credenciais A1 são configuradas fora do repositório.
+*.pfx
+*.p12
+*.pem
+*.key
