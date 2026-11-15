@@ -63,6 +63,16 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Validar fluxos no Chromium e capturar resoluções
         run: python scripts/smoke_browser.py
+      - name: Validar totais fiscais por competência e filtros no Chromium
+        if: success() || failure()
+        run: python scripts/browser_document_summary.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: browser-document-summary
+          path: artifacts/browser-document-summary/
+          retention-days: 14
+          if-no-files-found: error
       - name: Validar planos de contas no Chromium
         if: success() || failure()
         run: python scripts/browser_account_plans.py
