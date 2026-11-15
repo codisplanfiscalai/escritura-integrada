@@ -41,6 +41,14 @@ def main():
             with (app/'Contents/Info.plist').open('rb') as f:info=plistlib.load(f)
             assert info['EscrituraSemVer']==a.expected_version
             executable=app/'Contents/MacOS/EscrituraIntegrada'
+            from app.reception_native import NativeA1Bridge
+            native=NativeA1Bridge(app/'Contents/MacOS/EscrituraA1')
+            assert native._invoke({'protocol':1,'action':'version'})=={'protocol':1,'build':'production','ok':True}
+            # Production IPC must refuse a test CA/loopback selector, before PFX.
+            rejected=subprocess.run([str(app/'Contents/MacOS/EscrituraA1')],input=b'{"protocol":1,"action":"query","test_port":1}',capture_output=True,timeout=10)
+            assert rejected.returncode!=0
+            report['checks'].append('Helper A1 instalado, assinado e íntegro; binário de produção recusa opções de teste')
+
             env=dict(os.environ)
             for key in ['PYTHONHOME','PYTHONPATH','QT_PLUGIN_PATH','QTWEBENGINEPROCESS_PATH','QTWEBENGINE_RESOURCES_PATH','QTWEBENGINE_LOCALES_PATH']:env.pop(key,None)
             env.update(ESCRITURA_DESKTOP_SMOKE_RESULT=str(raw.resolve()),ESCRITURA_DESKTOP_SMOKE_PROFILE=str(profile),ESCRITURA_DATA_DIR=str(data),ESCRITURA_DEMO='1',ESCRITURA_DESKTOP_SMOKE_TIMEOUT='140')

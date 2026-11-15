@@ -80,8 +80,6 @@ class LocalA1Credentials:
         self.directory = directory
 
     def load(self, company_id, target, provider, environment):
-        if sys.platform == 'darwin' and platform.machine() == 'x86_64':
-            raise DomainError('Recepção mTLS ainda não habilitada no macOS Intel: runtime A1 sem distribuição binária suportada. A recepção por arquivo continua disponível.',503,'reception_platform_unsupported')
         configured = self.directory or os.environ.get('ESCRITURA_RECEPTION_CREDENTIALS_DIR')
         if not configured:
             raise DomainError('Recepção remota não configurada. Configure o A1 localmente de forma segura; não envie certificado ou senha pelo chat.', 503, 'reception_not_configured')
@@ -115,12 +113,15 @@ class LocalA1Credentials:
             raise
         except (OSError, KeyError, TypeError, ValueError):
             raise DomainError('Perfil local de recepção inválido ou senha local indisponível.', 503, 'reception_credentials') from None
+        raw = _private_file(root / filename, 5_000_000)
+        if sys.platform == 'darwin' and platform.machine() == 'x86_64':
+            from .reception_native import NativeA1Bridge
+            return NativeA1Bridge().load(raw,password,target,provider,environment,allow)
         try:
             from cryptography.hazmat.primitives import serialization
             from cryptography.hazmat.primitives.serialization.pkcs12 import load_key_and_certificates
         except ImportError:
             raise DomainError('Runtime A1 incompleto. Confira a instalação do aplicativo antes de habilitar o transporte.', 503, 'reception_dependency_missing') from None
-        raw = _private_file(root / filename, 5_000_000)
         try:
             key, cert, chain = load_key_and_certificates(raw, password.encode())
             if key is None or cert is None:

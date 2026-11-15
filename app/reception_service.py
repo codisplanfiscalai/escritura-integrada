@@ -195,6 +195,12 @@ class ReceptionService:
             packet_bytes = sum(len(entry.get('xml',b'')) for entry in entries)
             ensure_import_allowed(conn,cid,len(raw or b'')+packet_bytes)
             provider,environment,_ = state_key.split(':')
+            if provider == 'nfe_distribution':
+                result['coordination'] = {
+                    'scope':'shared_database_only','external_systems_coordinated':False,
+                    'warning_code':'NFE_EXTERNAL_NSU_COORDINATION',
+                    'warning':'Outros sistemas que consultem este CNPJ precisam compartilhar a sequência e os intervalos distNSU. A reserva do Escritura coordena somente esta base; combine a coleta ou importe os XMLs já obtidos.'}
+
             result.update(provider=provider,environment=environment,period=competence,receipt_key=key,
                           cursor_before=state['cursor'],cursor_after=proposed,cursor_advanced=proposed!=state['cursor'])
             if raw:

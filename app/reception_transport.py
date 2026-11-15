@@ -41,6 +41,9 @@ class MtlsTransport:
                 raise DomainError('Somente consulta ADN por NSU é permitida.', 400, 'reception_operation')
         else:
             raise DomainError('Provedor não autorizado.', 400, 'reception_operation')
+        from .reception_native import NativeIdentity
+        if isinstance(identity, NativeIdentity):
+            return identity.bridge.send(plan,identity)
         if identity.context.verify_mode != ssl.CERT_REQUIRED or not identity.context.check_hostname:
             raise DomainError('Validação TLS obrigatória.', 503, 'reception_tls')
         connection = HTTPSConnection(url.hostname, context=identity.context, timeout=10)

@@ -77,12 +77,18 @@ class CredentialTests(unittest.TestCase):
         write_private(root/'profiles.json',json.dumps(config).encode())
         return cert
 
-    def test_macos_intel_remote_a1_is_explicitly_disabled_before_credentials(self):
-        with patch('app.reception_credentials.sys.platform','darwin'),patch('app.reception_credentials.platform.machine',return_value='x86_64'):
-            with patch('app.reception_credentials._private_file') as read,self.assertRaises(DomainError) as error:
-                LocalA1Credentials('/synthetic/not-read').load(1,MATRIX,'nfse_adn','restricted_production')
-            self.assertEqual('reception_platform_unsupported',error.exception.code)
-            read.assert_not_called()
+    def test_macos_intel_uses_validated_profile_then_native_backend(self):
+        with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,{'ESCRITURA_RECEPTION_PASSWORD_SYNTHETIC':PASSWORD.decode()}):
+            root=Path(directory);self.profile(root)
+            with patch('app.reception_credentials.sys.platform','darwin'),patch('app.reception_credentials.platform.machine',return_value='x86_64'):
+                with patch('app.reception_native.NativeA1Bridge.load',return_value='synthetic native identity') as load:
+                    self.assertEqual('synthetic native identity',LocalA1Credentials(root).load(1,MATRIX,'nfse_adn','restricted_production'))
+                self.assertEqual(MATRIX,load.call_args.args[2])
+                self.assertEqual(PASSWORD.decode(),load.call_args.args[1])
+                self.assertTrue(load.call_args.args[0])
+                with patch('app.reception_native.NativeA1Bridge.load') as load,self.assertRaises(DomainError):
+                    LocalA1Credentials(root).load(2,MATRIX,'nfse_adn','restricted_production')
+                load.assert_not_called()
 
     def test_pfx_uses_actual_certificate_cnpj_and_ephemeral_key_is_removed(self):
         with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,{'ESCRITURA_RECEPTION_PASSWORD_SYNTHETIC':PASSWORD.decode()}):
@@ -177,6 +183,9 @@ class CaptureApiTests(unittest.TestCase):
     def test_query_receipt_cursor_and_preparation_use_canonical_services(self):
         received=self.query()
         self.assertEqual('received',received['state'])
+        self.assertEqual('shared_database_only',received['coordination']['scope'])
+        self.assertFalse(received['coordination']['external_systems_coordinated'])
+        self.assertEqual('NFE_EXTERNAL_NSU_COORDINATION',received['coordination']['warning_code'])
         self.assertEqual('000000000000002',received['cursor_after'])
         self.assertTrue(received['cursor_advanced'])
         self.assertEqual([],self.core.documents(self.a['id']))
