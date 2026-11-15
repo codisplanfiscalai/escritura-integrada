@@ -28,8 +28,9 @@ from .import_reprocessing import ImportReprocessingMixin
 from .import_payables import ImportPayablesMixin
 
 from .fiscal_library import FiscalLibraryMixin
+from .fiscal_sales_accounting import FiscalSalesAccountingMixin, source_events
 
-class BusinessCore(ProsoftFiscalMixin, GlobalAccountPlansMixin, FiscalLibraryMixin, ThirdPartiesMixin, ImportPayablesMixin, ImportReprocessingMixin, AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
+class BusinessCore(ProsoftFiscalMixin, FiscalSalesAccountingMixin, GlobalAccountPlansMixin, FiscalLibraryMixin, ThirdPartiesMixin, ImportPayablesMixin, ImportReprocessingMixin, AccountPlansMixin, CfopSourceMixin, FiscalImportMixin, CfopMixin, AuditorMixin, ModuleImportsMixin, TaxLedgerMixin, FiscalReportsMixin, PeriodMixin, AccessMixin, ProsoftMixin, ReportsMixin, TaxAssessmentMixin, ReconciliationMixin, FinanceMixin, CadastrosMixin, Core):
     def _validate_document_links(self,conn,cid,payload,*,_existing_document_id=None):
         for k,kind in [('participant_id','participant'),('establishment_id','establishment')]:
             if payload.get(k):
@@ -184,7 +185,7 @@ class BusinessCore(ProsoftFiscalMixin, GlobalAccountPlansMixin, FiscalLibraryMix
                     raise DomainError('Há baixa ou conciliação vinculada. Reverta esses efeitos antes da escrituração.',409)
             if conn.execute('SELECT 1 FROM titles WHERE company_id=? AND document_id=? AND renegotiation_id IS NOT NULL',(cid,item_id)).fetchone():
                 raise DomainError('Documento possui renegociação; sua cadeia financeira exige revisão antes da reversão.',409)
-            journal=self._reverse_linked_journal(conn,cid,doc['journal_id'],day,reason,actor,'document-reversal:'+str(item_id)+':'+str(doc['version'])) if doc['journal_id'] else None
+            journal=self._reverse_document_accounting(conn,cid,doc,day,reason,actor,'document-reversal:'+str(item_id)+':'+str(doc['version'])) if doc['journal_id'] else None
             for t in titles:conn.execute('UPDATE titles SET cancelled=1,version=version+1 WHERE id=?',(t['id'],))
             conn.execute("UPDATE documents SET status='pending',journal_id=NULL,reviewed_by=NULL,review_reason=NULL,booked_by=NULL,book_reason=NULL,version=version+1 WHERE id=? AND company_id=?",(item_id,cid))
             audit(conn,cid,actor,'reverse-booking','document',item_id,{'reason':reason,'date':day,'before':doc,'cancelled_title_ids':[t['id'] for t in titles],'reversal_journal_id':journal['id'] if journal else None})
@@ -223,6 +224,7 @@ class BusinessCore(ProsoftFiscalMixin, GlobalAccountPlansMixin, FiscalLibraryMix
                         journals.append({'id':journal_id,'deleted':True,'status':'deleted'})
             return {'document':doc,'titles':titles if readable(conn,cid,'financial.titles') else [],
                 'journals':journals,
+                'accounting_sources':source_events(conn,cid,item_id,include_model=readable(conn,cid,'accounting.histories')) if readable(conn,cid,'accounting.journals') else [],
                 'events':events if readable(conn,cid,'system.audit') else [],
                 'renegotiations':agreements if readable(conn,cid,'financial.titles') else []}
 
