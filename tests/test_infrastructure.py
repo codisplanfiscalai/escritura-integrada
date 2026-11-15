@@ -207,7 +207,9 @@ class InfrastructureTests(unittest.TestCase):
                 path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
                 before[environment] = copy.deepcopy(data)
             (root / "compose.yaml").write_bytes((root / "deploy/production/compose.yaml").read_bytes())
-            expected = {"compose.yaml", "deploy/production/compose.yaml", "deploy/develop/compose.yaml"}
+            # sync() reports native relative paths (str(Path)), including on Windows.
+            expected = {str(Path("compose.yaml")),
+                        *(str(Path("deploy") / environment / "compose.yaml") for environment in before)}
             self.assertEqual(set(sync(root=root, check=True)), expected)
             for environment in before:
                 path = root / "deploy" / environment / "compose.yaml"
