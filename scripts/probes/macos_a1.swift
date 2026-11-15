@@ -35,6 +35,11 @@ let identity = value as! SecIdentity
 var leaf: SecCertificate?
 guard SecIdentityCopyCertificate(identity, &leaf) == errSecSuccess, let certificate = leaf,
       Data(base64Encoded: input.expectedDER) == (SecCertificateCopyData(certificate) as Data) else { stop("probe_leaf_mismatch") }
+// Synthetic probe instrumentation only; never logs an operator credential.
+let fields = [kSecOIDSubjectAltName, kSecOIDX509V1ValidityNotBefore, kSecOIDX509V1ValidityNotAfter]
+if let properties = SecCertificateCopyValues(certificate, fields as CFArray, nil) {
+    print("synthetic_certificate_properties=\(properties)")
+}
 // The synthetic certificate has a random unique CN; memory-only import must not
 // leave that certificate in the default keychain. Only its synthetic label is queried.
 guard let label = SecCertificateCopySubjectSummary(certificate) as String? else { stop("probe_subject") }
