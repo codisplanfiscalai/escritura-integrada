@@ -1,5 +1,6 @@
 """Synthetic preparation executor + negative API tests. Never changes an app container."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 import copy
 import hashlib
 import json
@@ -130,8 +131,9 @@ class ExecutorTests(unittest.TestCase):
     def test_interrupted_job_is_persistent_without_automatic_retry(self):
         plan = self.executor.check('develop')
         self.executor.close()
-        with sqlite3.connect(self.executor.ledger) as db:
+        with closing(sqlite3.connect(self.executor.ledger)) as db:
             db.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?)', ('9'*32,'1'*32,plan['id'],'1',1,1,'pulling',json.dumps(plan),None))
+            db.commit()
         recovered = Executor(self.executor.ledger, self.docker)
         try:
             result = recovered.status()['jobs'][0]
@@ -173,7 +175,7 @@ class DockerContractTests(unittest.TestCase):
         self.image = {'Id':digest('b'),'Os':'linux','Architecture':'amd64', 'Config':{'User':'10001:10001','Labels':self.labels}, 'RepoDigests':[REPOSITORY+'@'+digest('c')]}
         self.container = {'Image':digest('b'), 'Config':{'User':'10001:10001','Labels':{'com.docker.compose.project':'synthetic-stack','com.docker.compose.service':'app'},'Env':['SYNTHETIC_SECRET=never-report']},
                           'HostConfig':{'RestartPolicy':{'Name':'unless-stopped'}},
-                          'Mounts':[{'Destination':'/data','Type':'bind','Source':self.tmp.name,'RW':True}]}
+                          'Mounts':[{'Destination':'/data','Type':'bind','Source':self.docker.data_bind,'RW':True}]}
 
     def inspect(self):
         with patch.object(self.docker,'run',side_effect=['a'*64,json.dumps([self.container]),json.dumps([self.image])]):
