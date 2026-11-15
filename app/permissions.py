@@ -134,6 +134,9 @@ def route_policy(path, method, query, payload, session):
         return 'lookup', 'read', False
     if path == '/api/templates':
         return 'fiscal.parameters', action, False
+    if path == '/api/sped/ecf-references' and method == 'GET':
+        # Global public-source metadata; session authentication still applies.
+        return None, None, False
     tail = re.sub(r'^/api/companies/\d+', '', path)
     if tail == '':
         return 'system.companies', action, False
