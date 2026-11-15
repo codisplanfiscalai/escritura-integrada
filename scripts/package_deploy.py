@@ -49,6 +49,11 @@ Requisitos: Docker Engine/Desktop com containers Linux e Docker Compose v2.
 Plataforma publicada: linux/amd64. Nenhum build ou código da aplicação no host.
 
 INICIAR
+Stack já usando ./data/app:/data: preserve esse caminho. Não execute init ou
+migrate nem recopie o volume antigo. Leia a seção de bind existente em STORAGE.md.
+compose.existing-bind.yaml é um override explícito para esse caminho, sem cópia
+ou alteração de permissões. Não substitua mounts dos demais serviços sem revisão.
+
 1. Extraia este pacote em um diretório próprio.
 2. Instalação nova: baixe/carregue a imagem do app (docker compose pull app).
 3. Prepare as pastas com Python 3.10+ e a imagem LOCAL da aplicação:
@@ -145,11 +150,12 @@ def package(manifest, output_dir, root=ROOT):
         files = {
             "compose.yaml": (root / "deploy" / environment / "compose.yaml").read_bytes(),
             "compose.release.yaml": (json.dumps(release_compose(manifest), ensure_ascii=False, indent=2) + "\n").encode(),
+            "compose.existing-bind.yaml": (root / "deploy/compose.existing-bind.yaml").read_bytes(),
             ".env": deployment_env(manifest, environment).encode(),
             ".env.example": deployment_env(manifest, environment).encode(),
             "images.json": (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(),
             "LEIA-ME.txt": readme(manifest, environment).encode(),
-            "DEPLOY.md": (root / "docs/DEPLOY.md").read_text(encoding="utf-8").replace("(DOCKER_STORAGE.md)", "(STORAGE.md)").encode(),
+            "DEPLOY.md": (root / "docs/DEPLOY.md").read_text(encoding="utf-8").replace("(DOCKER_STORAGE.md", "(STORAGE.md").encode(),
             "deploy_storage.py": (root / "scripts/deploy_storage.py").read_bytes(),
             "STORAGE.md": (root / "docs/DOCKER_STORAGE.md").read_bytes(),
             "THIRD-PARTY.md": (root / "docker/THIRD-PARTY.md").read_bytes(),

@@ -21,6 +21,64 @@ de projeto distintos e diretórios de stack separados.** Duas stacks configurada
 com o mesmo nome e diretório compartilharão dados; não reutilize uma pasta de
 produção para homologação. Preserve o nome atual de uma stack já instalada.
 
+## Stack já usando `./data/app:/data`
+
+Esse bind já mantém os dados junto à stack. **Não execute `init`, `plan` ou
+`migrate` para ele e não recopie o volume antigo por cima da pasta atual.** O
+volume guardado pode estar desatualizado em relação ao bind que está em uso.
+O helper de cópia fria continua limitado aos volumes nomeados e recusa esse
+caso sem copiar ou alterar dados; ele não converte binds silenciosamente.
+
+Os templates novos usam `./data/<COMPOSE_PROJECT_NAME>/app` por padrão, um caminho
+diferente de `./data/app`. Não substitua o Compose instalado pelo do ZIP para
+"atualizar" essa stack: mudar somente o nome do projeto ou o mount não transfere
+dados. Mantenha o **Compose atual**, `.env`, projeto, imagens, permissões e mounts
+dos demais serviços. A existência de uma pasta vazia no novo caminho não prova
+que os dados foram migrados.
+
+Para explicitar a preservação de `./data/app`, o pacote traz o override opcional
+`compose.existing-bind.yaml` (no checkout: `deploy/compose.existing-bind.yaml`).
+Ele altera somente o mount `/data` do app para `./data/app`, com
+`create_host_path: false`. Não copia arquivos, muda permissões, escolhe volumes
+de backup, altera imagens/pull policies ou é carregado automaticamente.
+
+1. Faça backup e confira o mount efetivo do app. O `Source` deve ser a pasta
+   `data/app` da stack atual, não um volume nomeado nem a pasta de outra stack.
+   Confira também o ID da imagem instalada. Use saída filtrada de `docker
+   inspect` para mounts/imagem; não divulgue o inspect/config completo com senhas.
+2. Conserve o primeiro arquivo abaixo como o **Compose atual da instalação**,
+   não o template novo do ZIP. Coloque o override ao lado dele e valide:
+
+   ```sh
+   storage_app_container=$(docker compose -f compose.yaml ps --all --quiet app)
+   docker inspect --format '{{json .Mounts}}' "$storage_app_container"
+   storage_app_image=$(docker inspect --format '{{.Image}}' "$storage_app_container")
+   docker compose -f compose.yaml -f compose.existing-bind.yaml config --quiet
+   ESCRITURA_IMAGE="$storage_app_image" docker compose -f compose.yaml -f compose.existing-bind.yaml up -d --pull never app
+   ```
+
+   Confira que há exatamente um container app e o Source esperado antes do up.
+   O exemplo usa a variável `ESCRITURA_IMAGE` dos templates Escritura para fixar
+   temporariamente o ID efetivamente instalado, sem regravar o `.env`. Se o seu
+   Compose tiver uma referência de imagem personalizada, preserve explicitamente
+   esse mesmo ID. Não atualize a tag em paralelo. No Dockge, pode manter o mount já existente
+   ou incorporar somente a forma longa desse override no serviço app; não troque
+   os mounts dos demais serviços nem o nome da stack. O caminho relativo é
+   resolvido junto ao primeiro Compose. O override precisa continuar sendo
+   incluído se o arquivo base ainda apontar para outro diretório.
+3. Confira novamente `Mounts.Source`, saúde, login, empresas, documentos e
+   contagens de controle. Não deve haver nova instalação ou solicitação de criar
+   administrador. Preserve a pasta atual e o volume original de backup. Não
+   execute limpeza, chmod/chown recursivo ou uma nova cópia durante essa validação.
+
+`./data/app` não inclui o nome do projeto: use diretórios de stack separados
+para develop e produção. O override é específico dessa instalação existente;
+instalações novas continuam com o isolamento por projeto dos templates padrão.
+Se houver outros perfis ativos, mantenha seus mounts reais no Compose atual.
+Trocar esses perfis para pastas novas exige um plano próprio, não esta operação
+do app. Uma futura cópia do bind para outro diretório também requer uma
+manutenção explícita e verificada; esta rota mantém o caminho já utilizado.
+
 ## Preparar uma instalação nova
 
 Requer Python 3.10+ no host e Docker local com containers Linux. No repositório,

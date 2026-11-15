@@ -166,6 +166,22 @@ class FilesystemTests(unittest.TestCase):
 
 
 class PlanTests(unittest.TestCase):
+    def test_existing_bind_is_refused_with_preservation_route_without_copying_backup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            compose = root / "compose.current.yaml"
+            compose.write_text("synthetic")
+            config = {"name": "develop", "services": {name: {} for name in storage.TARGETS}}
+            config["services"]["app"]["volumes"] = [{"type": "bind", "source": str(root / "data/app"), "target": "/data"}]
+            with mock.patch.object(storage, "image_id", return_value="sha256:" + "a" * 64), \
+                    mock.patch.object(storage, "docker", return_value=json.dumps(config)), \
+                    mock.patch.object(storage, "volume_info") as volumes, mock.patch.object(storage, "worker") as worker, \
+                    self.assertRaisesRegex(storage.StorageError, "compose.existing-bind.yaml"):
+                storage.make_plan(root, "develop", "synthetic", compose)
+            volumes.assert_not_called()
+            worker.assert_not_called()
+            self.assertFalse((root / "data").exists())
+
     def test_project_traversal_and_remote_daemon_are_refused(self):
         for name in ("../production", "", "/tmp/stack", "UPPER", "a/b", "a,b"):
             with self.subTest(name=name), self.assertRaises(storage.StorageError):

@@ -23,6 +23,8 @@ Baixe `EscrituraIntegrada-<versão>-production-deploy.zip` ou `EscrituraIntegrad
 
 **Stack existente com volumes nomeados:** siga primeiro [STORAGE.md](DOCKER_STORAGE.md). Trocar o mount por uma pasta vazia não copia os dados e pode apresentar uma instalação nova.
 
+**Stack já usando `./data/app:/data`:** mantenha esse mount e seu Compose atual; não execute `init` nem recopie o volume guardado. O caminho padrão novo inclui o nome do projeto e é diferente. A [rota de bind existente](DOCKER_STORAGE.md#stack-já-usando-dataappdata) usa o override explícito `compose.existing-bind.yaml` para preservar a pasta, sem mover dados ou mudar outros serviços.
+
 Instalação nova, dentro do diretório extraído (Python 3.10+ e Docker local): baixe/carregue a imagem do app e execute `python3 deploy_storage.py init --project <nome-exato-do-.env> --helper-image <imagem-local-do-app>`. No checkout, use `python3 scripts/deploy_storage.py`. A ferramenta prepara diretórios com permissões próprias e recusa destinos existentes. Depois:
 
 ```sh

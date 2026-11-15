@@ -24,7 +24,9 @@ Use o pacote de deploy da release correspondente. Os ambientes ficam em diretór
 
 O pacote gerado contém `compose.yaml` e `.env`; no repositório, `.env.example` documenta as opções. Os serviços são consumidos como **imagens GHCR**, sem build ou montagem das fontes da aplicação no destino. A ferramenta administrativa de preparação/migração requer Python 3.10+ no host; o aplicativo continua executando na imagem.
 
-Os dados ficam em `./data/<COMPOSE_PROJECT_NAME>/app`, `redis`, `postgres`, `mysql` e `minio`, junto à stack. **Stack existente:** não troque os mounts por pastas vazias; siga a [migração verificada de volumes para diretórios](docs/DOCKER_STORAGE.md) antes de aplicar o novo Compose.
+Os dados ficam em `./data/<COMPOSE_PROJECT_NAME>/app`, `redis`, `postgres`, `mysql` e `minio`, junto à stack. **Stack existente com volumes nomeados:** não troque os mounts por pastas vazias; siga a [migração verificada de volumes para diretórios](docs/DOCKER_STORAGE.md) antes de aplicar o novo Compose.
+
+Se a stack já usa `./data/app:/data`, preserve esse caminho e o Compose instalado. O [override de compatibilidade](deploy/compose.existing-bind.yaml) é explícito e mantém essa pasta; não inicialize outra pasta nem recopie o volume de backup. Consulte a [rota para bind existente](docs/DOCKER_STORAGE.md#stack-já-usando-dataappdata).
 
 Instalação nova: no diretório do ZIP, prepare as pastas com `python3 deploy_storage.py init --project <nome-exato-do-.env> --helper-image <imagem-local-do-app>`, após baixar/carregar a imagem. No checkout, o helper está em `scripts/deploy_storage.py`. O Compose recusa diretórios ausentes e a ferramenta recusa destinos existentes. Depois:
 

@@ -178,6 +178,8 @@ def main():
         result = smoke(manifest)
         from smoke_storage import smoke_storage
         result["storage"] = smoke_storage(manifest)
+        from smoke_existing_bind import smoke_existing_bind
+        result["existing_bind"] = smoke_existing_bind(manifest)
         write_json(args.output, result)
         return 0
     except Exception as exc:

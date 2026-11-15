@@ -106,6 +106,8 @@ def make_plan(directory, project, reference, compose_file=None):
     plan["compose_file"] = str(compose)
     for name, target in TARGETS.items():
         mounts = config["services"][name].get("volumes", [])
+        if name == "app" and len(mounts) == 1 and mounts[0].get("type") == "bind":
+            raise StorageError("O app já usa bind mount. Preserve o caminho atual; para ./data/app use compose.existing-bind.yaml conforme STORAGE.md. Não execute init nem recopie o volume de backup.")
         if len(mounts) != 1 or mounts[0].get("type") != "volume" or mounts[0].get("target") != target:
             raise StorageError("O Compose antigo precisa usar os volumes nomeados originais: " + name)
         logical = mounts[0]["source"]

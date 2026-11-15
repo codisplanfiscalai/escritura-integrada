@@ -331,13 +331,18 @@ class InfrastructureTests(unittest.TestCase):
             for entry in result["packages"]:
                 with zipfile.ZipFile(output / entry["file"]) as archive:
                     self.assertEqual({Path(n).name for n in archive.namelist()},
-                                     {"compose.yaml", "compose.release.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "STORAGE.md", "deploy_storage.py", "THIRD-PARTY.md"})
+                                     {"compose.yaml", "compose.release.yaml", "compose.existing-bind.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "STORAGE.md", "deploy_storage.py", "THIRD-PARTY.md"})
                     for name in archive.namelist():
                         self.assertNotIn(poison, archive.read(name))
                     compose_name = next(name for name in archive.namelist() if Path(name).name == "compose.yaml")
                     bundled_compose = json.loads(archive.read(compose_name))
                     template = json.loads((root / "deploy" / entry["environment"] / "compose.yaml").read_text())
                     self.assertEqual(bundled_compose, template)
+                    existing_name = next(name for name in archive.namelist() if Path(name).name == "compose.existing-bind.yaml")
+                    existing = json.loads(archive.read(existing_name))
+                    self.assertEqual(set(existing), {"services"})
+                    self.assertEqual(set(existing["services"]), {"app"})
+                    self.assertEqual(existing["services"]["app"], {"volumes": [{"type": "bind", "source": "./data/app", "target": "/data", "bind": {"create_host_path": False}}]})
                     # Assert the shipped bytes, not just equality to a possibly stale template.
                     for service_name, service in bundled_compose["services"].items():
                         self.assertEqual(service["pull_policy"], "always" if service_name == "app" else "missing")
@@ -345,7 +350,7 @@ class InfrastructureTests(unittest.TestCase):
                     self.assertEqual(json.loads(archive.read(release_name)), release_compose(data))
                     deploy_doc = archive.read(next(name for name in archive.namelist() if Path(name).name == "DEPLOY.md")).decode()
                     self.assertIn("(STORAGE.md)", deploy_doc)
-                    self.assertNotIn("(DOCKER_STORAGE.md)", deploy_doc)
+                    self.assertNotIn("(DOCKER_STORAGE.md", deploy_doc)
                     readme_name = next(name for name in archive.namelist() if Path(name).name == "LEIA-ME.txt")
                     readme = archive.read(readme_name).decode()
                     self.assertIn("-f compose.yaml -f compose.release.yaml up -d --pull never", readme)

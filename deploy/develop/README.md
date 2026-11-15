@@ -2,7 +2,9 @@
 
 Use preferencialmente o ZIP de deploy de uma release: ele inclui `.env` preenchido com tags publicadas. Para trabalhar a partir deste diretório, copie `.env.example` para `.env`; ele acompanha a tag móvel `:develop` da pré-release.
 
-**Stack já instalada:** siga a [migração de armazenamento](../../docs/DOCKER_STORAGE.md) antes de trocar mounts. Pastas vazias não recebem os dados dos volumes antigos automaticamente.
+**Stack já instalada com volumes nomeados:** siga a [migração de armazenamento](../../docs/DOCKER_STORAGE.md) antes de trocar mounts. Pastas vazias não recebem os dados dos volumes antigos automaticamente.
+
+Se já usa `./data/app:/data`, preserve esse mount e seu Compose atual, sem init ou nova cópia do volume guardado. Veja a rota de bind existente na documentação e o override explícito `deploy/compose.existing-bind.yaml` (no ZIP, ao lado do Compose).
 
 Instalação nova: no diretório da stack, baixe/carregue a imagem e execute a ferramenta `scripts/deploy_storage.py` do checkout (ou `deploy_storage.py` do ZIP) com `init --project <nome-exato-do-.env> --helper-image <imagem-local-do-app>`. O app e os perfis usam `./data/<COMPOSE_PROJECT_NAME>/<serviço>`, com diretórios preparados explicitamente e permissões próprias; não use chmod 777.
 
