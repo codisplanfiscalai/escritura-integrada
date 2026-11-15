@@ -2,6 +2,36 @@
 from pathlib import Path
 import re
 from playwright.sync_api import expect
+from browser_cfop_checks import checked_source_loads
+
+
+def confirm_cfop_source(page, endpoint):
+    """Check the UI's actual post-import GET, not a second pooled Node probe.
+
+    The saved-state button follows apply -> reload -> prepare. Observe that GET
+    and retain every persisted-data assertion; HTTP errors must still fail.
+    """
+    observed = {'imported': None, 'loads': []}
+
+    def observe(response):
+        if response.url != endpoint: return
+        if response.request.method == 'POST':
+            observed['imported'] = response
+        elif response.request.method == 'GET' and observed['imported'] is not None:
+            if response.request.timing['startTime'] >= observed['imported'].request.timing['startTime']:
+                observed['loads'].append(response)
+
+    page.on('response', observe)
+    try:
+        page.get_by_role('button', name='Importar carga', exact=True).click()
+        expect(page.get_by_role('button', name='Carga já importada nesta empresa', exact=True)).to_be_disabled()
+        imported = observed['imported']
+        assert imported is not None, 'A interface não concluiu o POST da carga CFOP.'
+        assert imported.ok, imported.text()
+        assert observed['loads'], 'A interface não consultou as cargas CFOP após importar.'
+        return checked_source_loads(imported, observed['loads'][-1])
+    finally:
+        page.remove_listener('response', observe)
 
 
 def run(page, url, cid, nav, check, shot):
@@ -39,10 +69,7 @@ def run(page, url, cid, nav, check, shot):
     shot('cfop-parametros-origem-1440.png');page.keyboard.press('Escape')
     page.get_by_role('button', name='Importar carga na empresa', exact=True).click()
     page.get_by_label('Motivo da carga', exact=True).fill('Importação de referência para teste, sem ativar regras tributárias')
-    page.get_by_role('button', name='Importar carga', exact=True).click()
-    expect(page.get_by_role('button', name='Carga já importada nesta empresa', exact=True)).to_be_disabled()
-    loads=page.request.get(url+f'/api/companies/{cid}/cfop-source-loads').json()
-    assert len(loads)==1 and loads[0]['comparison']['record_count']==779 and not loads[0]['parameters_active']
+    loads = confirm_cfop_source(page, url+f'/api/companies/{cid}/cfop-source-loads')
     page.get_by_label('Cargas preservadas nesta empresa', exact=True).select_option(str(loads[0]['id']))
     page.get_by_label('Pesquisar registros da carga CFOP', exact=True).fill('111')
     expect(page.get_by_role('button', name='Ver parâmetros 111', exact=True)).to_be_visible()
