@@ -134,6 +134,10 @@ class ExecutorTests(unittest.TestCase):
         with closing(sqlite3.connect(self.executor.ledger)) as db:
             db.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?)', ('9'*32,'1'*32,plan['id'],'1',1,1,'pulling',json.dumps(plan),None))
             db.commit()
+        # Windows forbids this rename while SQLite still owns an open handle.
+        probe = self.executor.ledger.with_suffix('.closed-check')
+        self.executor.ledger.rename(probe)
+        probe.rename(self.executor.ledger)
         recovered = Executor(self.executor.ledger, self.docker)
         try:
             result = recovered.status()['jobs'][0]
