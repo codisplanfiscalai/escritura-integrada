@@ -56,6 +56,33 @@ class MovementExportTests(unittest.TestCase):
         self.context('fiscal')
         self.assertEqual(409, self.client.get(self.scope('/movement-exports/journals.xlsx'), params={'year': 2026}).status_code)
 
+    def test_posting_period_not_issue_period_and_export_is_read_only(self):
+        self.context('fiscal')
+        r = self.client.post(self.scope('/documents'), json=self.document('TRANSITO'))
+        self.assertEqual(201, r.status_code, r.text)
+        before = self.core.documents(self.a['id'])
+        self.assertEqual(2, self.export('documents', month='11')['Dados'].max_row)
+        self.assertEqual(1, self.export('documents', month='10')['Dados'].max_row)
+        self.export('documents', query='TRANSITO')
+        self.assertEqual(before, self.core.documents(self.a['id']))
+        self.assertEqual([], self.core.titles(self.a['id']))
+        self.assertEqual([], self.core.journals(self.a['id']))
+
+    def test_invalid_filters_are_rejected_without_mutation(self):
+        self.context('fiscal')
+        for params in ({'month': '00'}, {'month': '13'}, {'month': '1'},
+                       {'direction': 'invalid'}, {'status': 'invalid'}):
+            r = self.client.get(self.scope('/movement-exports/documents.xlsx'),
+                                params={'year': 2026, **params})
+            self.assertEqual(400, r.status_code, r.text)
+        self.context('accounting')
+        for params in ({'direction': 'incoming'}, {'status': 'pending'}):
+            r = self.client.get(self.scope('/movement-exports/journals.xlsx'),
+                                params={'year': 2026, **params})
+            self.assertEqual(400, r.status_code, r.text)
+        self.assertEqual([], self.core.documents(self.a['id']))
+        self.assertEqual([], self.core.journals(self.a['id']))
+
     def test_export_requires_read_and_export_permissions(self):
         self.context('fiscal')
         permissions = [{'company_id': self.a['id'], 'routine': 'fiscal.documents', 'action': action, 'effect': 'allow'} for action in ('read', 'export')]
