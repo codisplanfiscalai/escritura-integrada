@@ -25,6 +25,8 @@ Baixe `EscrituraIntegrada-<versão>-production-deploy.zip` ou `EscrituraIntegrad
 
 **Stack já usando `./data/app:/data`:** mantenha esse mount e seu Compose atual; não execute `init` nem recopie o volume guardado. O caminho padrão novo inclui o nome do projeto e é diferente. A [rota de bind existente](DOCKER_STORAGE.md#stack-já-usando-dataappdata) usa o override explícito `compose.existing-bind.yaml` para preservar a pasta, sem mover dados ou mudar outros serviços.
 
+Nos templates atualizados, `ESCRITURA_APP_DATA_BIND=./data/app` no `.env` seleciona explicitamente esse caminho; vazio usa o padrão por projeto. Não substitua o `.env` privado. Antes de recriar um app existente, execute a [pré-validação de permissões com a imagem instalada](DOCKER_STORAGE.md#pré-validação-e-incidente-de-permissões-no-bind-do-app). Depois de subir, `deploy_storage.py check-app --compose-file compose.yaml --project <projeto> --require-health --wait-health-seconds 120` verifica health e API; `Started` não basta. Confirme login e dados atuais na interface. Não execute chown global nem atualize a imagem junto com uma correção de armazenamento.
+
 Instalação nova, dentro do diretório extraído (Python 3.10+ e Docker local): baixe/carregue a imagem do app e execute `python3 deploy_storage.py init --project <nome-exato-do-.env> --helper-image <imagem-local-do-app>`. No checkout, use `python3 scripts/deploy_storage.py`. A ferramenta prepara diretórios com permissões próprias e recusa destinos existentes. Depois:
 
 ```sh

@@ -20,6 +20,8 @@ def deployment_env(manifest, environment):
     rows = ["# Gerado da publicação verificada. Não contém usuários/senhas predefinidos.",
             "# Develop segue :develop online; compose.release.yaml fixa a publicação para offline/rollback.",
             "COMPOSE_PROJECT_NAME=escritura-" + environment,
+            "# Caminho HOST do bind do app. Vazio usa ./data/<projeto>/app; em bind existente, preserve ./data/app.",
+            "ESCRITURA_APP_DATA_BIND=",
             "ESCRITURA_BIND=127.0.0.1", "ESCRITURA_PORT=" + port,
             "ESCRITURA_IMAGE=" + app_reference, "ESCRITURA_COOKIE_SECURE=0", "",
             "# Serviços opcionais internos; o aplicativo permanece em SQLite."]
@@ -53,6 +55,10 @@ Stack já usando ./data/app:/data: preserve esse caminho. Não execute init ou
 migrate nem recopie o volume antigo. Leia a seção de bind existente em STORAGE.md.
 compose.existing-bind.yaml é um override explícito para esse caminho, sem cópia
 ou alteração de permissões. Não substitua mounts dos demais serviços sem revisão.
+Nos templates novos, ESCRITURA_APP_DATA_BIND=./data/app no .env preserva esse
+bind; vazio usa ./data/<projeto>/app. Não substitua seu .env privado pelo exemplo.
+Antes de subir, use check-app conforme STORAGE.md; ownership incorreto pode
+impedir UID 10001 de abrir SQLite mesmo quando a cópia preservou todos os bytes.
 
 1. Extraia este pacote em um diretório próprio.
 2. Instalação nova: baixe/carregue a imagem do app (docker compose pull app).
@@ -60,7 +66,8 @@ ou alteração de permissões. Não substitua mounts dos demais serviços sem re
    python3 deploy_storage.py init --project escritura-{environment} --helper-image <imagem-do-app-no-.env>
    Use o mesmo COMPOSE_PROJECT_NAME do .env; não execute init numa stack existente.
 4. Execute: docker compose up -d
-5. Confira: docker compose ps
+5. Confira permissões e health (Started sozinho não valida startup):
+   python3 deploy_storage.py check-app --compose-file compose.yaml --project escritura-{environment} --require-health --wait-health-seconds 120
 6. Abra http://127.0.0.1:{port} e crie o administrador no primeiro acesso.
 
 Apenas a porta da aplicação é publicada, com bind loopback por padrão.
@@ -108,6 +115,11 @@ O app usa a subpasta app para SQLite, documentos, relatórios e demais arquivos 
 PostgreSQL, MySQL, MinIO e Redis têm suas próprias subpastas, inclusive perfis inativos.
 Bind mounts exigem diretórios preparados; não são criados silenciosamente pelo Compose.
 O UID/GID do app e MinIO é 10001:10001; não use chmod 777.
+init/migrate validam acesso do app com o USER real da imagem local antes de
+publicar o destino. Não fazem reparo automático de owners de dados existentes.
+STORAGE.md explica o diagnóstico de root:root 0600 e a correção condicionada
+somente da pasta app, preservando imagem/dados e identidades dos outros serviços.
+Depois de health e API, confira login, empresas e documentos na interface.
 
 STACK EXISTENTE: trocar mounts por pastas vazias NÃO transfere os dados antigos.
 Siga STORAGE.md: salve o Compose antigo, planeje, pare todos os escritores,

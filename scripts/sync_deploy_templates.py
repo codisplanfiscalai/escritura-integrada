@@ -22,9 +22,12 @@ def sync(root=ROOT, check=False):
         # O override compose.release.yaml preserva a política offline/fixada.
         data["services"]["app"]["pull_policy"] = "always"
         for name, target in TARGETS.items():
+            source = "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name
+            if name == "app":
+                source = "${ESCRITURA_APP_DATA_BIND:-" + source + "}"
             data["services"][name]["volumes"] = [{
                 "type": "bind",
-                "source": "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name,
+                "source": source,
                 "target": target,
                 "bind": {"create_host_path": False},
             }]

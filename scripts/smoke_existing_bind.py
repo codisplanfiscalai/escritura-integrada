@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 from image_tools import ROOT, read_json, write_json
@@ -36,7 +37,8 @@ def smoke_existing_bind(manifest):
         (root / "compose.yaml").write_text(json.dumps(base))
         (root / "compose.current.yaml").write_text(json.dumps(current))
         (root / "compose.existing-bind.yaml").write_bytes((ROOT / "deploy/compose.existing-bind.yaml").read_bytes())
-        environment = {**os.environ, "ESCRITURA_IMAGE": image, "COMPOSE_PROJECT_NAME": project}
+        environment = {**os.environ, "ESCRITURA_IMAGE": image, "COMPOSE_PROJECT_NAME": project,
+                       "ESCRITURA_APP_DATA_BIND": ""}
 
         def run(command, expected=0):
             result = subprocess.run([str(x) for x in command], cwd=root, env=environment, capture_output=True, text=True, timeout=300)
@@ -45,6 +47,8 @@ def smoke_existing_bind(manifest):
                     diagnostic = subprocess.run(["docker", "logs", "--tail", "30", project + "-app-1"], capture_output=True, text=True)
                     print(diagnostic.stderr, flush=True)  # Only this synthetic fixture, never a user's container.
                 raise RuntimeError("Existing-bind smoke failed in " + str(command[0]))
+            if expected and command[0] == sys.executable and 'check-app' in command and not result.stdout.strip():
+                raise RuntimeError('Synthetic preflight did not produce a report: ' + result.stderr.strip())
             return result.stdout.strip()
 
         def compose(current_mode=False):
@@ -145,7 +149,12 @@ p=Path('/data/documents'); p.mkdir(); (p/'current.xml').write_bytes(b'<NFe>synth
             for name in ('redis','postgres','mysql','minio'):
                 assert kept['services'][name] == current_config['services'][name]
             for unused in range(2):
-                run([*compose(), "up", "-d", "--pull", "never", "--force-recreate", "--wait", "--wait-timeout", "180", "app"])
+                if unused:
+                    environment["ESCRITURA_APP_DATA_BIND"] = "./data/app"
+                    explicit_env = json.loads(run(["docker", "compose", "-p", project, "-f", root / "compose.yaml", "config", "--format", "json"]))
+                    assert explicit_env['services']['app']['volumes'][0]['source'] == before_mount['Source']
+                active_compose = compose() if not unused else ['docker','compose','-p',project,'-f',root/'compose.yaml']
+                run([*active_compose, "up", "-d", "--pull", "never", "--force-recreate", "--wait", "--wait-timeout", "180", "app"])
                 assert json.loads(run([*compose(), "exec", "-T", "app", "python", "-c", snapshot])) == before
                 container = run([*compose(), "ps", "-q", "app"])
                 assert run(["docker", "inspect", "--format", "{{.Image}}", container]) == installed_image
@@ -155,6 +164,64 @@ p=Path('/data/documents'); p.mkdir(); (p/'current.xml').write_bytes(b'<NFe>synth
             assert helper(backup_snapshot, "ro") == original_backup
             helper("import sqlite3; c=sqlite3.connect('file:/backup/escritura.sqlite3?mode=ro&immutable=1',uri=True); assert c.execute('SELECT value FROM storage_probe').fetchone()[0]==42; c.close()", "ro")
             record("explicit override preserves source, UID, user/company/audit counts and XML through two recreations; no namespace folder or fallback to backup")
+            # Reproduce the confirmed permissions incident ONLY in this synthetic bind.
+            run(["docker", "stop", container])
+            helper("""import os; from pathlib import Path
+p=Path('/test/data/app'); os.chown(p,0,0); p.chmod(0o775)
+db=p/'escritura.sqlite3'; os.chown(db,0,0); db.chmod(0o600)
+b=p/'backups'; b.mkdir(exist_ok=True); os.chown(b,0,0); b.chmod(0o700)
+f=b/'synthetic-backup.sqlite3'; f.write_bytes(b'synthetic retained backup'); os.chown(f,0,0); f.chmod(0o600)
+for service in ('redis','postgres','mysql','minio'):
+    q=Path('/test/data')/('sentinel-'+service); q.mkdir(mode=0o700); os.chown(q,20002,20002)
+""")
+            preflight = [sys.executable, ROOT / "scripts/deploy_storage.py", "check-app", "--project", project,
+                         "--compose-file", root / "compose.current.yaml"]
+            incident_tree = helper(tree_snapshot)
+            blocked = json.loads(run([*preflight, "--output", root / "preflight-blocked.json"], expected=1))
+            assert helper(tree_snapshot) == incident_tree
+            assert blocked['status'] == 'blocked' and blocked['identity']['uid'] == 10001 and blocked['identity']['gid'] == 10001
+            assert blocked['checks']['root']['metadata'] == {'uid':0,'gid':0,'mode':'0o775'}
+            assert not blocked['checks']['root']['write']
+            assert blocked['checks']['database']['metadata'] == {'uid':0,'gid':0,'mode':'0o600'}
+            assert not blocked['checks']['database']['read'] and not blocked['checks']['database']['write']
+            assert not blocked['checks']['backups']['read'] and not blocked['recovery_complete']
+            run(["docker", "start", container])  # Started alone must never count as recovery.
+            until = time.monotonic() + 25
+            failure_log = ''
+            while time.monotonic() < until:
+                result = subprocess.run(['docker','logs',container],capture_output=True,text=True)
+                failure_log = result.stdout + result.stderr
+                if 'sqlite3.OperationalError' in failure_log:
+                    break
+                time.sleep(1)
+            assert 'sqlite3.OperationalError' in failure_log and 'maintenance' in failure_log
+            state = json.loads(run(['docker','inspect','--format','{{json .State}}',container]))
+            assert state.get('Health',{}).get('Status') != 'healthy'
+            run(["docker", "stop", container])
+            record("actual image USER 10001:10001 rejects root:root 0775 directory and 0600 SQLite; Started reproduces maintenance startup failure, never healthy")
+            # Deliberate fixture repair: ownership ONLY under this verified app Source; no chmod.
+            helper("""import os; from pathlib import Path
+p=Path('/test/data/app')
+for item in [p,*p.rglob('*')]: os.chown(item,10001,10001,follow_symlinks=False)
+for service in ('redis','postgres','mysql','minio'):
+    assert (Path('/test/data')/('sentinel-'+service)).stat().st_uid==20002
+assert (p/'escritura.sqlite3').stat().st_mode&511==0o600
+assert p.stat().st_mode&511==0o775
+assert (p/'backups/synthetic-backup.sqlite3').read_bytes()==b'synthetic retained backup'
+""")
+            passed = json.loads(run(preflight))
+            assert passed['status']=='permissions_passed' and not passed['health_checked'] and not passed['recovery_complete']
+            stopped = json.loads(run([*preflight,'--require-health'], expected=1))
+            assert stopped['status']=='runtime_not_ready' and not stopped['runtime_healthy']
+            run(['docker','start',container])
+            healthy = json.loads(run([*preflight,'--require-health','--wait-health-seconds','90','--output',root/'preflight-healthy.json']))
+            assert healthy['status']=='runtime_healthy' and healthy['health_endpoint_ok'] and healthy['runtime_healthy']
+            assert healthy['interface_validation']=='pending' and not healthy['recovery_complete']
+            assert run(['docker','inspect','--format','{{.Image}}',container])==installed_image
+            assert run([*compose(True),'ps','-q','app'])==container
+            assert json.loads(run([*compose(True),'exec','-T','app','python','-c',snapshot]))==before
+            assert helper(backup_snapshot,'ro')==original_backup
+            record("app-only ownership repair preserves modes, same container/image, current data and old volume; stopped preflight stays distinct from verified healthy API; interface remains pending")
             # A missing flat bind must fail instead of creating a new empty app directory.
             missing = root / "missing"
             missing.mkdir()
@@ -164,7 +231,8 @@ p=Path('/data/documents'); p.mkdir(); (p/'current.xml').write_bytes(b'<NFe>synth
             assert not (missing / "data").exists()
             run([*missing_cmd, "down"])
             record("missing ./data/app is refused without creating an empty directory; backup volume remains byte/metadata identical")
-            return {"status": "passed", "checks": checks, "snapshot": before, "production_access": False}
+            return {"status": "passed", "checks": checks, "snapshot": before, "production_access": False,
+                    "permission_incident": {"blocked": blocked, "after_app_only_ownership_repair": healthy}}
         finally:
             missing_compose = root / "missing/compose.yaml"
             if missing_compose.exists():

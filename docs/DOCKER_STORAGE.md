@@ -36,6 +36,15 @@ dados. Mantenha o **Compose atual**, `.env`, projeto, imagens, permissões e mou
 dos demais serviços. A existência de uma pasta vazia no novo caminho não prova
 que os dados foram migrados.
 
+Nos templates/pacotes atualizados, o mount do app lê `ESCRITURA_APP_DATA_BIND`.
+No `.env` existente, acrescente **`ESCRITURA_APP_DATA_BIND=./data/app`** somente
+após conferir que esse é o Source atual, e incorpore a expressão correspondente
+do mount no Compose. A variável vazia mantém o padrão isolado por projeto de uma
+instalação nova; ela não move arquivos. Ela configura o caminho **no host**:
+`ESCRITURA_DATA_DIR` dentro do container continua `/data`. Não substitua o `.env`
+privado pelo exemplo do ZIP. Um Compose antigo com `./data/app:/data` literal já
+preserva esse caminho; adicionar a variável sozinha não altera esse Compose.
+
 Para explicitar a preservação de `./data/app`, o pacote traz o override opcional
 `compose.existing-bind.yaml` (no checkout: `deploy/compose.existing-bind.yaml`).
 Ele altera somente o mount `/data` do app para `./data/app`, com
@@ -54,7 +63,6 @@ de backup, altera imagens/pull policies ou é carregado automaticamente.
    docker inspect --format '{{json .Mounts}}' "$storage_app_container"
    storage_app_image=$(docker inspect --format '{{.Image}}' "$storage_app_container")
    docker compose -f compose.yaml -f compose.existing-bind.yaml config --quiet
-   ESCRITURA_IMAGE="$storage_app_image" docker compose -f compose.yaml -f compose.existing-bind.yaml up -d --pull never app
    ```
 
    Confira que há exatamente um container app e o Source esperado antes do up.
@@ -66,10 +74,18 @@ de backup, altera imagens/pull policies ou é carregado automaticamente.
    os mounts dos demais serviços nem o nome da stack. O caminho relativo é
    resolvido junto ao primeiro Compose. O override precisa continuar sendo
    incluído se o arquivo base ainda apontar para outro diretório.
-3. Confira novamente `Mounts.Source`, saúde, login, empresas, documentos e
+3. Execute a pré-validação de permissões descrita abaixo antes de recriar o app.
+   Somente após sua aprovação, se houver necessidade de aplicar o override:
+
+   ```sh
+   ESCRITURA_IMAGE="$storage_app_image" docker compose -f compose.yaml -f compose.existing-bind.yaml up -d --pull never app
+   ```
+
+   Confira novamente `Mounts.Source`, saúde, login, empresas, documentos e
    contagens de controle. Não deve haver nova instalação ou solicitação de criar
    administrador. Preserve a pasta atual e o volume original de backup. Não
-   execute limpeza, chmod/chown recursivo ou uma nova cópia durante essa validação.
+   execute limpeza ou uma nova cópia durante essa validação. Se as permissões
+   falharem, siga a correção específica abaixo; não aplique chown indiscriminado.
 
 `./data/app` não inclui o nome do projeto: use diretórios de stack separados
 para develop e produção. O override é específico dessa instalação existente;
@@ -78,6 +94,63 @@ Se houver outros perfis ativos, mantenha seus mounts reais no Compose atual.
 Trocar esses perfis para pastas novas exige um plano próprio, não esta operação
 do app. Uma futura cópia do bind para outro diretório também requer uma
 manutenção explícita e verificada; esta rota mantém o caminho já utilizado.
+
+### Pré-validação e incidente de permissões no bind do app
+
+Uma cópia manual como root pode deixar `./data/app` como `root:root 0775` e
+`escritura.sqlite3` como `root:root 0600`. A imagem usa `10001:10001`: nesse caso
+ela não consegue criar arquivos na raiz nem abrir o banco, inclusive em leitura
+durante `maintenance.integrity`. Preservar esses donos/modos numa cópia não
+resolve o acesso. Não é necessário voltar ao volume antigo nem recopiá-lo.
+
+Use o **Compose atual com o Source efetivo** e o nome exato do projeto. O helper
+exige um container app existente (pode estar parado) e recusa mounts divergentes.
+Os exemplos usam o arquivo do ZIP; no checkout use `scripts/deploy_storage.py`.
+
+```sh
+python3 deploy_storage.py check-app --compose-file compose.yaml --project escritura-develop --output app-preflight-before.json
+```
+
+O relatório privado (arquivo novo, modo 0600) informa UID/GID/grupos reais,
+Source, ID e USER da imagem, owners/modos e resultados separados de acesso à
+raiz, banco, WAL/SHM e backups. Código de saída 1 significa bloqueio. O teste
+executa a imagem **local efetivamente instalada**, sem pull, rede, troca de USER
+ou capacidades adicionais. Ele abre arquivos existentes para conferir acesso,
+sem escrever bytes no banco/journals/backups e sem conectar SQLite; cria e remove
+somente sondas temporárias exclusivas na raiz e pasta de backups. Isso pode
+alterar mtimes dessas pastas. Não executa chown/chmod, stop/start ou reparo.
+Não substitui uma verificação de integridade, espaço livre, ACL/SELinux ou a
+homologação dos dados. `permissions_passed` com app parado não significa recuperação.
+
+**Somente se o relatório confirmar o problema de ownership**, faça backup
+consistente e pare o app mantendo o mesmo container. Confira Source absoluto,
+ausência de links/mounts aninhados e que a pasta pertence exclusivamente a este
+app/stack. Confira também o UID/GID real relatado; não copie IDs de outro serviço.
+Para o caso confirmado `10001:10001`, na raiz da stack:
+
+```sh
+docker compose -f compose.yaml stop app
+sudo chown -hR 10001:10001 -- ./data/app
+python3 deploy_storage.py check-app --compose-file compose.yaml --project escritura-develop --output app-preflight-after.json
+docker compose -f compose.yaml start app
+python3 deploy_storage.py check-app --compose-file compose.yaml --project escritura-develop --require-health --wait-health-seconds 120 --output app-health.json
+```
+
+Esse chown é uma intervenção condicionada à conferência anterior, limitada ao
+Source do **app**, nunca a `./data` inteiro, PostgreSQL, MySQL, Redis ou MinIO.
+Preserva os modos privados existentes, inclusive `0600`; não use `chmod 777` nem
+`user: root`. O helper não faz essa correção automaticamente. Se owner já estiver
+correto ou a falha for outra, não repita chown: investigue o item bloqueado.
+Não execute esses comandos novamente numa instalação já healthy por rotina.
+
+`stop`/`start` conserva o container e a imagem. Não combine pull, up com tag móvel
+ou migração de armazenamento com essa correção. Um retorno `Started` sozinho
+não valida startup. `--require-health` exige container running/healthy **e**
+`/api/health` com status ok; falta de healthcheck também bloqueia. Depois confira
+startup/logs filtrados, login, empresas, documentos, XML e contagens atuais na
+interface antes de liberar gravações. O relatório mantém `interface_validation:
+pending` e `recovery_complete: false`: só o operador pode concluir essa validação.
+Mantenha os dados atuais em `./data/app` e o volume original de backup intactos.
 
 ## Preparar uma instalação nova
 
@@ -90,6 +163,7 @@ Para produção, use o nome exato de seu `.env` e a imagem versionada escolhida.
 docker compose pull app
 python3 deploy_storage.py init --project escritura-develop --helper-image ghcr.io/codisplanfiscalai/escritura-integrada:develop
 docker compose up -d
+python3 deploy_storage.py check-app --compose-file compose.yaml --project escritura-develop --require-health --wait-health-seconds 120
 ```
 
 `init` recusa um projeto que já tenha containers/volumes Compose ou um destino
@@ -98,7 +172,10 @@ publica juntos, sem substituição. Não requer ativar os perfis ou preencher se
 segredos. O app/MinIO recebem UID/GID `10001:10001`; diretórios novos têm modo
 `0700`. Os entrypoints oficiais Redis/PostgreSQL/MySQL ajustam seus próprios
 diretórios ao iniciar. Não use `chmod 777`, não rode o app como root e não altere
-recursivamente a propriedade de pastas com dados existentes.
+recursivamente outros serviços. `init` confere o mount padrão do Compose e
+recusa um caminho personalizado em vez de preparar a pasta errada. Antes de
+publicar o staging, executa a sonda com o USER real da imagem local do app; não
+inicia o app nem cria SQLite. Seu sucesso não comprova health ou primeiro acesso.
 
 `bind.create_host_path: false` faz o Compose recusar diretórios ausentes. Não há
 criação automática de pastas vazias nem fallback para outro banco. Se houver erro
@@ -184,6 +261,13 @@ Ele é uma cópia fria de arquivos, não uma migração de SQLite para PostgreSQ
    comprova cópia de arquivos/metadados, não homologação funcional dos bancos.
    Escritores devem permanecer parados; as checagens não são uma trava global
    contra um operador iniciar containers simultaneamente.
+   Antes de publicar, também valida as permissões da cópia do app com o USER da
+   sua imagem instalada. Uma cópia root-owned incompatível é recusada e somente
+   seu staging é descartado; o relatório identifica UID/GID e itens bloqueados.
+   Não corrige owners/modos automaticamente nem toca nos volumes originais. As
+   sondas temporárias são removidas e os mtimes de diretórios do staging são
+   restaurados antes da comparação final. Ajustes de dados existentes exigem
+   diagnóstico próprio; não rode init por cima nem use chown global.
 5. Somente após `migrate` e `verify` aprovados, incorpore os mounts do Compose
    novo. Preserve projeto, portas, credenciais e demais ajustes locais. Confira e
    suba com os IDs congelados, mantendo o override **por último**:
@@ -200,7 +284,8 @@ Ele é uma cópia fria de arquivos, não uma migração de SQLite para PostgreSQ
    temporariamente os mesmos IDs/pull `never` nos serviços do Compose do painel.
    Não execute um deploy pelo painel que descarte esse congelamento. Não crie
    outra stack ou troque o nome do projeto para isso.
-6. Confira saúde, login, empresas, documentos, contagens/saldos de controle e os
+6. Execute `check-app --compose-file compose.yaml --project <projeto> --require-health --wait-health-seconds 120`.
+   Confira saúde, login, empresas, documentos, contagens/saldos de controle e os
    dados dos perfis ativados **antes de liberar gravações**. O manifesto privado
    fica em `./data/<projeto>/.storage-manifest.json`. `verify` deve ser executado
    antes da subida: os bancos alteram arquivos normalmente ao iniciar, portanto

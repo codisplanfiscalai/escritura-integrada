@@ -17,7 +17,7 @@
       "volumes": [
         {
           "type": "bind",
-          "source": "./data/${COMPOSE_PROJECT_NAME:-escritura-production}/app",
+          "source": "${ESCRITURA_APP_DATA_BIND:-./data/${COMPOSE_PROJECT_NAME:-escritura-production}/app}",
           "target": "/data",
           "bind": {
             "create_host_path": false

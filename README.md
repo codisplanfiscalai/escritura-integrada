@@ -28,6 +28,8 @@ Os dados ficam em `./data/<COMPOSE_PROJECT_NAME>/app`, `redis`, `postgres`, `mys
 
 Se a stack já usa `./data/app:/data`, preserve esse caminho e o Compose instalado. O [override de compatibilidade](deploy/compose.existing-bind.yaml) é explícito e mantém essa pasta; não inicialize outra pasta nem recopie o volume de backup. Consulte a [rota para bind existente](docs/DOCKER_STORAGE.md#stack-já-usando-dataappdata).
 
+Os templates novos também aceitam `ESCRITURA_APP_DATA_BIND=./data/app` no `.env` para preservar esse bind; vazio mantém o padrão por projeto. A [pré-validação de permissões](docs/DOCKER_STORAGE.md#pré-validação-e-incidente-de-permissões-no-bind-do-app) usa o USER real da imagem instalada e detecta o caso `root:root 0600` sem reparar donos automaticamente. Depois da subida, `check-app --require-health` exige health e API; confira também os dados na interface.
+
 Instalação nova: no diretório do ZIP, prepare as pastas com `python3 deploy_storage.py init --project <nome-exato-do-.env> --helper-image <imagem-local-do-app>`, após baixar/carregar a imagem. No checkout, o helper está em `scripts/deploy_storage.py`. O Compose recusa diretórios ausentes e a ferramenta recusa destinos existentes. Depois:
 
 ```bash

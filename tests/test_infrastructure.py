@@ -146,7 +146,10 @@ class InfrastructureTests(unittest.TestCase):
                 self.assertIn("healthcheck", service)
                 for mount in service.get("volumes", []):
                     self.assertEqual(mount["type"], "bind")
-                    self.assertEqual(mount["source"], "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name)
+                    expected = "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name
+                    if name == "app":
+                        expected = "${ESCRITURA_APP_DATA_BIND:-" + expected + "}"
+                    self.assertEqual(mount["source"], expected)
                     self.assertEqual(mount["target"], TARGETS[name])
                     self.assertEqual(mount["bind"], {"create_host_path": False})
                 count += len(service.get("ports", []))
@@ -231,6 +234,9 @@ class InfrastructureTests(unittest.TestCase):
             pairs = dict(line.split("=", 1) for line in value.splitlines() if "=" in line and not line.startswith("#"))
             self.assertEqual(pairs["ESCRITURA_PORT"], port)
             self.assertEqual(pairs["COMPOSE_PROJECT_NAME"], "escritura-" + environment)
+            self.assertEqual(pairs["ESCRITURA_APP_DATA_BIND"], "")
+            example = (ROOT / 'deploy' / environment / '.env.example').read_text()
+            self.assertIn('ESCRITURA_APP_DATA_BIND=\n', example)
             self.assertNotIn("@sha256", value)
             for key, content in pairs.items():
                 if "PASSWORD" in key:

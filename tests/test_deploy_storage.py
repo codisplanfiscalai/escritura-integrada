@@ -20,6 +20,9 @@ class FilesystemTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
+        probe = mock.patch.object(storage, "probe_app_image", return_value={"permissions_ok": True, "identity": {"uid": 10001, "gid": 10001}})
+        self.probe = probe.start()
+        self.addCleanup(probe.stop)
         root = Path(self.temporary.name)
         self.project = root / "stack"
         self.project.mkdir()
@@ -89,6 +92,40 @@ class FilesystemTests(unittest.TestCase):
             storage.execute(self.plan)
         self.assertFalse(self.target.exists())
         self.assertEqual(list((self.project / "data").iterdir()), [])
+        self.assert_originals()
+
+    def test_incompatible_app_permissions_abort_without_publishing_or_chowning_source(self):
+        self.probe.return_value = {"permissions_ok": False, "identity": {"uid": 10001, "gid": 10001}}
+        with mock.patch.object(storage, "assert_stopped"), mock.patch.object(storage, "worker", side_effect=self.worker), \
+                self.assertRaisesRegex(storage.StorageError, "Pré-validação app UID/GID 10001:10001 recusada"):
+            storage.execute(self.plan)
+        self.assertFalse(self.target.exists())
+        self.assertEqual(list((self.project / "data").iterdir()), [])
+        self.assert_originals()
+
+    def test_probe_directory_mtime_is_restored(self):
+        def probe(image, source, **kwargs):
+            path = Path(source) / ".probe"
+            path.mkdir(); path.rmdir()
+            return {"permissions_ok": True, "identity": {"uid": 10001, "gid": 10001}}
+        self.probe.side_effect = probe
+        with mock.patch.object(storage, "assert_stopped"), mock.patch.object(storage, "worker", side_effect=self.worker):
+            result = storage.execute(self.plan)
+        self.assertTrue(result["app_permissions_verified"])
+        self.assertFalse(result["runtime_health_verified"])
+        self.assertEqual(storage.inventory(self.target / "app"), self.before["app"])
+        self.assert_originals()
+
+    def test_probe_content_change_aborts_without_hiding_it_as_directory_mtime(self):
+        def probe(image, source, **kwargs):
+            (Path(source) / 'unexpected-file').write_bytes(b'synthetic unexpected mutation')
+            return {'permissions_ok': True, 'identity': {'uid': 10001, 'gid': 10001}}
+        self.probe.side_effect = probe
+        with mock.patch.object(storage, 'assert_stopped'), mock.patch.object(storage, 'worker', side_effect=self.worker), \
+                self.assertRaisesRegex(storage.StorageError, 'além de mtimes'):
+            storage.execute(self.plan)
+        self.assertFalse(self.target.exists())
+        self.assertEqual(list((self.project / 'data').iterdir()), [])
         self.assert_originals()
 
     def test_corrupted_copy_prevents_commit_and_execute_cleans_staging(self):
@@ -196,6 +233,18 @@ class PlanTests(unittest.TestCase):
                 mock.patch.object(storage, "docker", return_value="existing-container\n"), self.assertRaisesRegex(storage.StorageError, "já tem"):
             storage.make_plan(root, "existing", "synthetic")
 
+    def test_init_refuses_custom_bind_instead_of_preparing_wrong_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'compose.yaml').write_text('synthetic')
+            def docker(*args, **kwargs):
+                if args[0] in {'ps', 'volume'}: return ''
+                return json.dumps({'services': {'app': {'volumes': [{'type': 'bind', 'source': str(root / 'data/app'), 'target': '/data'}]}}})
+            with mock.patch.object(storage, 'image_id', return_value='sha256:' + 'a'*64), \
+                    mock.patch.object(storage, 'docker', side_effect=docker), self.assertRaisesRegex(storage.StorageError, 'layout padrão novo'):
+                storage.make_plan(root, 'synthetic', 'synthetic')
+            self.assertFalse((root / 'data').exists())
+
     def test_foreign_or_nonlocal_volumes_are_refused(self):
         value = {"Driver": "local", "Options": None, "CreatedAt": "test",
                  "Labels": {"com.docker.compose.project": "develop", "com.docker.compose.volume": "app-data"}}
@@ -267,6 +316,95 @@ class PlanTests(unittest.TestCase):
         with mock.patch.object(storage, "docker", return_value=""), \
                 mock.patch.object(storage, "volume_info", return_value={"created_at": "new"}), self.assertRaisesRegex(storage.StorageError, "identidade"):
             storage.assert_stopped(plan)
+
+
+@unittest.skipUnless(os.name == "posix", "Permission worker runs inside Linux containers.")
+class AppPermissionTests(unittest.TestCase):
+    def test_root_identity_is_refused_without_privileged_permission_probe(self):
+        with mock.patch.object(storage.os, "geteuid", return_value=0), mock.patch.object(Path, "mkdir") as mkdir:
+            result = storage.app_permissions(Path("/nonexistent-fixture"))
+        self.assertFalse(result["permissions_ok"])
+        self.assertEqual(result["identity_error"], "root_runtime_refused")
+        mkdir.assert_not_called()
+
+    def test_missing_database_blocks_existing_bind_but_not_new_install_creation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            self.assertFalse(storage.app_permissions(path)["permissions_ok"])
+            self.assertTrue(storage.app_permissions(path, database_required=False)["permissions_ok"])
+            self.assertEqual(list(path.iterdir()), [])
+
+    def test_wal_and_backup_denials_are_reported_without_writing_database_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            (path / "backups").mkdir()
+            files = [path / "escritura.sqlite3", path / "escritura.sqlite3-wal", path / "escritura.sqlite3-shm", path / "backups/old.sqlite3"]
+            for file in files:
+                file.write_bytes(b"synthetic-bytes")
+            real_open = storage.os.open
+            def denied(file, flags, *args, **kwargs):
+                if str(file).endswith(("-wal", "old.sqlite3")):
+                    raise PermissionError(13, "synthetic permission denial")
+                return real_open(file, flags, *args, **kwargs)
+            with mock.patch.object(storage.os, "open", side_effect=denied):
+                result = storage.app_permissions(path)
+            self.assertFalse(result["permissions_ok"])
+            self.assertTrue(result["checks"]["database"]["read"])
+            self.assertFalse(result["checks"]["wal"]["read"])
+            self.assertFalse(result["checks"]["wal"]["write"])
+            self.assertIn("old.sqlite3", result["checks"]["backups"]["unreadable_entries"])
+            for file in files:
+                self.assertEqual(file.read_bytes(), b"synthetic-bytes")
+            self.assertFalse(any(p.name.startswith(".escritura-preflight-") for p in path.rglob("*")))
+
+
+class AppCheckProtocolTests(unittest.TestCase):
+    def test_probe_uses_exact_image_user_without_root_override_or_added_capabilities(self):
+        value = {"permissions_ok": False, "identity": {"uid": 10001, "gid": 10001}}
+        with mock.patch.object(storage, "image_id", return_value="sha256:" + "a" * 64), \
+                mock.patch.object(storage, "docker", return_value=json.dumps(value)) as docker:
+            self.assertEqual(storage.probe_app_image("synthetic", "/stack/data/app"), value)
+        command = docker.call_args.args
+        self.assertNotIn("--user", command)
+        self.assertNotIn("--cap-add", command)
+        self.assertIn("--cap-drop", command)
+        self.assertIn("sha256:" + "a" * 64, command)
+        self.assertIn('_app_check', command)
+        self.assertIn('def app_permissions(', docker.call_args.kwargs['stdin'])
+        self.assertNotIn('/tool/storage.py', command)  # A private host script need not be readable by UID 10001.
+
+    def test_permissions_success_is_not_started_or_recovery_success(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            compose = Path(temporary) / "compose.yaml"
+            compose.write_text("synthetic")
+            image = "sha256:" + "a" * 64
+            state = {"Status": "exited", "Running": False, "Health": {"Status": "unhealthy"}}
+            configured_user = ["10001:10001"]
+            def docker(*args, **kwargs):
+                if args[0] == "compose":
+                    return json.dumps({"services": {"app": {"volumes": [{"type": "bind", "source": "/stack/data/app", "target": "/data"}]}}})
+                if args[0] == "ps": return "container"
+                if args[0] == "inspect":
+                    return json.dumps([{"Image": image, "Config": {"User": configured_user[0]},
+                                        "Mounts": [{"Type": "bind", "Source": "/stack/data/app", "Destination": "/data", "RW": True}], "State": state}])
+                if args[0] == "image": return json.dumps([{"Id": image, "Os": "linux", "Config": {"User": "10001:10001"}}])
+                if args[0] == "exec": return "ok"
+                self.fail("Unexpected mutation")
+            with mock.patch.object(storage, "docker", side_effect=docker), \
+                    mock.patch.object(storage, "probe_app_image", return_value={"permissions_ok": True, "identity": {"uid": 10001, "gid": 10001}}):
+                before = storage.check_app(compose, "synthetic")
+                self.assertEqual(before["status"], "permissions_passed")
+                self.assertFalse(before["health_checked"])
+                self.assertFalse(before["recovery_complete"])
+                self.assertEqual(storage.check_app(compose, "synthetic", True)["status"], "runtime_not_ready")
+                state.update(Status="running", Running=True, Health={"Status": "healthy"})
+                after = storage.check_app(compose, "synthetic", True)
+                self.assertEqual(after["status"], "runtime_healthy")
+                self.assertFalse(after["recovery_complete"])
+                self.assertEqual(after["interface_validation"], "pending")
+                configured_user[0] = "0:0"
+                with self.assertRaisesRegex(storage.StorageError, "sobrescreve USER"):
+                    storage.check_app(compose, "synthetic")
 
 
 if __name__ == "__main__":

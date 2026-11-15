@@ -18,6 +18,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 import uuid
 
 SCHEMA = "escritura-storage/1"
@@ -95,6 +96,13 @@ def make_plan(directory, project, reference, compose_file=None):
         if (docker("ps", "-aq", "--filter", "label=com.docker.compose.project=" + project).strip() or
                 docker("volume", "ls", "-q", "--filter", "label=com.docker.compose.project=" + project).strip()):
             raise StorageError("A stack já tem containers/volumes. Use plan/migrate para preservar os dados existentes.")
+        default_compose = directory / "compose.yaml"
+        if default_compose.is_file():
+            configured = json.loads(docker("compose", "-p", project, "-f", default_compose, "config", "--format", "json"))
+            app_mounts = configured.get("services", {}).get("app", {}).get("volumes", [])
+            if (len(app_mounts) != 1 or app_mounts[0].get("type") != "bind" or app_mounts[0].get("target") != "/data" or
+                    app_mounts[0].get("source") != str(directory / "data" / project / "app")):
+                raise StorageError("init prepara somente o layout padrão novo. Preserve binds existentes e use check-app para validar suas permissões.")
         return plan
     compose = Path(compose_file).resolve(strict=True)
     if compose.parent != directory:
@@ -303,12 +311,24 @@ def filesystem_action(root, request, source_root=Path("/source")):
         if stage and stage.exists() and not stage.is_symlink():
             shutil.rmtree(stage)  # Only the staging directory made by this invocation.
         return {"aborted": True}
-    folder = stage if action == "commit" else target
+    folder = stage if action in {"commit", "restore_probe_mtime"} else target
     if folder is None or folder.is_symlink():
         raise StorageError("Staging/destino inválido.")
     manifest = json.loads((folder / ".storage-manifest.json").read_text(encoding="utf-8"))
     if manifest["plan"] != plan:
         raise StorageError("O manifesto pertence a outro plano/projeto.")
+    if action == "restore_probe_mtime":
+        expected = manifest["inventories"]["app"]
+        current = inventory(folder / "app")
+        def comparable(entries):
+            return {key: {k: v for k, v in value.items() if k != "mtime_ns" or value["type"] != "directory"}
+                    for key, value in entries.items()}
+        if comparable(current) != comparable(expected):
+            raise StorageError("A pré-validação alterou a cópia além de mtimes de diretórios; destino não publicado.")
+        for key, value in expected.items():
+            if value["type"] == "directory":
+                os.utime(folder / "app" / key, ns=(value["mtime_ns"], value["mtime_ns"]))
+        return {"probe_mtimes_restored": True}
     for name, expected in manifest["inventories"].items():
         if inventory(folder / name) != expected:
             raise StorageError("Destino divergiu do manifesto: " + name)
@@ -326,13 +346,220 @@ def execute(plan, verify=False):
     staged = worker(plan, "stage")["stage"]
     try:
         assert_stopped(plan)  # Recheck writers and volume identities after copying.
-        return worker(plan, "commit", staged)
+        probe = probe_app_image(plan.get("images", {}).get("app", plan["helper_image"]),
+                                str(Path(plan["directory"]) / "data" / staged / "app"), allow_new="app" not in plan["sources"])
+        if not probe["permissions_ok"]:
+            failed = [name for name, value in probe.get("checks", {}).items()
+                      if value.get("errors") or value.get("unreadable_entries") or
+                      (value.get("exists") and (not value.get("read") or not value.get("write")))]
+            identity = probe["identity"]
+            raise StorageError("Pré-validação app UID/GID " + str(identity["uid"]) + ":" + str(identity["gid"]) +
+                " recusada (" + ", ".join(failed or [probe.get("identity_error", "database_required")]) +
+                "). Staging descartado; volumes originais intactos. Preservar owners/modos incompatíveis não os corrige. "
+                "Confira somente os dados do app conforme STORAGE.md; sem chmod 777 ou root no runtime.")
+        worker(plan, "restore_probe_mtime", staged)
+        assert_stopped(plan)
+        result = worker(plan, "commit", staged)
+        result.update(app_permissions_verified=True, app_identity=probe["identity"], runtime_health_verified=False)
+        return result
     except BaseException:
         worker(plan, "abort", staged)
         raise
 
 
+def app_permissions(root, database_required=True):
+    """Run as the image's default identity, never as the privileged copy worker.
+
+    Existing database/sidecar/backup bytes and ownership/modes are never written.
+    Exclusive temporary directory/file probes check create/write/delete access.
+    """
+    root = Path(root)
+    identity = {"uid": os.geteuid(), "gid": os.getegid(), "groups": os.getgroups()}
+    report = {"identity": identity, "checks": {}, "permissions_ok": False,
+              "database_required": database_required,
+              "database_bytes_written": False, "ownership_or_modes_changed": False,
+              "temporary_write_probes": True}
+    if identity["uid"] == 0:
+        report["identity_error"] = "root_runtime_refused"
+        report["temporary_write_probes"] = False
+        return report
+
+    def metadata(path):
+        value = path.lstat()
+        if stat.S_ISLNK(value.st_mode):
+            raise OSError(errno.ELOOP, "Symlink refused")
+        return {"uid": value.st_uid, "gid": value.st_gid, "mode": oct(stat.S_IMODE(value.st_mode))}
+
+    def directory(path):
+        result = {"exists": True, "read": False, "traverse": False, "write": False, "errors": []}
+        try:
+            result["metadata"] = metadata(path)
+            if not path.is_dir():
+                raise OSError(errno.ENOTDIR, "Directory required")
+            with os.scandir(path) as entries:
+                next(entries, None)
+            result["read"] = True
+            result["traverse"] = os.access(path, os.X_OK)
+        except OSError as exc:
+            result["exists"] = exc.errno != errno.ENOENT
+            result["errors"].append({"operation": "read/traverse", "errno": exc.errno})
+        if result.get("metadata") and result["traverse"]:
+            probe = path / (".escritura-preflight-" + uuid.uuid4().hex)
+            made = False
+            try:
+                probe.mkdir(mode=0o700)
+                made = True
+                with (probe / "probe").open("xb") as handle:
+                    handle.write(b"permission probe")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                (probe / "probe").unlink()
+                probe.rmdir()
+                made = False
+                result["write"] = True
+            except OSError as exc:
+                result["errors"].append({"operation": "create/write/delete", "errno": exc.errno})
+            finally:
+                if made:
+                    try:
+                        shutil.rmtree(probe)  # Exclusively created by this probe, never user data.
+                    except OSError as exc:
+                        result["write"] = False
+                        result["errors"].append({"operation": "cleanup temporary probe", "errno": exc.errno})
+        return result
+
+    def file_access(path, write):
+        result = {"exists": True, "read": False, "write": None if not write else False, "errors": []}
+        try:
+            result["metadata"] = metadata(path)
+            if not path.is_file():
+                raise OSError(errno.EINVAL, "Regular file required")
+        except OSError as exc:
+            result["exists"] = exc.errno != errno.ENOENT
+            result["errors"].append({"operation": "stat", "errno": exc.errno})
+            return result
+        for operation, flags in (("read", os.O_RDONLY), ("write", os.O_RDWR)):
+            if operation == "write" and not write:
+                continue
+            try:
+                fd = os.open(path, flags | getattr(os, "O_NOFOLLOW", 0))
+                os.close(fd)  # No write, truncate, SQLite connection or journal creation.
+                result[operation] = True
+            except OSError as exc:
+                result["errors"].append({"operation": operation, "errno": exc.errno})
+        return result
+
+    checks = report["checks"]
+    checks["root"] = directory(root)
+    checks["database"] = file_access(root / "escritura.sqlite3", True)
+    if not checks["database"]["exists"] and not database_required:
+        checks["database"] = {"exists": False, "creation_permitted_by_root_probe": checks["root"]["write"], "not_created": True}
+    for name, suffix in (("wal", "-wal"), ("shm", "-shm")):
+        item = file_access(root / ("escritura.sqlite3" + suffix), True)
+        if not item["exists"]:
+            item = {"exists": False, "creation_permitted_by_root_probe": checks["root"]["write"], "not_created": True}
+        checks[name] = item
+    backups = root / "backups"
+    item = directory(backups)
+    if not item["exists"]:
+        item = {"exists": False, "creation_permitted_by_root_probe": checks["root"]["write"], "not_created": True}
+    elif item["read"] and item["traverse"]:
+        item["unreadable_entries"] = []
+        try:
+            for path in backups.rglob("*"):
+                if path.is_symlink() or (not path.is_dir() and not file_access(path, False)["read"]):
+                    item["unreadable_entries"].append(path.relative_to(backups).as_posix())
+                elif path.is_dir():
+                    with os.scandir(path) as entries:
+                        next(entries, None)
+        except OSError as exc:
+            item["errors"].append({"operation": "read backup tree", "errno": exc.errno})
+    checks["backups"] = item
+    def allowed(value, is_directory=False):
+        if not value["exists"]:
+            return value.get("creation_permitted_by_root_probe", False)
+        return bool(value["read"] and value["write"] and
+                    (not is_directory or value["traverse"]) and
+                    not value.get("errors") and not value.get("unreadable_entries"))
+    report["permissions_ok"] = bool((checks["database"]["exists"] or not database_required) and allowed(checks["root"], True) and
+        allowed(checks["database"]) and allowed(checks["wal"]) and allowed(checks["shm"]) and allowed(checks["backups"], True))
+    return report
+
+
+def probe_app_image(installed, source, read_only=False, allow_new=False):
+    installed = image_id(installed)
+    script = Path(__file__).resolve()
+    if "," in source:
+        raise StorageError("Caminhos com vírgula não são suportados.")
+    command = ["run", "--rm", "-i", "--pull", "never", "--no-healthcheck", "--network", "none", "--read-only",
+               "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=4m",
+               "--mount", "type=bind,src=" + source + ",dst=/data" + (",readonly" if read_only else ""),
+               "--entrypoint", "python", installed, "-B", "-", "_app_check_new" if allow_new else "_app_check"]
+    # stdin keeps the administrative source private on the host (e.g. extracted 0600).
+    return json.loads(docker(*command, stdin=script.read_text(encoding='utf-8')))  # Actual image USER.
+
+
+def check_app(compose_file, project, require_health=False, wait_health=0):
+    """Diagnose the actual bind/image. Never stop, recreate, chown, chmod or pull."""
+    project_name(project)
+    compose = Path(compose_file).resolve(strict=True)
+    config = json.loads(docker("compose", "-p", project, "-f", compose, "config", "--format", "json"))
+    mounts = [m for m in config.get("services", {}).get("app", {}).get("volumes", []) if m.get("target") == "/data"]
+    ids = docker("ps", "-aq", "--filter", "label=com.docker.compose.project=" + project,
+                 "--filter", "label=com.docker.compose.service=app").split()
+    if len(mounts) != 1 or mounts[0].get("type") != "bind" or len(ids) != 1:
+        raise StorageError("check-app exige exatamente um app existente e um bind /data explícito.")
+    container = json.loads(docker("inspect", ids[0]))[0]
+    actual = [m for m in container["Mounts"] if m["Destination"] == "/data"]
+    if len(actual) != 1 or actual[0]["Type"] != "bind" or actual[0]["Source"] != mounts[0]["source"]:
+        raise StorageError("O mount efetivo diverge do Compose; não altere permissões até conferir o Source.")
+    installed = image_id(container["Image"])
+    image = json.loads(docker("image", "inspect", installed))[0]
+    configured_user = image["Config"].get("User", "")
+    if configured_user != container["Config"].get("User", ""):
+        raise StorageError("O app sobrescreve USER da imagem; confira a identidade sem rodar como root.")
+    result = probe_app_image(installed, actual[0]["Source"], not actual[0].get("RW"))
+    result.update(schema="escritura-app-preflight/1", image_id=installed, image_user=configured_user,
+                  source=actual[0]["Source"], health_requested=require_health, health_checked=False, runtime_healthy=None,
+                  interface_validation="pending", recovery_complete=False)
+    if require_health and result["permissions_ok"]:
+        result["health_checked"] = True
+        until = time.monotonic() + wait_health
+        while True:
+            container = json.loads(docker("inspect", ids[0]))[0]
+            state = container["State"]
+            healthy = state.get("Running", False) and state.get("Health", {}).get("Status") == "healthy"
+            if healthy or time.monotonic() >= until or state["Status"] in {"exited", "dead"}:
+                break
+            time.sleep(2)
+        endpoint = False
+        if healthy:
+            try:
+                response = docker("exec", ids[0], "python", "-c",
+                    "import json,urllib.request; r=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=5)); assert r.get('status')=='ok'; print('ok')")
+                endpoint = response.strip() == "ok"
+            except StorageError:
+                pass
+        result["runtime_healthy"] = bool(healthy and endpoint)
+        result["health_endpoint_ok"] = endpoint
+    else:
+        container = json.loads(docker("inspect", ids[0]))[0]
+    result["container_state"] = container["State"]["Status"]
+    result["docker_health"] = container["State"].get("Health", {}).get("Status", "absent")
+    if not result["permissions_ok"]:
+        result["status"] = "blocked"
+        result["guidance"] = "Confira Source e identidade da imagem; preserve ./data/app e a imagem instalada. Pare o app antes de qualquer correção específica de ownership. Não recopie backup antigo, não use chmod 777/root no runtime nem chown de outros serviços. Consulte STORAGE.md."
+    elif require_health:
+        result["status"] = "runtime_healthy" if result["runtime_healthy"] else "runtime_not_ready"
+    else:
+        result["status"] = "permissions_passed"
+    return result
+
+
 def main():
+    if sys.argv[1:] in (["_app_check"], ["_app_check_new"]):
+        print(json.dumps(app_permissions(Path("/data"), database_required=sys.argv[1] == "_app_check")))
+        return
     if sys.argv[1:] == ["_worker"]:
         print(json.dumps(filesystem_action(Path("/project"), json.load(sys.stdin))))
         return
@@ -348,8 +575,24 @@ def main():
             cmd.add_argument("--output", type=Path, required=True)
     for action in ("migrate", "verify"):
         sub.add_parser(action).add_argument("--plan", type=Path, required=True)
+    cmd = sub.add_parser("check-app")
+    cmd.add_argument("--compose-file", type=Path, required=True)
+    cmd.add_argument("--project", required=True)
+    cmd.add_argument("--output", type=Path)
+    cmd.add_argument("--require-health", action="store_true")
+    cmd.add_argument("--wait-health-seconds", type=int, choices=range(121), default=0, metavar="0..120")
     args = parser.parse_args()
     local_daemon()
+    if args.action == "check-app":
+        result = check_app(args.compose_file, args.project, args.require_health, args.wait_health_seconds)
+        if args.output:
+            fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(result, handle, ensure_ascii=False, indent=2)
+        print(json.dumps(result, ensure_ascii=False))
+        if not result["permissions_ok"] or (args.require_health and not result["runtime_healthy"]):
+            raise SystemExit(1)
+        return
     if args.action in {"init", "plan"}:
         plan = make_plan(args.directory, args.project, args.helper_image, getattr(args, "compose_file", None))
     else:

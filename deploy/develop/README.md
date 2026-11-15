@@ -6,6 +6,8 @@ Use preferencialmente o ZIP de deploy de uma release: ele inclui `.env` preenchi
 
 Se já usa `./data/app:/data`, preserve esse mount e seu Compose atual, sem init ou nova cópia do volume guardado. Veja a rota de bind existente na documentação e o override explícito `deploy/compose.existing-bind.yaml` (no ZIP, ao lado do Compose).
 
+O template atualizado aceita `ESCRITURA_APP_DATA_BIND=./data/app` no `.env`; vazio usa o padrão por projeto. Valide acesso com `deploy_storage.py check-app` antes de recriar um app existente, conforme [permissões e health](../../docs/DOCKER_STORAGE.md#pré-validação-e-incidente-de-permissões-no-bind-do-app). O helper usa o USER da imagem instalada e não faz chown automático. Após subir, use `--require-health --wait-health-seconds 120` e confira os dados na interface; `Started` sozinho não comprova recuperação.
+
 Instalação nova: no diretório da stack, baixe/carregue a imagem e execute a ferramenta `scripts/deploy_storage.py` do checkout (ou `deploy_storage.py` do ZIP) com `init --project <nome-exato-do-.env> --helper-image <imagem-local-do-app>`. O app e os perfis usam `./data/<COMPOSE_PROJECT_NAME>/<serviço>`, com diretórios preparados explicitamente e permissões próprias; não use chmod 777.
 
 ```sh
