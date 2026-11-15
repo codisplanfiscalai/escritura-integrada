@@ -2,8 +2,8 @@ name: CI de pull request
 
 on:
   pull_request:
-    # Inclui a base da PR encadeada do ensaio de migração; sem permissões de publicação.
-    branches: [main, develop, feat/postgres-foundation-validation]
+    # Inclui bases de PRs encadeadas; os testes mantêm permissões somente de leitura.
+    branches: [main, develop, feat/postgres-foundation-validation, feat/sped-native-consolidation]
 
 permissions:
   contents: read

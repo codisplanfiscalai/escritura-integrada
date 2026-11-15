@@ -205,3 +205,12 @@ A próxima etapa precisa medir lançamentos operacionais efetivamente persistido
 retenção/compressão reversível de originais e índices/trilha necessários para
 regenerar EFD individual e consolidado. Nenhum ganho autoriza apagar XMLs,
 documentos individuais, evidências ou backups. Nada foi excluído nesta medição.
+
+## Incremento encadeado: EFD a partir da escrituração
+
+O próximo incremento começa pelo Bloco C parcial de NFC-e próprias escrituradas,
+com campos oficiais conferidos e exportação informativa, sem gerar apuração ou
+blocos por presunção. Contrato, fontes oficiais, cobertura e lacunas em
+[GERADOR_SPED_BLOCO_C_ESCRITURACAO.md](GERADOR_SPED_BLOCO_C_ESCRITURACAO.md).
+O objetivo segue sendo a EFD integral para conferência no PVA e posterior
+transmissão pelo responsável; esta etapa não caracteriza sua conclusão.
