@@ -15,11 +15,13 @@ import ModuleImportView from './views/ModuleImportView.vue';
 import GroupsView from './views/GroupsView.vue';
 import MastersView from './views/MastersView.vue';
 import DashboardView from './views/DashboardView.vue';import CompaniesView from './views/CompaniesView.vue';import JournalView from './views/JournalView.vue';
+import FiscalSalesAccountingView from './views/FiscalSalesAccountingView.vue';
 import DocumentsView from './views/DocumentsView.vue';import FinanceView from './views/FinanceView.vue';import ImportView from './views/ImportView.vue';import ReconcileView from './views/ReconcileView.vue';import ReportsView from './views/ReportsView.vue';import SettingsView from './views/SettingsView.vue';import PeriodsView from './views/PeriodsView.vue';
 import {state,company,api,refreshSession,activate,notify,answer,ask,can,moduleNames} from './lib/workspace';import {taxId,normalized} from './lib/format';
 const menus=[
 {id:'dashboard',label:'Visão geral',icon:'dashboard',component:DashboardView,module:null},
 {id:'documents',label:'Escrituração e documentos',icon:'documents',component:DocumentsView,module:'fiscal',routine:'fiscal.documents'},
+{id:'sales-accounting',label:'Integração contábil de saídas',icon:'journal',component:FiscalSalesAccountingView,module:'fiscal',routine:'fiscal.documents'},
 {id:'imports',label:'Importações fiscais',icon:'import',component:ImportView,module:'fiscal',routine:'fiscal.imports'},
 {id:'masters',label:'Participantes, produtos e serviços',icon:'building',component:MastersView,module:'fiscal',routine:'fiscal.masters',props:{area:'fiscal'}},
 {id:'catalogs',label:'Classificações fiscais',icon:'book',component:SettingsView,module:'fiscal',routine:'fiscal.masters',props:{initialSection:'catalogs'}},

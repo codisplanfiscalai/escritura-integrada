@@ -138,6 +138,10 @@ def route_policy(path, method, query, payload, session):
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
+    if root == 'fiscal-sales-accounting':
+        if tail.endswith('/settings'):
+            return 'accounting.accounts', 'edit' if write else 'read', False
+        return 'accounting.journals', 'create' if write else 'read', False
     if root == 'accounting-entry-defaults':
         return 'accounting.journals', 'read', False
     if root == 'accounting-settings' and '/plan-manager' in tail:
@@ -180,7 +184,7 @@ def route_policy(path, method, query, payload, session):
     if root == 'cfop-source-loads':
         return 'fiscal.masters', 'read' if tail.endswith('/preview') or not write else 'create', False
     if root == 'sped-generator':
-        return 'fiscal.documents', ('export' if method == 'POST' and tail.endswith('/consolidation-export') else 'read' if not write else 'invalid'), False
+        return 'fiscal.documents', ('export' if method == 'POST' and tail.endswith(('/consolidation-export', '/bookkeeping-block-c')) else 'read' if not write else 'invalid'), False
     if root == 'fiscal-series':
         if tail.endswith('/settings'):return 'fiscal.parameters','edit' if write else 'read',False
         return 'fiscal.documents','read',False

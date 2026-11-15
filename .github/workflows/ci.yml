@@ -2,8 +2,8 @@ name: CI de pull request
 
 on:
   pull_request:
-    # Inclui a base da PR encadeada do ensaio de migração; sem permissões de publicação.
-    branches: [main, develop, feat/postgres-foundation-validation]
+    # Inclui bases de PRs encadeadas; os testes mantêm permissões somente de leitura.
+    branches: [main, develop, feat/postgres-foundation-validation, feat/sped-native-consolidation, feat/fiscal-sales-daily-accounting-20261115]
 
 permissions:
   contents: read
@@ -109,6 +109,16 @@ jobs:
         with:
           name: browser-document-summary
           path: artifacts/browser-document-summary/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Validar integração contábil de saídas no Chromium
+        if: success() || failure()
+        run: python scripts/browser_fiscal_sales_accounting.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: browser-fiscal-sales-accounting
+          path: artifacts/browser-fiscal-sales-accounting/
           retention-days: 14
           if-no-files-found: error
       - name: Validar planos de contas no Chromium
