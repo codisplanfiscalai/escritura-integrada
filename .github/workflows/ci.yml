@@ -2,7 +2,8 @@ name: CI de pull request
 
 on:
   pull_request:
-    branches: [main, develop]
+    # Inclui a base da PR encadeada do ensaio de migração; sem permissões de publicação.
+    branches: [main, develop, feat/postgres-foundation-validation]
 
 permissions:
   contents: read
@@ -35,12 +36,19 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
-      - run: python -m pip install -r requirements-postgres.txt
+      - name: Instalar runtime fixado, fixtures de domínio e driver PostgreSQL
+        run: |
+          python -m scripts.ci.dependencies
+          python -m pip install --only-binary=:all: --require-hashes -r docker/runtime.lock
+          python -m pip install -c build/runtime-constraints.txt -r requirements-test.txt -r requirements-postgres.txt
+          python -m pip check
       - name: Exigir servidor real e executar provas em schemas descartáveis
         env:
           PYTHONPATH: .
           ESCRITURA_POSTGRES_TEST_DSN: host=127.0.0.1 port=5432 dbname=escritura_backend_test user=fixture password=Fixture-only-postgres-test
-        run: python tests/test_postgres_backend.py
+        run: |
+          python tests/test_postgres_backend.py
+          python tests/test_postgres_migration_stage.py
 
   linux:
     name: Linux, testes e interface
@@ -93,6 +101,16 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Validar fluxos no Chromium e capturar resoluções
         run: python scripts/smoke_browser.py
+      - name: Validar totais fiscais por competência e filtros no Chromium
+        if: success() || failure()
+        run: python scripts/browser_document_summary.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: browser-document-summary
+          path: artifacts/browser-document-summary/
+          retention-days: 14
+          if-no-files-found: error
       - name: Validar planos de contas no Chromium
         if: success() || failure()
         run: python scripts/browser_account_plans.py

@@ -41,7 +41,7 @@ test('edição de documento com títulos envia somente alterações normalizadas
   answer=false;const beforeCancelled=requests.length;await view.review(pending);assert.equal(requests.length,beforeCancelled);assert.equal(questions.length,promptsBefore+1);
   answer='Revisão detalhada';await view.review(pending);assert.equal(requests.at(-1).options.body.reason,'Revisão detalhada');
   const beforeContext=requests.length;afterAsk=()=>{state.companyId=2};await view.review(pending);assert.equal(requests.length,beforeContext,'mudança de empresa durante pergunta impede gravação');afterAsk=()=>{};state.companyId=1;
-  state.session.operational_settings={};view.data.value.documents=[pending,{...original,import_posting:{review_pending:true}}];assert.equal(view.reviewCount.value,2,'distingue revisão pendente de escrituração concluída');
+  state.session.operational_settings={};view.data.value.documents=[pending,{...original,import_posting:{review_pending:true}}];assert.equal(view.documentSummary.value.review,2,'distingue revisão pendente de escrituração concluída');
   view.data.value.documents=[original,cancelled];view.status.value='cancelled';assert.equal(view.filtered.value.length,1);assert.equal(view.filtered.value[0].document_state,'cancelled');assert.match(view.exportUrl.value,/status=cancelled/);
  }finally{app.unmount();globalThis.document=oldDocument;delete globalThis.__documentEditTest;}
 });
