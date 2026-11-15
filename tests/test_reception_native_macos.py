@@ -23,6 +23,7 @@ from app.reception_transport import MtlsTransport
 
 ROOT=Path(__file__).resolve().parents[1]
 MATRIX='11222333000181'
+BRANCH='112223330002'+cnpj_digits('112223330002')
 THIRD='998887770001'+cnpj_digits('998887770001')
 PASSWORD='SYNTHETIC-NATIVE-ONLY'
 XML=b'<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse"><infNFSe/></NFSe>'
@@ -137,7 +138,7 @@ class NativeAppleTests(unittest.TestCase):
         class Handler(BaseHTTPRequestHandler):
             def answer(handler):
                 content=handler.rfile.read(int(handler.headers.get('Content-Length','0')))
-                observed.append((handler.command,handler.path,handler.connection.getpeercert(binary_form=True),content))
+                observed.append((handler.command,handler.path,handler.connection.getpeercert(binary_form=True),content,handler.headers.get('X-Escritura-Test-Original-URL')))
                 handler.send_response(status)
                 if encoding:handler.send_header('Content-Encoding',encoding)
                 if 300<=status<400:handler.send_header('Location','https://forbidden.invalid/')
@@ -167,6 +168,34 @@ class NativeAppleTests(unittest.TestCase):
         redirected,requests=self.server(status=302)
         code,result=self.invoke(payload|{'test_port':redirected.server_port},testing=True)
         self.assertEqual(0,code,result);self.assertEqual(302,result['http_status']);self.assertEqual(1,len(requests))
+
+    def test_native_matrix_branch_procuration_attempt_and_environment_remain_distinct(self):
+        server,observed=self.server()
+        local={'test_port':server.server_port,'test_ca_base64':base64.b64encode(self.fixture.ca).decode()}
+        for target,allow in [(MATRIX,False),(BRANCH,False),(THIRD,True)]:
+            for environment in ['production','restricted_production']:
+                with self.subTest(target=target,environment=environment):
+                    code,result=self.invoke(self.query_payload(target=target,allow_procuration=allow,environment=environment,**local),testing=True)
+                    self.assertEqual(0,code,result)
+                    original=observed[-1][4]
+                    self.assertIn('adn.nfse.gov.br' if environment=='production' else 'adn.producaorestrita.nfse.gov.br',original)
+                    self.assertEqual(target!=MATRIX,'cnpjConsulta='+target in original)
+                    self.assertIn('lote=true',original)
+        # Reverse same-root case: the certificate belongs to the branch.
+        pfx=self.fixture.make('branch','otherName:2.16.76.1.3.3;UTF8:'+BRANCH)
+        inspected=self.bridge._invoke(self.input(pfx_base64=base64.b64encode(pfx).decode()))
+        payload=self.query_payload(pfx_base64=base64.b64encode(pfx).decode(),target=MATRIX,
+            expected_holder=BRANCH,certificate_sha256=inspected['certificate_sha256'],**local)
+        code,result=self.invoke(payload,testing=True)
+        self.assertEqual(0,code,result);self.assertIn('cnpjConsulta='+MATRIX,observed[-1][4])
+        self.assertEqual(hashlib.sha256(observed[-1][2]).hexdigest(),inspected['certificate_sha256'])
+        code,result=self.invoke(self.query_payload(target=THIRD,allow_procuration=False,**local),testing=True)
+        self.assertNotEqual(0,code);self.assertEqual('reception_certificate_identity',result['code'])
+        # A permitted attempt is not proof of an externally granted procuração.
+        rejected,_=self.server(body=b'{"TipoConsulta":"InscricaoCertificado","Erros":[{"Codigo":"E2245"}]}',status=400)
+        code,result=self.invoke(self.query_payload(target=THIRD,allow_procuration=True,**(local|{'test_port':rejected.server_port})),testing=True)
+        self.assertEqual(0,code,result);self.assertEqual(400,result['http_status'])
+        self.assertIn(b'E2245',base64.b64decode(result['body_base64']))
 
     def test_nfe_is_only_dist_nsu_and_body_encoding_size_are_bounded(self):
         server,observed=self.server(body=b'<synthetic/>')

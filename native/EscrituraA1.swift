@@ -129,6 +129,9 @@ if provider == "nfse_adn" {
     """
     requestBody = Data(xml.utf8)
 } else { fail("reception_operation") }
+#if RECEPTION_TESTING
+let testOriginalEndpoint = endpoint
+#endif
 var testAnchor: SecCertificate? = nil
 var presentClient = true
 #if RECEPTION_TESTING
@@ -221,6 +224,9 @@ let queue=OperationQueue();queue.maxConcurrentOperationCount=1
 let session=URLSession(configuration:config,delegate:receiver,delegateQueue:queue)
 var request=URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:10)
 request.httpMethod=method;request.httpBody=requestBody
+#if RECEPTION_TESTING
+request.setValue(testOriginalEndpoint,forHTTPHeaderField:"X-Escritura-Test-Original-URL")
+#endif
 request.setValue(provider=="nfse_adn" ? "application/json" : "application/soap+xml",forHTTPHeaderField:"Accept")
 request.setValue("identity",forHTTPHeaderField:"Accept-Encoding")
 request.setValue("EscrituraIntegrada/Reception",forHTTPHeaderField:"User-Agent")
