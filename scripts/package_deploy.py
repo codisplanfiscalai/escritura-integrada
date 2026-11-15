@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gera dois pacotes de implantação sem fontes, builds ou segredos predefinidos."""
+"""Gera deploys sem fontes da aplicação, builds ou segredos predefinidos."""
 from __future__ import annotations
 
 import argparse
@@ -20,6 +20,8 @@ def deployment_env(manifest, environment):
     rows = ["# Gerado da publicação verificada. Não contém usuários/senhas predefinidos.",
             "# Develop segue :develop online; compose.release.yaml fixa a publicação para offline/rollback.",
             "COMPOSE_PROJECT_NAME=escritura-" + environment,
+            "# Caminho HOST do bind do app. Vazio usa ./data/<projeto>/app; em bind existente, preserve ./data/app.",
+            "ESCRITURA_APP_DATA_BIND=",
             "ESCRITURA_BIND=127.0.0.1", "ESCRITURA_PORT=" + port,
             "ESCRITURA_IMAGE=" + app_reference, "ESCRITURA_COOKIE_SECURE=0", "",
             "# Serviços opcionais internos; o aplicativo permanece em SQLite."]
@@ -49,10 +51,24 @@ Requisitos: Docker Engine/Desktop com containers Linux e Docker Compose v2.
 Plataforma publicada: linux/amd64. Nenhum build ou código da aplicação no host.
 
 INICIAR
+Stack já usando ./data/app:/data: preserve esse caminho. Não execute init ou
+migrate nem recopie o volume antigo. Leia a seção de bind existente em STORAGE.md.
+compose.existing-bind.yaml é um override explícito para esse caminho, sem cópia
+ou alteração de permissões. Não substitua mounts dos demais serviços sem revisão.
+Nos templates novos, ESCRITURA_APP_DATA_BIND=./data/app no .env preserva esse
+bind; vazio usa ./data/<projeto>/app. Não substitua seu .env privado pelo exemplo.
+Antes de subir, use check-app conforme STORAGE.md; ownership incorreto pode
+impedir UID 10001 de abrir SQLite mesmo quando a cópia preservou todos os bytes.
+
 1. Extraia este pacote em um diretório próprio.
-2. Execute: docker compose up -d
-3. Confira: docker compose ps
-4. Abra http://127.0.0.1:{port} e crie o administrador no primeiro acesso.
+2. Instalação nova: baixe/carregue a imagem do app (docker compose pull app).
+3. Prepare as pastas com Python 3.10+ e a imagem LOCAL da aplicação:
+   python3 deploy_storage.py init --project escritura-{environment} --helper-image <imagem-do-app-no-.env>
+   Use o mesmo COMPOSE_PROJECT_NAME do .env; não execute init numa stack existente.
+4. Execute: docker compose up -d
+5. Confira permissões e health (Started sozinho não valida startup):
+   python3 deploy_storage.py check-app --compose-file compose.yaml --project escritura-{environment} --require-health --wait-health-seconds 120
+6. Abra http://127.0.0.1:{port} e crie o administrador no primeiro acesso.
 
 Apenas a porta da aplicação é publicada, com bind loopback por padrão.
 Produção mantém a tag versionada; develop segue :develop. O app consulta o
@@ -60,7 +76,7 @@ registro em cada up nos dois pacotes, inclusive se ESCRITURA_IMAGE for :latest
 (main estável) ou :develop (pré-release). Os aliases só avançam após promoção.
 Não há senha padrão de administrador. images.json descreve a release fixada,
 não necessariamente a imagem mais recente executada por um canal móvel.
-Não use volumes de produção em desenvolvimento.
+Não compartilhe ./data/<projeto> entre stacks/ambientes.
 
 GHCR E VISIBILIDADE
 Pacotes GHCR novos podem ser privados. Se o pull exigir autenticação, faça
@@ -72,6 +88,7 @@ SEM ACESSO AO REGISTRO (IMAGENS OFFLINE)
 Baixe também EscrituraIntegrada-{version}-linux-amd64-images.tar.gz e os hashes.
 Confira o SHA-256 antes de carregar. Docker já deve estar instalado.
 docker load -i /caminho/EscrituraIntegrada-{version}-linux-amd64-images.tar.gz
+Em instalação nova, execute init com a tag versionada local presente no tar.
 docker compose -f compose.yaml -f compose.release.yaml up -d --pull never
 
 O bundle contém app, base Python, Redis, PostgreSQL, MySQL e MinIO.
@@ -93,7 +110,24 @@ As próprias imagens rejeitam credenciais ausentes com mensagem explícita.
 Nenhuma porta de banco, S3 ou console MinIO é publicada no host.
 
 DADOS E ATUALIZAÇÕES
-O volume app-data é o SQLite persistente, com prefixo do projeto Compose.
+Cada serviço persiste em ./data/<COMPOSE_PROJECT_NAME>/<serviço>, junto à stack.
+O app usa a subpasta app para SQLite, documentos, relatórios e demais arquivos /data.
+PostgreSQL, MySQL, MinIO e Redis têm suas próprias subpastas, inclusive perfis inativos.
+Bind mounts exigem diretórios preparados; não são criados silenciosamente pelo Compose.
+O UID/GID do app e MinIO é 10001:10001; não use chmod 777.
+init/migrate validam acesso do app com o USER real da imagem local antes de
+publicar o destino. Não fazem reparo automático de owners de dados existentes.
+STORAGE.md explica o diagnóstico de root:root 0600 e a correção condicionada
+somente da pasta app, preservando imagem/dados e identidades dos outros serviços.
+Depois de health e API, confira login, empresas e documentos na interface.
+
+STACK EXISTENTE: trocar mounts por pastas vazias NÃO transfere os dados antigos.
+Siga STORAGE.md: salve o Compose antigo, planeje, pare todos os escritores,
+copie/verifique os volumes para destino novo e só então aplique o Compose novo.
+A ferramenta gera também um override com os IDs das imagens instaladas; use-o
+no primeiro corte para não atualizar imagens e armazenamento ao mesmo tempo.
+A ferramenta recusa destinos existentes, mantém os volumes originais e não altera
+os arquivos Compose. Não execute nenhuma cópia com bancos/serviços em execução.
 Faça backup consistente e testado antes de atualizar. Nunca use down -v em dados
 que deseja manter. Um rollback da imagem não desfaz migrações de banco.
 Online: docker compose up -d. Com :develop/:latest, não é preciso trocar a tag
@@ -108,12 +142,13 @@ ghcr.io/codisplanfiscalai/escritura-integrada:latest (main estável).
 Código/ZIP novo não modifica automaticamente stacks ou pacotes já publicados.
 Não há atualização contínua em segundo plano: execute pull/up ou a ação Dockge.
 Falhas de rede/autenticação precisam ser resolvidas antes de atualizar.
-Preserve COMPOSE_PROJECT_NAME, .env, credenciais, bind, portas e volumes existentes.
+Preserve COMPOSE_PROJECT_NAME, .env, credenciais, bind, portas e dados existentes.
 Para fixar/voltar à release deste pacote, use sempre os dois arquivos Compose:
 docker compose -f compose.yaml -f compose.release.yaml up -d
 Para voltar ao canal móvel configurado no .env, use apenas docker compose up -d.
-Não é necessário parar/remover containers antes de atualizar.
-As instruções completas estão em DEPLOY.md e THIRD-PARTY.md neste pacote.
+Atualizar somente a imagem não exige down prévio; a migração de armazenamento
+exige parar todos os escritores conforme STORAGE.md.
+As instruções completas estão em DEPLOY.md, STORAGE.md e THIRD-PARTY.md neste pacote.
 """
 
 
@@ -127,11 +162,14 @@ def package(manifest, output_dir, root=ROOT):
         files = {
             "compose.yaml": (root / "deploy" / environment / "compose.yaml").read_bytes(),
             "compose.release.yaml": (json.dumps(release_compose(manifest), ensure_ascii=False, indent=2) + "\n").encode(),
+            "compose.existing-bind.yaml": (root / "deploy/compose.existing-bind.yaml").read_bytes(),
             ".env": deployment_env(manifest, environment).encode(),
             ".env.example": deployment_env(manifest, environment).encode(),
             "images.json": (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(),
             "LEIA-ME.txt": readme(manifest, environment).encode(),
-            "DEPLOY.md": (root / "docs/DEPLOY.md").read_bytes(),
+            "DEPLOY.md": (root / "docs/DEPLOY.md").read_text(encoding="utf-8").replace("(DOCKER_STORAGE.md", "(STORAGE.md").encode(),
+            "deploy_storage.py": (root / "scripts/deploy_storage.py").read_bytes(),
+            "STORAGE.md": (root / "docs/DOCKER_STORAGE.md").read_bytes(),
             "THIRD-PARTY.md": (root / "docker/THIRD-PARTY.md").read_bytes(),
         }
         # Allowlist fechada: não inclui app/, banco, `.env` local, logs ou material recuperado.
@@ -148,7 +186,8 @@ def package(manifest, output_dir, root=ROOT):
         archive.with_suffix(".zip.sha256").write_text(digest + "  " + archive.name + "\n")
         outputs.append({"environment": environment, "file": archive.name, "sha256": digest, "bytes": archive.stat().st_size})
     summary = {"version": manifest["version"], "channel": manifest["channel"], "source_sha": manifest["source_sha"],
-               "packages": outputs, "contains_source": False, "contains_fixed_credentials": False}
+               "packages": outputs, "contains_source": True, "contains_application_source": False,
+               "contains_admin_helper": True, "contains_fixed_credentials": False}
     write_json(output_dir / ("EscrituraIntegrada-" + manifest["version"] + "-deploy-manifest.json"), summary)
     return summary
 
