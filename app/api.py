@@ -285,7 +285,7 @@ def create_app(data_dir=None, demo=False):
     def journals(cid: int, request: Request, period: str | None = None, year: int | None = None):
         if year:
             check_period(request,f'{year:04d}-01')
-            return [r for r in core.journals(cid) if r['period'][:4]==str(year)]
+            return core.journals(cid, year=year)
         return core.journals(cid, active_period(request, period))
 
     @application.post("/api/companies/{cid}/journals", status_code=201)

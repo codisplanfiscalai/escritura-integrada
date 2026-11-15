@@ -1,0 +1,128 @@
+{
+  "label": "v0.8.0",
+  "source_files_sha256": {
+    "app/api.py": "016276dba1841fc4bc2dd9ab7e2f17464b633c944a1b3fb718d38147861fc772",
+    "app/core.py": "3bf2bc1e4c95da3802301a7733800ca82f650fbf0da315f29054894e7188d773",
+    "frontend/src/views/DashboardView.vue": "641894fd370410b106c9ed576fd2544d07ec2dcc5c87711f61a720669a887cd9"
+  },
+  "scope": "Synthetic in-process HTTP; no production, browser rendering or network latency",
+  "source_sha": "b5d97a354115310e278d3ce86308a48cc2824356",
+  "fixture": {
+    "accounts": 22597,
+    "journals_added": 300,
+    "documents_added": 860,
+    "periods": [
+      "2025-09",
+      "2026-08",
+      "2026-09"
+    ],
+    "demo_company": 1
+  },
+  "results": {
+    "/accounts": {
+      "samples_ms": [
+        437.592,
+        429.394,
+        430.694
+      ],
+      "median_ms": 430.694,
+      "read_selects": [
+        10,
+        10,
+        10
+      ],
+      "response_bytes": 5898676,
+      "rows": 22597
+    },
+    "/accounts?page=1&per_page=50": {
+      "samples_ms": [
+        20.288,
+        18.552,
+        18.722
+      ],
+      "median_ms": 18.722,
+      "read_selects": [
+        11,
+        11,
+        11
+      ],
+      "response_bytes": 12748,
+      "rows": 50
+    },
+    "/documents?year=2026": {
+      "samples_ms": [
+        242.2,
+        175.499,
+        228.031
+      ],
+      "median_ms": 228.031,
+      "read_selects": [
+        12,
+        12,
+        12
+      ],
+      "response_bytes": 1718789,
+      "rows": 862
+    },
+    "/documents?period=2026-09": {
+      "samples_ms": [
+        97.319,
+        90.318,
+        136.9
+      ],
+      "median_ms": 97.319,
+      "read_selects": [
+        12,
+        12,
+        12
+      ],
+      "response_bytes": 857741,
+      "rows": 430
+    },
+    "/journals?year=2026": {
+      "samples_ms": [
+        7250.048,
+        7211.578,
+        7362.829
+      ],
+      "median_ms": 7250.048,
+      "read_selects": [
+        614,
+        614,
+        614
+      ],
+      "response_bytes": 187290,
+      "rows": 202
+    },
+    "/journals?period=2026-09": {
+      "samples_ms": [
+        2390.583,
+        2305.828,
+        2393.447
+      ],
+      "median_ms": 2390.583,
+      "read_selects": [
+        210,
+        210,
+        210
+      ],
+      "response_bytes": 92681,
+      "rows": 100
+    },
+    "/dashboard?period=2026-09": {
+      "samples_ms": [
+        6.854,
+        7.962,
+        8.928
+      ],
+      "median_ms": 7.962,
+      "read_selects": [
+        30,
+        30,
+        30
+      ],
+      "response_bytes": 957,
+      "rows": 0
+    }
+  }
+}
