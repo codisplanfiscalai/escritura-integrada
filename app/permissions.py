@@ -253,7 +253,7 @@ def import_access(conn,cid,parsed,action='read'):
     from .db import request_context
     ctx=request_context.get()
     if not ctx or not ctx.get('user_id'):return
-    if parsed.get('documents'):require(conn,ctx['user_id'],cid,'fiscal.imports',action)
+    if parsed.get('documents') or parsed.get('reception'):require(conn,ctx['user_id'],cid,'fiscal.imports',action)
     if parsed.get('transactions'):require(conn,ctx['user_id'],cid,'financial.reconciliation',action)
 
 def readable(conn,cid,routine):

@@ -1221,7 +1221,7 @@ class Core:
         bank_account = text(payload.get("bank_account"), "Conta bancária", False, 200)
         with self.db.read() as conn:
             company = company_row(conn, cid)
-        identity = digest({"parser_revision": 3, "sha256": digest(raw), "filename": filename, "period": competence, "options": options, "company_tax_id": company["tax_id"]})
+        identity = digest({"parser_revision": 4, "sha256": digest(raw), "filename": filename, "period": competence, "options": options, "company_tax_id": company["tax_id"]})
         with self.db.transaction() as conn:
             ensure_import_allowed(conn, cid, len(raw))
             from .import_package_cleanup import restore_upload
@@ -1346,6 +1346,11 @@ class Core:
                         raise DomainError(doc['import_posting']['reason'], 409, 'fiscal_posting_blocked')
             result = {"import_id": item_id, "status": "confirmed", "posting_mode": posting_mode, "documents_booked": 0, "documents_created": 0, "documents_duplicate": 0, "transactions_created": 0, "transactions_duplicate": 0, "document_ids": [], "transaction_ids": [], "master_import_warnings": [], "source_version_warnings": []}
             result.update(create_payables=create_payables, generated_payables=generated_options, titles_created=0, titles_duplicate=0, title_ids=[])
+            if parsed.get('reception'):
+                from .reception import ensure_reception_open
+                for source_doc in parsed['documents']:
+                    if source_doc['_selection'] in selected:
+                        ensure_reception_open(conn, cid, source_doc['posting_date'])
             existing_imports = self._fiscal_import_index(conn, cid, parsed['documents']) if posting_mode == 'book' else {}
             for source_doc in parsed.get("documents", []):
                 if source_doc['_selection'] not in selected: continue
