@@ -3,7 +3,7 @@ name: CI de pull request
 on:
   pull_request:
     # Inclui bases de PRs encadeadas; os testes mantêm permissões somente de leitura.
-    branches: [main, develop, feat/postgres-foundation-validation, feat/sped-native-consolidation]
+    branches: [main, develop, feat/postgres-foundation-validation, feat/sped-native-consolidation, feat/ecd-bookkeeping-snapshot]
 
 permissions:
   contents: read
