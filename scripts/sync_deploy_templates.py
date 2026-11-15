@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Atualiza referências opcionais dos exemplos após mudança do catálogo/Dockerfiles."""
+"""Sincroniza a política online do app e as referências opcionais dos exemplos."""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +17,9 @@ def sync(root=ROOT, check=False):
         folder = root / "deploy" / environment
         path = folder / "compose.yaml"
         data = json.loads(path.read_text())
+        # ESCRITURA_IMAGE pode apontar para os aliases mutáveis develop/latest.
+        # O override compose.release.yaml preserva a política offline/fixada.
+        data["services"]["app"]["pull_policy"] = "always"
         for name in OPTIONAL_NAMES:
             data["services"][name]["image"] = "${" + name.upper() + "_IMAGE:-" + plan["images"][name]["reference"] + "}"
         wanted = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
