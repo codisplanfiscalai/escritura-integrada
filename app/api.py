@@ -478,6 +478,8 @@ def create_app(data_dir=None, demo=False):
     def audit_entries(cid: int, limit: int = 100):
         return core.audit(cid, limit)
 
+    from .sped_generator.api import register_sped_generator_routes
+    register_sped_generator_routes(application, core, check_period)
     from .business_api import register_business_routes
     register_business_routes(application, core, database, actor, check_date, check_period)
     from .management_api import register_management_routes
