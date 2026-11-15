@@ -67,6 +67,7 @@ def main():
                 cwd=root,input=(password+'\n').encode())
             der = command('x509','-in','client.pem','-outform','DER')
             (root/'ca.der').write_bytes(command('x509','-in','ca.pem','-outform','DER'))
+            (root/'wrong-anchor.der').write_bytes(der)
             observed=[]
             class Handler(BaseHTTPRequestHandler):
                 def do_GET(self):
@@ -93,12 +94,13 @@ def main():
                 positive=invoke({})
                 if positive.returncode or observed!=[der]:
                     raise RuntimeError('Native memory-only/PBES2/mTLS probe failed: '+positive.stdout.decode(errors='replace')[:250])
-                for changes,expected in [({'password':'WRONG-SYNTHETIC'},10),({'presentClient':False},20)]:
+                for changes,expected in [({'password':'WRONG-SYNTHETIC'},10),({'presentClient':False},20),
+                                         ({'ca':str(root/'wrong-anchor.der')},20)]:
                     negative=invoke(changes)
                     if negative.returncode!=expected:raise RuntimeError('Native negative probe failed')
                 print(json.dumps({'ok':True,'machine':platform.machine(),'macos':platform.mac_ver()[0],
                     'memory_only_identity':True,'modern_pfx':True,'local_mtls_peer_matches':True,
-                    'wrong_password_rejected':True,'client_certificate_required':True,
+                    'wrong_password_rejected':True,'client_certificate_required':True,'wrong_server_anchor_rejected':True,
                     'production_adapter_enabled':False}))
             finally:
                 server.shutdown();server.server_close();thread.join(timeout=3)
