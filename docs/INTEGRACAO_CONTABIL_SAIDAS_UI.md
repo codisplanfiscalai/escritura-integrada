@@ -1,6 +1,8 @@
 # Interface da integração contábil de saídas — incremento sobre a PR39
 
-Base: PR39, `feat/fiscal-sales-daily-accounting-20261115`, commit `e4ca8ccc8ceb8bf57b58c52a9aa78c9bd38b927e`. A documentação de API em `INTEGRACAO_CONTABIL_SAIDAS.md` descreve o inventário anterior e a geração/estorno; este documento registra o incremento de interface.
+Base original: PR39, `feat/fiscal-sales-daily-accounting-20261115`, commit `e4ca8ccc8ceb8bf57b58c52a9aa78c9bd38b927e`. A documentação de API em `INTEGRACAO_CONTABIL_SAIDAS.md` descreve o inventário anterior e a geração/estorno; este documento registra o incremento de interface.
+
+A atualização posterior à integração da PR39 usa develop dev.14; ver [composição, resolução de CI e validação atual](PR42_COMPOSICAO_DEVELOP.md).
 
 ## Cobertura entregue
 
@@ -35,7 +37,7 @@ O Diário Consolidado existente permanece somente leitura. A tela explica que o 
 
 A configuração está na nova tela para a empresa ativa, e não foi acrescentada ao editor de uma empresa inativa. Não há histórico persistente de lotes de geração na interface, prévia contábil no servidor, paginação remota ou medição de escala dessa consulta anual. Trilha e repetição usam os serviços já existentes. Nenhuma obrigação fiscal é transmitida ou emitida.
 
-## Validação local
+## Validação original do incremento
 
 - **325 testes backend/CI/bootstrap passaram em 156,787 s**: regressão dos 300 testes da PR39 mais 25 checks existentes de CI/bootstrap. Não há alteração de serviços de domínio neste incremento.
 - **153 testes frontend passaram em 2,650 s**, incluindo 15 testes novos com a lógica real do componente Vue. Cobrem ausência de mutações na consulta, seleção/paginação/filtros, centavos além do inteiro seguro, modelos explícitos/vigência, versões e salvamento repetido, contexto fora de ordem, interrupção/repetição da mesma intenção, erro sem sucesso falso, competência fechada/reaberta, permissões revogadas, rastros fechados/substituídos e KeepAlive/unmount.
@@ -65,7 +67,7 @@ O conjunto de 325 testes foi executado com `PYTHONPATH=/tmp/escritura-daily-test
 
 ## Publicação e convivência
 
-PR encadeada à #39: base `feat/fiscal-sales-daily-accounting-20261115`. O CI acrescenta somente essa base à lista já existente e roda o novo navegador/artefatos com `contents: read`. Depois de integrar a #39, retargetar para develop e repetir os checks; não há merge automático.
+A PR foi inicialmente encadeada à #39. Após a integração da #39 em `ee24f21`, a atualização documentada em `PR42_COMPOSICAO_DEVELOP.md` integra develop dev.14 e passa a apontar esta PR para develop. O conflito de CI preserva a união das duas listas de bases e o teste/artefatos da interface, com `contents: read`. Não há merge automático nem implantação.
 
 A frente #38 permanece intacta: não há diff em DocumentsView, JournalView, DashboardView, core/API, listagem ou indicadores. Docker/volumes #35, SPED #36/#37, releases e Atlas não são alterados. A alteração do CI é limitada ao gate da base encadeada e ao novo teste, devendo preservar outras bases que sejam integradas futuramente.
 
