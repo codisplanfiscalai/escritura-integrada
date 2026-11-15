@@ -32,6 +32,8 @@ docker compose up -d
 docker compose ps
 ```
 
+O app usa `pull_policy: always` nos templates online da raiz e dos dois ambientes: `up -d` consulta o registro mesmo com imagem em cache. `:develop` acompanha a pré-release e `:latest` a main estável; produção mantém uma tag versionada por padrão. Stacks existentes precisam incorporar essa política no Compose utilizado pelo Dockge/CLI. A atualização depende de executar pull/up, sem atualização contínua automática. Consulte [o procedimento de atualização](docs/DEPLOY.md#atualizar-canais-móveis-no-compose-e-dockge).
+
 **Apenas a porta da aplicação é publicada.** O endereço e a porta são configuráveis; o padrão de acesso é local. Os ambientes usam projetos e volumes separados. A interface, API e arquivos estáticos são atendidos na mesma origem.
 
 O backend atual utiliza SQLite em volume local persistente. As imagens de Redis, PostgreSQL, MySQL e MinIO são disponibilizadas em perfis opcionais de infraestrutura, conectadas somente à rede interna. Ativar um perfil não altera o backend da aplicação nem transforma esses serviços em integrações já implementadas. Não são abertas portas de banco, Redis ou console MinIO.
@@ -40,7 +42,7 @@ O pacote de imagens `EscrituraIntegrada-<versão>-linux-amd64-images.tar.gz` per
 
 ```bash
 docker load -i EscrituraIntegrada-<versão>-linux-amd64-images.tar.gz
-docker compose up -d --pull never
+docker compose -f compose.yaml -f compose.release.yaml up -d --pull never
 ```
 
 A visibilidade de um pacote GHCR é independente da visibilidade do repositório. Se a imagem estiver privada, o pull exige autenticação com permissão de leitura. O pacote offline usa as imagens já carregadas. As regras de segredos, perfis, volumes, atualização e verificação estão em [DEPLOY.md](docs/DEPLOY.md).
