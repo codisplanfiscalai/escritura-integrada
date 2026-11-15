@@ -126,7 +126,7 @@ def route_policy(path, method, query, payload, session):
     action = {'POST': 'create', 'PUT': 'edit', 'PATCH': 'edit', 'DELETE': 'delete'}.get(method, 'read')
     if path in {'/api/context', '/api/logout', '/api/permissions/me', '/api/permissions/catalog'}:
         return None, None, False
-    if re.match(r'^/api/(users|groups|access-audit|storage)(/|$)', path):
+    if re.match(r'^/api/(users|groups|access-audit|storage|docker-updates)(/|$)', path):
         return None, None, True
     if path == '/api/companies':
         return None, None, write

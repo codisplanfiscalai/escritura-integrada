@@ -26,3 +26,5 @@ release-output/
 *.tar
 *.tar.gz
 *.qcow2
+
+.docker-updater/

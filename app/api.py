@@ -68,6 +68,8 @@ def create_app(data_dir=None, demo=False):
     register_third_party_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .lookups import LookupService
     application.state.lookups = LookupService(database)
+    from .docker_updates import register as register_docker_updates
+    register_docker_updates(application, core)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
     @application.exception_handler(DomainError)
