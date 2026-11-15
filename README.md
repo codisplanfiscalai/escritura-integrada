@@ -22,9 +22,15 @@ Use o pacote de deploy da release correspondente. Os ambientes ficam em diretór
 - `deploy/production/`: produção, com imagem de release estável.
 - `deploy/develop/`: homologação, com imagem da pré-release.
 
-O pacote gerado contém `compose.yaml` e `.env`; no repositório, `.env.example` documenta as opções. Os serviços são consumidos como **imagens GHCR**, sem build, montagem de código-fonte ou instalação de dependências na máquina de destino.
+O pacote gerado contém `compose.yaml` e `.env`; no repositório, `.env.example` documenta as opções. Os serviços são consumidos como **imagens GHCR**, sem build ou montagem das fontes da aplicação no destino. A ferramenta administrativa de preparação/migração requer Python 3.10+ no host; o aplicativo continua executando na imagem.
 
-No diretório do ambiente:
+Os dados ficam em `./data/<COMPOSE_PROJECT_NAME>/app`, `redis`, `postgres`, `mysql` e `minio`, junto à stack. **Stack existente com volumes nomeados:** não troque os mounts por pastas vazias; siga a [migração verificada de volumes para diretórios](docs/DOCKER_STORAGE.md) antes de aplicar o novo Compose.
+
+Se a stack já usa `./data/app:/data`, preserve esse caminho e o Compose instalado. O [override de compatibilidade](deploy/compose.existing-bind.yaml) é explícito e mantém essa pasta; não inicialize outra pasta nem recopie o volume de backup. Consulte a [rota para bind existente](docs/DOCKER_STORAGE.md#stack-já-usando-dataappdata).
+
+Os templates novos também aceitam `ESCRITURA_APP_DATA_BIND=./data/app` no `.env` para preservar esse bind; vazio mantém o padrão por projeto. A [pré-validação de permissões](docs/DOCKER_STORAGE.md#pré-validação-e-incidente-de-permissões-no-bind-do-app) usa o USER real da imagem instalada e detecta o caso `root:root 0600` sem reparar donos automaticamente. Depois da subida, `check-app --require-health` exige health e API; confira também os dados na interface.
+
+Instalação nova: no diretório do ZIP, prepare as pastas com `python3 deploy_storage.py init --project <nome-exato-do-.env> --helper-image <imagem-local-do-app>`, após baixar/carregar a imagem. No checkout, o helper está em `scripts/deploy_storage.py`. O Compose recusa diretórios ausentes e a ferramenta recusa destinos existentes. Depois:
 
 ```bash
 docker compose pull
@@ -34,9 +40,9 @@ docker compose ps
 
 O app usa `pull_policy: always` nos templates online da raiz e dos dois ambientes: `up -d` consulta o registro mesmo com imagem em cache. `:develop` acompanha a pré-release e `:latest` a main estável; produção mantém uma tag versionada por padrão. Stacks existentes precisam incorporar essa política no Compose utilizado pelo Dockge/CLI. A atualização depende de executar pull/up, sem atualização contínua automática. Consulte [o procedimento de atualização](docs/DEPLOY.md#atualizar-canais-móveis-no-compose-e-dockge).
 
-**Apenas a porta da aplicação é publicada.** O endereço e a porta são configuráveis; o padrão de acesso é local. Os ambientes usam projetos e volumes separados. A interface, API e arquivos estáticos são atendidos na mesma origem.
+**Apenas a porta da aplicação é publicada.** O endereço e a porta são configuráveis; o padrão de acesso é local. Os ambientes usam projetos e diretórios de dados separados. A interface, API e arquivos estáticos são atendidos na mesma origem.
 
-O backend atual utiliza SQLite em volume local persistente. As imagens de Redis, PostgreSQL, MySQL e MinIO são disponibilizadas em perfis opcionais de infraestrutura, conectadas somente à rede interna. Ativar um perfil não altera o backend da aplicação nem transforma esses serviços em integrações já implementadas. Não são abertas portas de banco, Redis ou console MinIO.
+O backend atual utiliza SQLite em diretório local persistente (`./data/<projeto>/app`). As imagens de Redis, PostgreSQL, MySQL e MinIO são disponibilizadas em perfis opcionais de infraestrutura, conectadas somente à rede interna. Ativar um perfil não altera o backend da aplicação nem transforma esses serviços em integrações já implementadas. Não são abertas portas de banco, Redis ou console MinIO.
 
 O pacote de imagens `EscrituraIntegrada-<versão>-linux-amd64-images.tar.gz` permite carregar aplicação, base e recursos da infraestrutura sem baixar as imagens no servidor de destino:
 

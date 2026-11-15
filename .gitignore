@@ -32,3 +32,8 @@ release-output/
 *.p12
 *.pem
 *.key
+
+# Private Docker storage migration plans and pre-migration Compose backups.
+storage-plan*.json
+storage-plan*.images.yaml
+compose.named*.yaml
