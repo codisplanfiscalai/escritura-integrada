@@ -1,5 +1,8 @@
 """Optional synthetic purchase terms, never a replacement for source billing."""
+import io
+import re
 import unittest
+import zipfile
 import test_fiscal_import as fixtures
 
 
@@ -52,6 +55,133 @@ class GeneratedPayablesTests(unittest.TestCase):
             'generated_payables': options}, status=400)
         self.assertEqual([], self.core.documents(self.a['id']))
         self.assertEqual([], self.core.titles(self.a['id']))
+
+    def test_default_thirty_days_uses_chosen_basis_and_keeps_document_link(self):
+        self.mapping()
+        for number, basis, expected_due in [(43, 'issue', '2026-12-05'),
+                                             (44, 'receipt', '2026-12-10')]:
+            with self.subTest(basis=basis):
+                raw = self.no_billing().replace(b'<nNF>42</nNF>', f'<nNF>{number}</nNF>'.encode())
+                raw = raw.replace(b'35261187654321000198550010000000421000000420', str(10**43 + number).encode())
+                batch = self.preview(raw, f'synthetic-{basis}.xml')
+                options = self.options(date_basis=basis)
+                options.pop('term_days')  # Exercise the API default, not the test helper default.
+                prepared = self.prepared(batch, generated_payables=options,
+                    document_overrides={'documents:0': {'receipt_date': '2026-11-10', 'posting_date': '2026-11-20'}})
+                plan = prepared['documents'][0]['generated_financial_posting']
+                self.assertTrue(plan['eligible'], plan)
+                self.assertEqual(expected_due, plan['installments'][0]['due_date'])
+                result = self.confirm(batch, prepared)
+                doc = next(d for d in self.core.documents(self.a['id']) if d['id'] == result['document_ids'][0])
+                title = next(t for t in self.core.titles(self.a['id']) if t['id'] == result['title_ids'][0])
+                self.assertEqual((self.a['id'], doc['id'], 'payable', expected_due, 10000),
+                    (title['company_id'], title['document_id'], title['kind'], title['due_date'], title['amount_cents']))
+                self.assertEqual('2026-11-20', doc['posting_date'])
+                self.assertEqual(30, doc['generated_payment_terms']['term_days'])
+                self.assertEqual(basis, doc['generated_payment_terms']['date_basis'])
+                self.assertEqual([], title['settlements'])
+        self.assertEqual([], self.core.journals(self.a['id']))
+        self.assertEqual([], self.core.titles(self.b['id']))
+
+    def test_supplier_filter_in_mixed_batch_never_replaces_incomplete_billing(self):
+        self.mapping()
+        supplier = '87654321000198'
+        incomplete = b'<cobr><fat><nFat>FICT-INCOMPLETE</nFat></fat></cobr>'
+        invalid_dup = b'<cobr><dup><nDup>001</nDup><vDup>100.00</vDup></dup></cobr>'
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, 'w') as bundle:
+            for number, tax_id, billing in [(51, supplier, b''), (52, supplier, b''),
+                    (53, '11222333000181', b''), (54, supplier, incomplete),
+                    (55, supplier, invalid_dup)]:
+                raw = re.sub(rb'<cobr>.*?</cobr>', billing, self.xml())
+                raw = raw.replace(b'87654321000198', tax_id.encode())
+                old_key = b'352611' + tax_id.encode() + b'550010000000421000000420'
+                raw = raw.replace(old_key, str(10**43 + number).encode())
+                raw = raw.replace(b'<nNF>42</nNF>', f'<nNF>{number}</nNF>'.encode())
+                bundle.writestr(f'synthetic-{number}.xml', raw)
+        options = self.options(selected=[], supplier_tax_ids=['87.654.321/0001-98'])
+        batch = self.preview(archive.getvalue(), 'synthetic-suppliers.zip')
+        prepared = self.prepared(batch, generated_payables=options)
+        plans = {d['number']: d['generated_financial_posting'] for d in prepared['documents']}
+        self.assertEqual({'51', '52'}, {n for n, p in plans.items() if p['eligible']})
+        self.assertFalse(plans['53']['requested'])
+        for number in ('54', '55'):
+            self.assertEqual('not_applicable', plans[number]['status'])
+            self.assertIn('Cobrança original existente', plans[number]['reason'])
+        result = self.confirm(batch, prepared)
+        self.assertEqual((5, 2, 0), (result['documents_created'], result['titles_created'], result['transactions_created']))
+        docs = {d['id']: d for d in self.core.documents(self.a['id'])}
+        titles = self.core.titles(self.a['id'])
+        self.assertEqual({'51', '52'}, {docs[t['document_id']]['number'] for t in titles})
+        self.assertTrue(all(t['amount_cents'] == 10000 and not t['settlements'] for t in titles))
+        by_number = {d['number']: d for d in docs.values()}
+        self.assertTrue(by_number['54']['billing']['present'])
+        self.assertEqual('FICT-INCOMPLETE', by_number['54']['billing']['invoice']['number'])
+        self.assertEqual([], by_number['54']['billing']['installments'])
+        repeated_batch = self.preview(archive.getvalue(), 'synthetic-suppliers-renamed.zip')
+        repeated = self.confirm(repeated_batch, self.prepared(repeated_batch, generated_payables=options))
+        self.assertEqual((0, 2), (repeated['titles_created'], repeated['titles_duplicate']))
+        self.assertEqual(titles, self.core.titles(self.a['id']))
+        self.assertEqual([], self.core.journals(self.a['id']))
+
+    def test_xml_and_generated_options_coexist_without_duplicate_titles(self):
+        self.mapping()
+        archive = io.BytesIO()
+        without_billing = self.no_billing().replace(b'<nNF>42</nNF>', b'<nNF>43</nNF>').replace(
+            b'35261187654321000198550010000000421000000420', str(10**43 + 43).encode())
+        with zipfile.ZipFile(archive, 'w') as bundle:
+            bundle.writestr('synthetic-billed.xml', self.xml())
+            bundle.writestr('synthetic-unbilled.xml', without_billing)
+        batch = self.preview(archive.getvalue(), 'synthetic-both-options.zip')
+        options = self.options(selected=[], supplier_tax_ids=['87654321000198'])
+        prepared = self.prepared(batch, create_payables=True, generated_payables=options)
+        result = self.confirm(batch, prepared)
+        self.assertEqual(2, result['titles_created'])
+        docs = {d['id']: d for d in self.core.documents(self.a['id'])}
+        titles = self.core.titles(self.a['id'])
+        self.assertEqual(2, len({t['document_id'] for t in titles}))
+        for title in titles:
+            doc = docs[title['document_id']]
+            if doc['number'] == '42':
+                self.assertTrue(title['source_key'].startswith('xml-billing:'))
+                self.assertEqual('FICT-42', doc['billing']['invoice']['number'])
+                self.assertNotIn('generated_payment_terms', doc)
+            else:
+                self.assertEqual('43', doc['number'])
+                self.assertTrue(title['source_key'].startswith('generated-billing:'))
+                self.assertFalse(doc['billing']['present'])
+                self.assertEqual('generated_rule', doc['generated_payment_terms']['origin'])
+            self.assertEqual([], title['settlements'])
+        repeated_batch = self.preview(archive.getvalue(), 'synthetic-both-options-renamed.zip')
+        repeated = self.confirm(repeated_batch, self.prepared(repeated_batch,
+            create_payables=True, generated_payables=options))
+        self.assertEqual((0, 2), (repeated['titles_created'], repeated['titles_duplicate']))
+        self.assertEqual(titles, self.core.titles(self.a['id']))
+
+    def test_reprocessing_with_new_keys_preserves_generated_title(self):
+        self.mapping()
+        batch = self.preview(self.no_billing())
+        initial = self.confirm(batch, self.prepared(batch))
+        self.assertEqual(0, initial['titles_created'])
+        options = {'generated_payables': self.options(date_basis='receipt'),
+                   'document_overrides': {'documents:0': {'receipt_date': '2026-11-10'}}}
+        original_title = None
+        for attempt in range(3):
+            plan = self.post(f"/imports/{batch['id']}/reprocess-preview", options)
+            self.assertTrue(plan['can_confirm'], plan)
+            result = self.post(f"/imports/{batch['id']}/reprocess-confirm", {
+                **options, 'reason': 'Repetição sintética da condição de compra',
+                'idempotency_key': f'synthetic-generated-repeat-{attempt}', 'reprocess_hash': plan['reprocess_hash']})
+            self.assertEqual(1 if attempt == 0 else 0, result['titles_created'])
+            self.assertEqual(0 if attempt == 0 else 1, result['titles_duplicate'])
+            title = self.core.titles(self.a['id'])[0]
+            if original_title is None:
+                original_title = title
+            self.assertEqual(original_title, title)
+            self.assertEqual(initial['document_ids'][0], title['document_id'])
+            self.assertEqual('2026-12-10', title['due_date'])
+            self.assertEqual([], title['settlements'])
+        self.assertEqual(1, len(self.core.titles(self.a['id'])))
 
     def test_receipt_explicit_and_independent_from_posting(self):
         self.mapping(); batch = self.preview(self.no_billing())

@@ -1,0 +1,2 @@
+# Backend preparatório; ainda não faz parte do runtime desktop/Docker.
+psycopg[binary]==3.3.9

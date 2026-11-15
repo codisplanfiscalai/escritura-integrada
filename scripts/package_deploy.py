@@ -55,10 +55,11 @@ INICIAR
 4. Abra http://127.0.0.1:{port} e crie o administrador no primeiro acesso.
 
 Apenas a porta da aplicação é publicada, com bind loopback por padrão.
-Produção mantém a tag versionada; develop segue :develop e consulta o registro
-em cada up. O canal só avança quando o publicador promove o alias develop.
+Produção mantém a tag versionada; develop segue :develop. O app consulta o
+registro em cada up nos dois pacotes, inclusive se ESCRITURA_IMAGE for :latest
+(main estável) ou :develop (pré-release). Os aliases só avançam após promoção.
 Não há senha padrão de administrador. images.json descreve a release fixada,
-não necessariamente a imagem mais recente executada pelo canal develop.
+não necessariamente a imagem mais recente executada por um canal móvel.
 Não use volumes de produção em desenvolvimento.
 
 GHCR E VISIBILIDADE
@@ -95,14 +96,22 @@ DADOS E ATUALIZAÇÕES
 O volume app-data é o SQLite persistente, com prefixo do projeto Compose.
 Faça backup consistente e testado antes de atualizar. Nunca use down -v em dados
 que deseja manter. Um rollback da imagem não desfaz migrações de banco.
-Online develop: docker compose up -d (sem trocar a tag no .env).
-Em uma instalação develop antiga, ajuste ESCRITURA_IMAGE uma única vez para
-ghcr.io/codisplanfiscalai/escritura-integrada:develop
-e app.pull_policy para always no compose.yaml.
+Online: docker compose up -d. Com :develop/:latest, não é preciso trocar a tag
+no .env a cada versão. docker compose pull app baixa a imagem, mas é o up que
+aplica a atualização. No Dockge, salve o Compose e execute a ação de atualizar/
+implantar que faz pull/up; reiniciar o container existente não busca imagem.
+Em stacks já instaladas, inclusive as criadas pelo Compose da raiz/produção,
+incorpore services.app.pull_policy: always no compose.yaml usado pela stack.
+Para seguir um canal, ajuste ESCRITURA_IMAGE para
+ghcr.io/codisplanfiscalai/escritura-integrada:develop (pré-release) ou
+ghcr.io/codisplanfiscalai/escritura-integrada:latest (main estável).
+Código/ZIP novo não modifica automaticamente stacks ou pacotes já publicados.
+Não há atualização contínua em segundo plano: execute pull/up ou a ação Dockge.
+Falhas de rede/autenticação precisam ser resolvidas antes de atualizar.
 Preserve COMPOSE_PROJECT_NAME, .env, credenciais, bind, portas e volumes existentes.
 Para fixar/voltar à release deste pacote, use sempre os dois arquivos Compose:
 docker compose -f compose.yaml -f compose.release.yaml up -d
-Para voltar ao canal móvel, use apenas docker compose up -d.
+Para voltar ao canal móvel configurado no .env, use apenas docker compose up -d.
 Não é necessário parar/remover containers antes de atualizar.
 As instruções completas estão em DEPLOY.md e THIRD-PARTY.md neste pacote.
 """
