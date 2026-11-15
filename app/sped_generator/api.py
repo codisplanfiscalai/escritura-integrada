@@ -7,6 +7,7 @@ from fastapi import Body, Request
 from ..core import DomainError, company_row, integer, select_one, period as validate_period
 from ..import_package_cleanup import require_original
 from .native_export import consolidate_native_sped
+from .ecd_snapshot import register_ecd_snapshot_routes
 from ..permissions import effect
 from .consolidation import preview_nfce_groups
 
@@ -89,3 +90,5 @@ def register_sped_generator_routes(app, core, check_period):
             content = result.pop('payload')
             return {**result, 'filename': f'efd-bloco-c-parcial-{competence}-empresa-{cid}.txt',
                     'content_base64': base64.b64encode(content).decode()}
+
+    register_ecd_snapshot_routes(app, core, check_period)
