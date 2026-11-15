@@ -32,13 +32,25 @@ def _private_file(path, limit):
 
 
 def _cnpj(value):
-    if not isinstance(value, str) or not re.fullmatch(r'[0-9]{14}', value):
-        raise DomainError('O transporte A1 deste incremento exige CNPJ numérico válido.', 422, 'reception_tax_id')
-    return normalize_cnpj(value)
+    if not isinstance(value,str) or not re.fullmatch(r'[0-9A-Z]{12}[0-9]{2}',value):
+        raise DomainError('O transporte A1 exige CNPJ ASCII completo, com letras maiúsculas e DV válido.',422,'reception_tax_id')
+    try:
+        return normalize_cnpj(value)
+    except DomainError:
+        raise DomainError('Dígitos verificadores do CNPJ inválidos.',422,'reception_tax_id') from None
+
+
+def query_cnpj(value, provider):
+    value = _cnpj(value)
+    if provider == 'nfse_adn' and not value.isdigit():
+        raise DomainError('Consulta ADN com CNPJ alfanumérico ainda depende de confirmação do contrato específico; o suporte do XML não comprova o parâmetro de consulta.',422,'reception_adn_alphanumeric_pending')
+    if provider not in {'nfe_distribution','nfse_adn'}:
+        raise DomainError('Provedor de recepção não autorizado.',400,'reception_operation')
+    return value
 
 
 def adn_access_mode(target, holder, allow_procuration=False):
-    target, holder = _cnpj(target), _cnpj(holder)
+    target, holder = query_cnpj(target,'nfse_adn'), query_cnpj(holder,'nfse_adn')
     if type(allow_procuration) is not bool:
         raise DomainError('Configuração de procuração inválida.', 503, 'reception_credentials')
     if target == holder:
@@ -80,6 +92,7 @@ class LocalA1Credentials:
         self.directory = directory
 
     def load(self, company_id, target, provider, environment):
+        target = query_cnpj(target,provider)
         configured = self.directory or os.environ.get('ESCRITURA_RECEPTION_CREDENTIALS_DIR')
         if not configured:
             raise DomainError('Recepção remota não configurada. Configure o A1 localmente de forma segura; não envie certificado ou senha pelo chat.', 503, 'reception_not_configured')

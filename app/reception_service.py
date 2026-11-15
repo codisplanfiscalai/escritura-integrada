@@ -18,7 +18,7 @@ from .importers import ImportProblem
 from .reception_adn import load_adn_json, read_adn_distribution
 from .reception import (ADN_ENDPOINTS, NFE_ENDPOINTS, adn_rejection, adn_request,
                         nfe_request, read_nfe_distribution)
-from .reception_credentials import LocalA1Credentials, _cnpj
+from .reception_credentials import LocalA1Credentials, _cnpj, query_cnpj
 from .reception_transport import MtlsTransport
 
 STATE_SCOPE = 'fiscal-reception-state-v1'
@@ -71,7 +71,7 @@ class ReceptionService:
         competence, key = period(payload.get('period')), self._key(payload.get('idempotency_key'))
         with self.db.read() as conn:
             company = self._access(conn, uid, cid, 'import')
-            target = _cnpj(company['tax_id'])
+            target = query_cnpj(company['tax_id'],provider)
             identity = digest({'provider':provider,'environment':environment,'period':competence,'target':target})
             old = self._operation(conn,cid,RUN_SCOPE,key)
             if old:

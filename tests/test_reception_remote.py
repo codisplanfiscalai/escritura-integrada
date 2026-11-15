@@ -34,13 +34,13 @@ THIRD = '998887770001' + cnpj_digits('998887770001')
 PASSWORD = b'SYNTHETIC-ONLY-NOT-A-REAL-CREDENTIAL'
 
 
-def make_certificate(tax_id=MATRIX, issuer=None, expired=False, malformed=False):
+def make_certificate(tax_id=MATRIX, issuer=None, expired=False, malformed=False, der_tag=0x0c):
     key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
     now=datetime.now(timezone.utc)
     name=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,'CERTIFICADO SINTETICO SEM VALOR FISCAL')])
     if issuer is None:
         issuer=(key,name)
-    other=b'\x0c\x0e'+tax_id.encode() if not malformed else b'\x0c\x03abc'
+    other=bytes([der_tag,14])+tax_id.encode() if not malformed else b'\x0c\x03abc'
     cert=(x509.CertificateBuilder().subject_name(name).issuer_name(issuer[1]).public_key(key.public_key())
           .serial_number(x509.random_serial_number()).not_valid_before(now-timedelta(days=2))
           .not_valid_after(now-timedelta(days=1) if expired else now+timedelta(days=1))

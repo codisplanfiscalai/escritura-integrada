@@ -25,8 +25,12 @@ func digits(_ value: String, _ minimum: Int, _ maximum: Int) -> Bool {
     return bytes.count >= minimum && bytes.count <= maximum && bytes.allSatisfy { $0 >= 48 && $0 <= 57 }
 }
 func validCNPJ(_ value: String) -> Bool {
-    guard digits(value,14,14), Set(value).count > 1 else { return false }
-    let d = value.utf8.map { Int($0 - 48) }
+    let bytes = Array(value.utf8)
+    guard bytes.count == 14, Set(bytes).count > 1,
+          bytes.prefix(12).allSatisfy({ (48...57).contains($0) || (65...90).contains($0) }),
+          bytes.suffix(2).allSatisfy({ (48...57).contains($0) }) else { return false }
+    // RFB: ASCII code minus 48, including A=17, B=18 ... Z=42.
+    let d = bytes.map { Int($0) - 48 }
     func check(_ weights: [Int], _ position: Int) -> Bool {
         let remainder = zip(d,weights).reduce(0) { $0 + $1.0 * $1.1 } % 11
         return d[position] == (remainder < 2 ? 0 : 11 - remainder)
@@ -110,6 +114,8 @@ var requestBody: Data? = nil
 var method: String
 var contentType: String? = nil
 if provider == "nfse_adn" {
+    // XML alphanumeric support is not proof of the ADN query parameter contract.
+    guard digits(target,14,14), digits(holder,14,14) else { fail("reception_adn_alphanumeric_pending") }
     guard digits(number,15,19), let numeric = UInt64(number), numeric <= UInt64(Int64.max), input["uf_code"] == nil else { fail("reception_operation") }
     guard target.prefix(8) == holder.prefix(8) || allow.boolValue else { fail("reception_certificate_identity") }
     let endpoints = ["production":"https://adn.nfse.gov.br/contribuintes", "restricted_production":"https://adn.producaorestrita.nfse.gov.br/contribuintes"]

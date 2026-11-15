@@ -13,6 +13,7 @@ import zlib
 from urllib.parse import urlencode
 from xml.etree import ElementTree as ET
 
+from .core import DomainError, normalize_cnpj
 from .importers import (ImportProblem, MAX_ARCHIVE_MEMBERS, MAX_EXPANDED_BYTES, MAX_FILE_BYTES,
                         _xml_tree)
 
@@ -44,16 +45,24 @@ def adn_nsu(value):
     return str(int(value)).zfill(15)
 
 
-def _tax_id(value):
-    # No silent removal of letters from the application's alphanumeric CNPJ.
-    if not isinstance(value, str) or not re.fullmatch(r'(?:[0-9]{11}|[0-9]{14})', value):
-        raise ImportProblem('RECEPTION_TAX_ID', 'Este contrato remoto aceita CPF/CNPJ numérico sem pontuação; CNPJ alfanumérico ainda depende de homologação própria.')
+def _tax_id(value, *, alphanumeric=False):
+    # Remote identifiers are canonical ASCII; never discard letters or punctuation.
+    if isinstance(value,str) and re.fullmatch(r'[0-9]{11}',value):
+        return value
+    if not isinstance(value,str) or not re.fullmatch(r'[0-9A-Z]{12}[0-9]{2}',value):
+        raise ImportProblem('RECEPTION_TAX_ID','Informe CPF numérico ou CNPJ ASCII completo, sem pontuação e com letras maiúsculas.')
+    try:
+        normalize_cnpj(value)
+    except DomainError:
+        raise ImportProblem('RECEPTION_TAX_ID','Dígitos verificadores do CNPJ inválidos.') from None
+    if not alphanumeric and not value.isdigit():
+        raise ImportProblem('ADN_ALPHANUMERIC_CONTRACT_PENDING','Consulta ADN com CNPJ alfanumérico ainda depende de confirmação do contrato específico; o suporte do XML não comprova o parâmetro de consulta.')
     return value
 
 
 def nfe_request(tax_id, uf_code, environment, last_nsu):
     """Build only distNSU. Never builds manifestation, issuance or cancellation."""
-    tax_id = _tax_id(tax_id)
+    tax_id = _tax_id(tax_id,alphanumeric=True)
     if environment not in NFE_ENDPOINTS:
         raise ImportProblem('RECEPTION_ENVIRONMENT', 'Escolha produção ou homologação para NF-e.')
     if uf_code not in {'11','12','13','14','15','16','17','21','22','23','24','25','26','27','28','29','31','32','33','35','41','42','43','50','51','52','53'}:

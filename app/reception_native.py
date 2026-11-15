@@ -102,7 +102,7 @@ class NativeA1Bridge:
             if process.returncode or result.get('ok') is not True:
                 allowed={'reception_certificate_identity','reception_certificate_expired','reception_credentials',
                          'reception_operation','reception_endpoint','reception_response_size','reception_response_encoding',
-                         'reception_transport_uncertain','reception_native_pin'}
+                         'reception_transport_uncertain','reception_native_pin','reception_adn_alphanumeric_pending'}
                 code=result.get('code')
                 _error(code if isinstance(code,str) and code in allowed else 'reception_native_invalid',502 if payload['action']=='query' else (409 if code=='reception_certificate_expired' else 503))
             return result

@@ -58,7 +58,7 @@ class ReceptionProtocolTests(unittest.TestCase):
         for value in ['', '-1', '1'*16, '１２', 1, True]:
             with self.subTest(value=value), self.assertRaises(ImportProblem):
                 nfe_request('11222333000181','35','production',value)
-        for args in [('12ABC34501DE35','35','production','0'), ('11222333000181','99','production','0'), ('11222333000181','35','restricted_production','0')]:
+        for args in [('12ABC34501DE30','35','production','0'), ('11222333000181','99','production','0'), ('11222333000181','35','restricted_production','0')]:
             with self.assertRaises(ImportProblem): nfe_request(*args)
         with self.assertRaises(ImportProblem): adn_request('11222333000181','homologation','0')
 

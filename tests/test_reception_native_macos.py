@@ -209,6 +209,39 @@ class NativeAppleTests(unittest.TestCase):
             code,result=self.invoke(payload|{'test_port':server.server_port},testing=True)
             self.assertNotEqual(0,code);self.assertEqual(expected,result['code'])
 
+    def test_native_alphanumeric_nfe_printable_identity_dv_and_adn_contract_boundary(self):
+        alpha='12ABC34501DE35'  # Official calculation example, no real taxpayer.
+        branch='12ABC3450001'+cnpj_digits('12ABC3450001')
+        numeric_branch='11222333S1N1'+cnpj_digits('11222333S1N1')
+        server,observed=self.server(body=b'<synthetic/>')
+        local={'test_port':server.server_port,'test_ca_base64':base64.b64encode(self.fixture.ca).decode()}
+        holders={MATRIX:(self.root/'client.p12').read_bytes()}
+        for index,holder in enumerate([alpha,branch]):
+            holders[holder]=self.fixture.make('alpha'+str(index),'otherName:2.16.76.1.3.3;PRINTABLESTRING:'+holder)
+        for holder,target in [(MATRIX,numeric_branch),(alpha,alpha),(alpha,branch),(branch,alpha)]:
+            raw=holders[holder]
+            inspected=self.bridge._invoke(self.input(pfx_base64=base64.b64encode(raw).decode()))
+            self.assertEqual(holder,inspected['holder_tax_id'])
+            identity=self.bridge.load(raw,PASSWORD,target,'nfe_distribution','homologation',False)
+            self.assertEqual(holder,identity.tax_id);self.assertEqual(target,identity.target)
+            for environment in ['production','homologation']:
+                code,result=self.invoke(self.query_payload(pfx_base64=base64.b64encode(raw).decode(),expected_holder=holder,
+                    certificate_sha256=inspected['certificate_sha256'],target=target,provider='nfe_distribution',
+                    environment=environment,uf_code='35',**local),testing=True)
+                self.assertEqual(0,code,result)
+                self.assertIn(('<CNPJ>'+target+'</CNPJ>').encode(),observed[-1][3])
+                self.assertEqual(inspected['certificate_sha256'],hashlib.sha256(observed[-1][2]).hexdigest())
+            count=len(observed)
+            payload=self.query_payload(pfx_base64=base64.b64encode(raw).decode(),expected_holder=holder,
+                    certificate_sha256=inspected['certificate_sha256'],target=target,allow_procuration=True,**local)
+            code,result=self.invoke(payload,testing=True)
+            self.assertNotEqual(0,code);self.assertEqual('reception_adn_alphanumeric_pending',result['code'])
+            self.assertEqual(count,len(observed))
+        for name,holder in [('bad-alpha-dv','12ABC34501DE30'),('lower-alpha',alpha.lower())]:
+            raw=self.fixture.make(name,'otherName:2.16.76.1.3.3;PRINTABLESTRING:'+holder)
+            code,result=self.invoke(self.input(pfx_base64=base64.b64encode(raw).decode()))
+            self.assertNotEqual(0,code);self.assertEqual('reception_certificate_identity',result['code'])
+
     def test_domain_api_native_capture_keeps_permissions_cursor_and_originals(self):
         # Base setup uses the real API/session/RBAC/SQLite, no cryptography import.
         import test_core as base
