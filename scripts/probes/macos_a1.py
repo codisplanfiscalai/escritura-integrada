@@ -94,6 +94,7 @@ def main():
                 positive=invoke({})
                 if positive.returncode or observed!=[der]:
                     raise RuntimeError('Native memory-only/PBES2/mTLS probe failed: '+positive.stdout.decode(errors='replace')[:250])
+                print(positive.stdout.decode(errors='replace'),flush=True)  # exclusively self-generated synthetic metadata
                 for changes,expected in [({'password':'WRONG-SYNTHETIC'},10),({'presentClient':False},20),
                                          ({'ca':str(root/'wrong-anchor.der')},20)]:
                     negative=invoke(changes)
