@@ -217,6 +217,8 @@ class Database:
             migrate_operational_settings(conn)
             from .migration_third_parties import migrate_third_parties
             migrate_third_parties(conn)
+            from .shared_registrations import migrate as migrate_shared_registrations
+            migrate_shared_registrations(conn)
             from .migration_fiscal_library import migrate as migrate_fiscal_library
             migrate_fiscal_library(conn)
             # The schema 6 marker is written only after every global migration
