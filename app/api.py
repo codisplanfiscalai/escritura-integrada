@@ -66,6 +66,8 @@ def create_app(data_dir=None, demo=False):
     register_fiscal_series(application,core,actor=lambda request:request.state.session["user"]["username"])
     from .bulk_api import register_bulk_routes
     register_bulk_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .shared_registration_api import register_routes as register_shared_routes
+    register_shared_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .third_party_api import register_third_party_routes
     register_third_party_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .lookups import LookupService

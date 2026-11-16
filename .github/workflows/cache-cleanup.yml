@@ -2,7 +2,7 @@ name: Retenção de caches Actions
 
 on:
   schedule:
-    - cron: '23 4 * * 0'
+    - cron: '23 4 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -12,16 +12,19 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 concurrency:
-  group: escritura-release-mutations
+  group: escritura-cache-cleanup
   queue: max
   cancel-in-progress: false
 
 jobs:
   cleanup:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

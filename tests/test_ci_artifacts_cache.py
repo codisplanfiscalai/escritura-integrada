@@ -279,6 +279,8 @@ class CacheGitHub:
         if endpoint.endswith('/actions/caches'):
             self.cache_reads += 1
             return iter(self.entries)
+        if endpoint.endswith('/pulls'):
+            return iter([])
         if endpoint.endswith('/actions/runs'):
             branches = self.active_after_refresh if self.cache_reads > 1 else self.active
             return iter([{'head_branch': name, 'event': 'push', 'pull_requests': []} for name in branches]

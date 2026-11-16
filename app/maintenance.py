@@ -114,7 +114,8 @@ def backup_before_schema(path):
     # column, not an early marker: an interrupted migration remains retryable.
     with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True)) as conn:
         missing_journal_party = 'participant_id' not in {r[1] for r in conn.execute('PRAGMA table_info(journal_lines)')}
-    if info['schema_version']>=SCHEMA_VERSION and not missing_journal_party:return None
+        missing_shared_registry = not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shared_registrations'").fetchone()
+    if info['schema_version']>=SCHEMA_VERSION and not missing_journal_party and not missing_shared_registry:return None
     return sqlite_backup(path,path.parent/'backups'/('antes-schema-'+str(SCHEMA_VERSION)+'-'+stamp()+'.sqlite3'))
 
 

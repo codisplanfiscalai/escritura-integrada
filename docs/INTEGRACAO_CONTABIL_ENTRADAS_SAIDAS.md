@@ -1,5 +1,7 @@
 # Integração Contábil — entradas e saídas
 
+Composição atual com develop dev.29: [sincronização, testes e limites](PR49_COMPOSICAO_DEV29.md). As evidências de dev.21/dev.23 abaixo permanecem históricas.
+
 Este documento registra o incremento original da PR49 em dev.21. A atualização com PR40/PR44 e as evidências atuais de dev.23 estão em [composição com develop](PR49_COMPOSICAO_DEVELOP.md).
 
 ## Inventário e base

@@ -76,6 +76,8 @@ def verify_release(gh, plan, branch, *, context=None):
     if gh.repository != REPOSITORY:
         raise ValueError('Conexão GitHub pertence a outro repositório.')
     check_head(gh, plan, branch, context=context)
+    if context is not None and getattr(context, 'ghcr_only', False):
+        return context.verify_ghcr_publication(gh, plan, branch)
     tag = 'develop' if branch == 'develop' else 'v' + plan['version']
     if gh.commit_sha(gh.ref('tags/' + tag)) != plan['source_sha']:
         raise RuntimeError('A tag da release não aponta para o commit solicitado.')
