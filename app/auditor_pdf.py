@@ -19,7 +19,7 @@ from .auditor_reports import amount, day, LABELS, STATUS, evidence_rows, calcula
 from .auditor_results import analytics
 from .auditor_presentation import eligible, counterpart, SEVERITY_ORDER
 
-NAVY='#12324A'; TEAL='#225F57'; LIGHT='#EDF3F6'; MINT='#E3F1EB'; WARN='#FFF1D1'; DANGER='#FBE7E5'; GRID='#C9D6DE'
+NAVY='#000000'; TEAL='#E8E8E8'; LIGHT='#F4F4F4'; MINT='#F4F4F4'; WARN='#F4F4F4'; DANGER='#E8E8E8'; GRID='#D1D1D1'
 WIDTH=770
 
 
@@ -34,14 +34,14 @@ def build_pdf(job):
     styles=getSampleStyleSheet()
     body=ParagraphStyle('audit-body',fontName='EscrituraSans',fontSize=8,leading=11,textColor=colors.HexColor(NAVY),spaceAfter=3)
     small=ParagraphStyle('audit-small',parent=body,fontSize=7,leading=9,spaceAfter=0)
-    heading=ParagraphStyle('audit-heading',parent=body,fontName='EscrituraSans-Bold',fontSize=17,leading=21,spaceAfter=12,keepWithNext=True)
+    heading=ParagraphStyle('audit-heading',parent=body,fontName='EscrituraSans-Bold',fontSize=12,leading=16,spaceAfter=12,keepWithNext=True)
     sub=ParagraphStyle('audit-sub',parent=heading,fontSize=11,leading=15,spaceBefore=12,spaceAfter=6)
-    white=ParagraphStyle('audit-white',parent=body,textColor=colors.white)
+    white=ParagraphStyle('audit-white',parent=body,textColor=colors.black)
     story=[]
     def p(text,style=body):return Paragraph(escape(str('—' if text is None else text)).replace('\n','<br/>'),style)
     def table(headers,rows,widths=None,numeric=()):
         widths=widths or [WIDTH/len(headers)]*len(headers)
-        data=[[p(h,ParagraphStyle('th',parent=small,fontName='EscrituraSans-Bold',textColor=colors.white)) for h in headers]]
+        data=[[p(h,ParagraphStyle('th',parent=small,fontName='EscrituraSans-Bold',textColor=colors.black)) for h in headers]]
         data += [[p(v,ParagraphStyle('num',parent=small,alignment=2) if c in numeric else small) for c,v in enumerate(row)] for row in rows]
         if not rows:data.append([p('Sem registros para esta seção.')]+['']*(len(headers)-1))
         t=LongTable(data,colWidths=widths,repeatRows=1,splitInRow=1,hAlign='LEFT')
@@ -50,9 +50,9 @@ def build_pdf(job):
     def chapter(title,description=None):
         story.extend([PageBreak(),p(title,heading)])
         if description:story.extend([p(description),Spacer(1,8)])
-    title=ParagraphStyle('cover-title',parent=heading,fontSize=22,leading=26,textColor=colors.white)
+    title=ParagraphStyle('cover-title',parent=heading,fontSize=12,leading=16,textColor=colors.black)
     header=Table([[p('AUDITOR FISCAL · ESCRITURA INTEGRADA',white)],[p('Relatório Analítico e Sintético',title)],[p('Conferência de documentos, tributos e IBS/CBS',white)],[p(f"{snapshot['company']['name']} · CNPJ {snapshot['company']['tax_id']}\n{day(job['start'])} a {day(job['end'])} · {STATUS.get(job['mode'],job['mode'])} · Auditoria #{job['id']}",white)]],colWidths=[WIDTH])
-    header.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor(NAVY)),('LEFTPADDING',(0,0),(-1,-1),18),('RIGHTPADDING',(0,0),(-1,-1),18),('TOPPADDING',(0,0),(-1,0),15),('BOTTOMPADDING',(0,-1),(-1,-1),14)]))
+    header.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor(TEAL)),('LEFTPADDING',(0,0),(-1,-1),18),('RIGHTPADDING',(0,0),(-1,-1),18),('TOPPADDING',(0,0),(-1,0),15),('BOTTOMPADDING',(0,-1),(-1,-1),14)]))
     story.extend([header,Spacer(1,14),p('Resumo executivo',sub)])
     kpis=[('Documentos elegíveis',overview['documents']),('Valor dos documentos','R$ '+amount(overview['total_value'])),('Base IBS/CBS informada','R$ '+amount(overview['ibs_cbs_base'])),('IBS + CBS informados','R$ '+amount(Decimal(overview['ibs_value'])+Decimal(overview['cbs_value']))),('Entradas',f"{overview['input_count']} · R$ {amount(overview['input_value'])}"),('Saídas',f"{overview['output_count']} · R$ {amount(overview['output_value'])}"),('Itens / classificação OK',f"{overview['items']} / {stats['classification_ok']}"),('Achados abertos / em revisão',stats['open_findings'])]
     cells=[]

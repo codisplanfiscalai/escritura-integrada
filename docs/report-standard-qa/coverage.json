@@ -1,0 +1,266 @@
+[
+  {
+    "kind": "ledger",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "ledger",
+    "count": 45,
+    "pages": 2,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-entries",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-entries",
+    "count": 45,
+    "pages": 3,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-outputs",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-outputs",
+    "count": 45,
+    "pages": 2,
+    "unchanged": true
+  },
+  {
+    "kind": "financial",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "financial",
+    "count": 45,
+    "pages": 40,
+    "unchanged": true
+  },
+  {
+    "kind": "cash-flow",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "cash-flow",
+    "count": 45,
+    "pages": 39,
+    "unchanged": true
+  },
+  {
+    "kind": "partners",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "partners",
+    "count": 45,
+    "pages": 38,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-book",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-book",
+    "count": 45,
+    "pages": 39,
+    "unchanged": true
+  },
+  {
+    "kind": "bank-movements",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "bank-movements",
+    "count": 45,
+    "pages": 38,
+    "unchanged": true
+  },
+  {
+    "kind": "diary",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "diary",
+    "count": 45,
+    "pages": 24,
+    "unchanged": true
+  },
+  {
+    "kind": "consolidated-diary",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "consolidated-diary",
+    "count": 45,
+    "pages": 27,
+    "unchanged": true
+  },
+  {
+    "kind": "trial-balance",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "trial-balance",
+    "count": 45,
+    "pages": 27,
+    "unchanged": true
+  },
+  {
+    "kind": "balance-sheet",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "balance-sheet",
+    "count": 45,
+    "pages": 29,
+    "unchanged": true
+  },
+  {
+    "kind": "income-statement",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "income-statement",
+    "count": 45,
+    "pages": 32,
+    "unchanged": true
+  },
+  {
+    "kind": "cost-centers",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "cost-centers",
+    "count": 45,
+    "pages": 32,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-documents",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-documents",
+    "count": 45,
+    "pages": 3,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-items",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-items",
+    "count": 45,
+    "pages": 5,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-operations",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-operations",
+    "count": 45,
+    "pages": 3,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-participants",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-participants",
+    "count": 45,
+    "pages": 3,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-classifications",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-classifications",
+    "count": 45,
+    "pages": 3,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-taxes",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-taxes",
+    "count": 45,
+    "pages": 18,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-inconsistencies",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-inconsistencies",
+    "count": 45,
+    "pages": 3,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-assessments",
+    "count": 0,
+    "pages": 1,
+    "unchanged": true
+  },
+  {
+    "kind": "fiscal-assessments",
+    "count": 45,
+    "pages": 5,
+    "unchanged": true
+  }
+]

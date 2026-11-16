@@ -81,7 +81,7 @@ def bookkeeping_document(booked):
 
 def report_revision(job):
     return digest({'snapshot':job['result']['snapshot_sha256'],'result':job['result'],
-                   'findings':job['findings'],'stale':job.get('stale_document_ids',[]),'logs':job.get('logs',[]),'attachments':job.get('attachments',[]),'template':'auditor-v3-editorial'})
+                   'findings':job['findings'],'stale':job.get('stale_document_ids',[]),'logs':job.get('logs',[]),'attachments':job.get('attachments',[]),'template':'auditor-v4-neutral-reports'})
 
 
 def persist_report(core,conn,cid,job,fmt,content,actor):

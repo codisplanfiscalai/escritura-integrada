@@ -38,8 +38,8 @@ VALUES = {'incoming': 'Entrada', 'outgoing': 'Saída', 'booked': 'Escriturado',
           'canceled': 'Cancelado', 'reversed': 'Estornado'}
 # Separate document identity from item and tax detail: readable columns at A4.
 DOCUMENT_COLUMNS = [('document_id', 45), ('date', 62), ('issue_date', 62), ('document', 65),
-                    ('model', 40), ('series', 34), ('partner_name', 157),
-                    ('partner_tax_id', 90), ('direction', 53), ('cfop', 39),
+                    ('model', 40), ('series', 34), ('partner_name', 144),
+                    ('partner_tax_id', 103), ('direction', 53), ('cfop', 39),
                     ('status', 65), ('total_cents', 96)]
 ITEM_COLUMNS = [('document_id', 43), ('date', 58), ('document', 55), ('item', 27),
                 ('description', 143), ('partner_name', 100), ('cfop', 35), ('ncm', 48),
@@ -77,19 +77,27 @@ def fiscal_pdf(result, first_page=1, show_numbers=False):
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, LongTable, TableStyle
 
+    from pathlib import Path
+    import reportlab
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    fonts = Path(reportlab.__file__).parent / 'fonts'
+    if 'AccountingSans' not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont('AccountingSans', str(fonts / 'Vera.ttf')))
+        pdfmetrics.registerFont(TTFont('AccountingSans-Bold', str(fonts / 'VeraBd.ttf')))
     out = BytesIO()
     page_size = landscape(A4)
     width, height = page_size
     margin = 30
     usable = width - 2 * margin - 12
     styles = {
-        'cell': ParagraphStyle('fiscal-cell', fontName='Helvetica', fontSize=8, leading=10,
+        'cell': ParagraphStyle('fiscal-cell', fontName='AccountingSans', fontSize=8, leading=10,
                                splitLongWords=True, spaceAfter=0),
-        'head': ParagraphStyle('fiscal-head', fontName='Helvetica-Bold', fontSize=8, leading=10),
-        'text': ParagraphStyle('fiscal-text', fontName='Helvetica', fontSize=9, leading=12,
+        'head': ParagraphStyle('fiscal-head', fontName='AccountingSans-Bold', fontSize=8, leading=10),
+        'text': ParagraphStyle('fiscal-text', fontName='AccountingSans', fontSize=9, leading=12,
                                spaceAfter=6, splitLongWords=True),
-        'section': ParagraphStyle('fiscal-section', fontName='Helvetica-Bold', fontSize=11,
-                                  leading=14, spaceBefore=10, spaceAfter=6, keepWithNext=True),
+        'section': ParagraphStyle('fiscal-section', fontName='AccountingSans-Bold', fontSize=11,
+                                  leading=14, spaceBefore=10, spaceAfter=6, keepWithNext=False),
     }
     def p(value, style='cell'):
         return Paragraph(escape(str(value)).replace('\n', '<br/>'), styles[style])
@@ -101,16 +109,16 @@ def fiscal_pdf(result, first_page=1, show_numbers=False):
         if first_page + doc.page - 1 > 99999:
             raise DomainError('Numeração das folhas excede o limite de 99999.')
         canvas.saveState()
-        canvas.setFont('Helvetica-Bold', 12)
+        canvas.setFont('AccountingSans-Bold', 12)
         canvas.drawString(margin, height - 27, title)
-        canvas.setFont('Helvetica', 8)
+        canvas.setFont('AccountingSans', 8)
         canvas.drawString(margin, height - 41, 'Período: ' + _display('date', result.get('start')) +
                           ' a ' + _display('date', result.get('end')))
         canvas.drawRightString(width - margin, height - 41, f'Folha: {first_page + doc.page - 1:05d}')
         canvas.setLineWidth(.5)
         canvas.line(margin, height - 48, width - margin, height - 48)
         company_header.drawOn(canvas, margin, height - 54 - company_height)
-        canvas.setFont('Helvetica', 7)
+        canvas.setFont('AccountingSans', 7)
         canvas.drawString(margin, 18, 'Escritura Integrada | Relatório auxiliar | Layout de referência não homologado Prosoft')
         canvas.drawRightString(width - margin, 18, title)
         canvas.restoreState()
@@ -154,10 +162,10 @@ def fiscal_pdf(result, first_page=1, show_numbers=False):
                           repeatRows=1, splitByRow=1, splitInRow=1, hAlign='LEFT')
         table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e9edf2')),
-            ('LINEBELOW', (0, 0), (-1, 0), .6, colors.HexColor('#475569')),
-            ('LINEBELOW', (0, 1), (-1, -1), .25, colors.HexColor('#d1d5db')),
-            ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e8e8e8')),
+            ('LINEBELOW', (0, 0), (-1, 0), .6, colors.HexColor('#000000')),
+            ('LINEBELOW', (0, 1), (-1, -1), .25, colors.HexColor('#d1d1d1')),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2), ('RIGHTPADDING', (0, 0), (-1, -1), 2),
             ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
         story.extend([table, Spacer(1, 6)])

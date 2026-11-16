@@ -20,7 +20,7 @@ def register_evolution_routes(app,core,db,actor,check_period):
     def report_models(cid:int,request:Request):
         from .report_models import CATALOG
         from .permissions import readable
-        with db.read() as conn:return [m for m in CATALOG if readable(conn,cid,'fiscal.reports' if m['kind'].startswith('fiscal-') else 'accounting.reports')]
+        with db.read() as conn:return [m for m in CATALOG if readable(conn,cid,'fiscal.reports' if m['kind'].startswith('fiscal-') else 'financial.reports' if m['kind'] in {'financial','cash-flow','partners'} else 'accounting.reports')]
 
     @app.get('/api/companies/{cid}/module-imports/layouts')
     def layouts(cid:int,module:str):return [{'id':k,**v} for k,v in LAYOUTS.items() if v['module']==module]

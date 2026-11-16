@@ -25,6 +25,11 @@ LABELS = dict(LABELS, number='Lcto.', journal_ids='Lançamentos de origem',
               account_id_filter='Filtro de conta', cost_center_id_filter='Filtro de centro')
 # Frações de largura, em vez de colunas genéricas igualmente espaçadas.
 COLUMNS = {
+ 'financial': [('due_date', .10), ('document', .10), ('partner_name', .20), ('description', .20), ('amount_cents', .10), ('paid_cents', .10), ('balance_cents', .10), ('status', .10)],
+ 'cash-flow': [('date', .10), ('document', .10), ('partner_name', .20), ('description', .25), ('event', .15), ('cash_cents', .20)],
+ 'partners': [('partner_name', .25), ('document', .15), ('due_date', .10), ('amount_cents', .15), ('paid_cents', .15), ('balance_cents', .20)],
+ 'fiscal-book': [('date', .10), ('document', .10), ('series', .06), ('model', .06), ('partner_name', .25), ('cfop', .08), ('total_cents', .15), ('status', .20)],
+ 'bank-movements': [('date', .10), ('bank_account', .16), ('reference', .12), ('description', .28), ('inflow_cents', .11), ('outflow_cents', .11), ('balance_cents', .12)],
  'diary': [('date', .10), ('number', .06), ('document', .09), ('classifier', .11),
            ('account_name', .16), ('history', .20), ('debit_cents', .09), ('credit_cents', .09), ('cost_center_name', .10)],
  'consolidated-diary': [('date', .10), ('access_code', .08), ('account_name', .28),
@@ -53,8 +58,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
     """
     validate_first_page(first_page)
     kind = result['kind']
-    if kind not in COLUMNS:
-        raise DomainError('Modelo contábil indisponível para este relatório.')
+
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle
@@ -69,7 +73,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
     if 'AccountingSans' not in pdfmetrics.getRegisteredFontNames():
         pdfmetrics.registerFont(TTFont('AccountingSans', str(fonts / 'Vera.ttf')))
         pdfmetrics.registerFont(TTFont('AccountingSans-Bold', str(fonts / 'VeraBd.ttf')))
-    title = REPORT_TITLES[kind]
+    title = result.get('title') or REPORT_TITLES.get(kind,kind)
     out = BytesIO()
     pagesize = landscape(A4)
     width = pagesize[0] - 64
@@ -77,7 +81,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
                            topMargin=72, bottomMargin=42, title=title, author='Escritura Integrada')
     normal = ParagraphStyle('accounting', fontName='AccountingSans', fontSize=8, leading=11, splitLongWords=True)
     heading = ParagraphStyle('section', parent=normal, fontName='AccountingSans-Bold', fontSize=10,
-                             leading=14, spaceBefore=10, spaceAfter=6, keepWithNext=True)
+                             leading=14, spaceBefore=10, spaceAfter=6, keepWithNext=False)
     numeric = ParagraphStyle('amount', parent=normal, alignment=2)
     def p(value, style=normal):
         return Paragraph(escape(str(value if value is not None else '')).replace('\n', '<br/>'), style)
@@ -87,12 +91,12 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
         if key.endswith('_cents'):
             amount = Decimal(value) / 100
             text = f'{abs(amount):,.2f}'.replace(',', '@').replace('.', ',').replace('@', '.')
-            if key in {'opening_cents', 'closing_cents', 'balance_cents'}:
+            if key in {'opening_cents', 'closing_cents', 'balance_cents'} and kind not in {'financial', 'cash-flow', 'partners', 'bank-movements', 'fiscal-book', 'assessment-memory'}:
                 return text + (' C' if amount < 0 else ' D')
             return ('-' if amount < 0 else '') + text
         if key == 'report_group':
             return GROUPS.get(value, value)
-        if key == 'date':
+        if key == 'date' or key.endswith('_date'):
             return '/'.join(str(value).split('-')[::-1])
         return display(key, value)
     def table(data, widths, header=True):
@@ -116,7 +120,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
              p('Período: ' + val('date', result['start']) + ' a ' + val('date', result['end'])),
              p(NOTICE), p(result.get('scope_note', '')),
              p('Filtros: ' + ('; '.join({'account_id':'Conta','cost_center_id':'Centro de custo','query':'Pesquisa','direction':'Operação','status':'Situação'}.get(key,LABELS.get(key,key.replace('_',' ').capitalize()))+': '+str(display(key,value)) for key,value in filters.items() if value not in (None,'')) or 'Sem filtros adicionais.')),
-             p('Valores em reais. Saldos: D = devedor; C = credor. Resultado positivo = lucro; negativo = prejuízo.'), Spacer(1, 8)]
+             p('Valores em reais. Saldos não informados permanecem em branco.' if kind in {'financial', 'cash-flow', 'partners', 'bank-movements', 'fiscal-book', 'assessment-memory'} else 'Valores em reais. Saldos: D = devedor; C = credor. Resultado positivo = lucro; negativo = prejuízo.'), Spacer(1, 8)]
     rows = result.get('rows', [])
     sections = OrderedDict()
     for index, row in enumerate(rows, 1):
@@ -132,7 +136,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
         else:
             key, name = '', ''
         sections.setdefault(key, (name, []))[1].append((index, row))
-    columns = COLUMNS[kind]
+    columns = COLUMNS.get(kind) or [(key, 1) for key in list(dict.fromkeys(k for row in rows for k in row))[:6]]
     keys = [key for key, _ in columns]
     # Registro original estável permite conferir anexo mesmo com agrupamento.
     widths = [width * .04] + [width * .96 * weight / sum(w for _, w in columns) for _, weight in columns]
@@ -173,7 +177,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
         canvas.drawString(32, pagesize[1] - 32, title.upper())
         canvas.setFont('AccountingSans', 8)
         canvas.drawRightString(pagesize[0] - 32, pagesize[1] - 32, f'Folha: {page:05d}')
-        canvas.drawString(32, pagesize[1] - 49, 'Continuação' if document.page > 1 else 'Escritura Integrada - impressão contábil')
+        canvas.drawString(32, pagesize[1] - 49, 'Continuação' if document.page > 1 else 'Escritura Integrada - relatório auxiliar')
         canvas.line(32, pagesize[1] - 57, pagesize[0] - 32, pagesize[1] - 57)
         canvas.setFont('AccountingSans', 7)
         canvas.drawString(32, 24, 'Baseada nos campos, layout não homologado | ' + val('date', result['start']) + ' a ' + val('date', result['end']))

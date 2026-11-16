@@ -61,7 +61,7 @@ def export_audit(job,format):
                 for c in row:
                     if isinstance(c.value,str):c.data_type='s'
                     c.alignment=Alignment(wrap_text=True,vertical='top')
-            for c in sheet[1]:c.font=Font(color='FFFFFF',bold=True);c.fill=PatternFill('solid',fgColor='225F57')
+            for c in sheet[1]:c.font=Font(color='000000',bold=True);c.fill=PatternFill('solid',fgColor='E8E8E8')
         from .auditor_workbook import style_workbook
         style_workbook(wb,job)
         wb.save(output)

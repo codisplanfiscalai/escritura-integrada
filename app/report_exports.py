@@ -2,7 +2,6 @@
 from decimal import Decimal
 from io import BytesIO
 import json
-from xml.sax.saxutils import escape
 from .core import DomainError,decimal_text
 
 LABELS={'partner_state':'UF do participante','partner_ie':'Inscrição estadual do participante','company_ie':'Inscrição estadual','date':'Data','document':'Documento','document_id':'Origem fiscal','journal_id':'Lançamento','title_id':'Título','item':'Item',
@@ -26,7 +25,7 @@ def display(key,value):
     if isinstance(value,bool):return 'Sim' if value else 'Não'
     return VALUES.get(str(value),str(value))
 
-REPORT_TITLES={'diary':'Diário Geral','consolidated-diary':'Diário Consolidado',
+REPORT_TITLES={'bank-movements':'Movimentação bancária','diary':'Diário Geral','consolidated-diary':'Diário Consolidado',
     'ledger':'Razão','trial-balance':'Balancete','cost-centers':'Movimentos por centro de custo',
     'balance-sheet':'Balanço patrimonial','income-statement':'Demonstração do resultado',
     'fiscal-book':'Livro auxiliar fiscal','financial':'Títulos por vencimento',
@@ -36,13 +35,16 @@ REPORT_TITLES={'diary':'Diário Geral','consolidated-diary':'Diário Consolidado
 def export_report(result,kind):
     rows=result['rows'];keys=list(dict.fromkeys(k for r in rows for k in r))
     labels=dict(LABELS)
+    if kind=='pdf':
+        from .report_models import resolve_model_id,report_model_pdf
+        model=resolve_model_id(result['kind'])
+        if model:return report_model_pdf(result,model)
+        from .accounting_report_models import accounting_pdf
+        return accounting_pdf(result)
     if result.get('row_scope')=='analytical_posting_lines':
         from .fiscal_report_models import ANALYTICAL_LABELS
         labels.update(ANALYTICAL_LABELS)
         labels['total_cents']='Valor contábil da linha (R$)'
-        if kind=='pdf':
-            from .fiscal_report_models import fiscal_pdf
-            return fiscal_pdf(result)
     title=result.get('title') or REPORT_TITLES.get(result['kind'],result['kind']);output=BytesIO()
     if kind=='xlsx':
         from openpyxl import Workbook
@@ -91,7 +93,7 @@ def export_report(result,kind):
                         if isinstance(cell.value,str):cell.data_type='s'
         for ws in wb:
             ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions if ws is not meta else 'A1:B1'
-            for cell in ws[1]:cell.font=Font(bold=True,color='FFFFFF');cell.fill=PatternFill('solid',fgColor='225F57')
+            for cell in ws[1]:cell.font=Font(bold=True,color='000000');cell.fill=PatternFill('solid',fgColor='E8E8E8')
             for col in range(1,ws.max_column+1):ws.column_dimensions[get_column_letter(col)].width=24 if col>1 else 20
         meta.column_dimensions['B'].width=100
         for row in meta:
@@ -99,43 +101,8 @@ def export_report(result,kind):
                 if isinstance(cell.value,str):cell.data_type='s'
                 cell.alignment=Alignment(wrap_text=True,vertical='top')
         wb.save(output);return output.getvalue(),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    if kind!='pdf':raise DomainError('Formato deve ser PDF ou Excel.')
-    from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,LongTable,TableStyle,PageBreak
-    from reportlab.lib.styles import getSampleStyleSheet,ParagraphStyle
-    from reportlab.lib.pagesizes import A4,landscape
-    from reportlab.lib import colors
-    from pathlib import Path
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-    import reportlab
-    fonts=Path(reportlab.__file__).parent/'fonts'
-    if 'EscrituraSans' not in pdfmetrics.getRegisteredFontNames():
-        pdfmetrics.registerFont(TTFont('EscrituraSans',str(fonts/'Vera.ttf')))
-        pdfmetrics.registerFont(TTFont('EscrituraSans-Bold',str(fonts/'VeraBd.ttf')))
-        pdfmetrics.registerFontFamily('EscrituraSans',normal='EscrituraSans',bold='EscrituraSans-Bold')
-    styles=getSampleStyleSheet()
-    for style in styles.byName.values():style.fontName='EscrituraSans-Bold' if 'Heading' in style.name else 'EscrituraSans'
-    small=ParagraphStyle('ReportCell',fontName='EscrituraSans',fontSize=7.5,leading=10)
-    body=ParagraphStyle('ReportBody',parent=styles['BodyText'],fontSize=9,leading=12)
-    def para(value,style=small):return Paragraph(escape(str(value)),style)
-    pagesize=landscape(A4);width=pagesize[0]-60
-    doc=SimpleDocTemplate(output,pagesize=pagesize,leftMargin=30,rightMargin=30,topMargin=35,bottomMargin=30,title=title,author='Escritura Integrada')
-    story=[para(title,styles['Heading1']),para(result['company_name'],styles['Heading2']),para(f"Período: {result['start']} a {result['end']}",body),Spacer(1,8),para(result['scope_note'],body),Spacer(1,10)]
-    if result.get('filters'):story+=[para('Filtros: '+json.dumps(result['filters'],ensure_ascii=False),body),Spacer(1,8)]
-    totals=[[para(labels.get(k,k)),para(display(k,v))] for k,v in result['totals'].items()]
-    if totals:
-        table=LongTable(totals,colWidths=[width*.7,width*.3]);table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eef5f3')),('VALIGN',(0,0),(-1,-1),'TOP'),('BOTTOMPADDING',(0,0),(-1,-1),5)]));story.extend([table,Spacer(1,16)])
-    anchors=[k for k in ['document','date','account_name','partner_name','tax'] if k in keys][:2]
-    rest=[k for k in keys if k not in anchors];blocks=[anchors+rest[i:i+5] for i in range(0,len(rest),5)] or [anchors]
-    for index,columns in enumerate(blocks):
-        if not columns:continue
-        if index:story+=[PageBreak(),para(title+' · continuação',styles['Heading2']),para(result['company_name'],body),Spacer(1,10)]
-        content=[[para(labels.get(k,k)) for k in columns]]+[[para(display(k,r.get(k))) for k in columns] for r in rows]
-        table=LongTable(content,colWidths=[width/len(columns)]*len(columns),repeatRows=1,hAlign='LEFT',splitByRow=1,splitInRow=1)
-        table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#dceee7')),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f5f7f8')]),('GRID',(0,0),(-1,-1),.25,colors.HexColor('#d5dfe2')),('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]));story.append(table)
-    if not rows:story.append(para('Nenhum registro nos filtros selecionados.',body))
-    def footer(canvas,document):
-        canvas.setFont('EscrituraSans',8);canvas.drawString(30,15,'Escritura Integrada · relatório auxiliar');canvas.drawRightString(pagesize[0]-30,15,f'Página {document.page}')
-    doc.build(story,onFirstPage=footer,onLaterPages=footer);return output.getvalue(),'application/pdf'
+    raise DomainError('Formato deve ser PDF ou Excel.')
 
 LABELS.update(document_state='Estado documental', cancellation_source='Fonte do cancelamento', cancellation_responsible='Responsável pelo cancelamento', cancellation_reason='Motivo do cancelamento', book_cancellation='Cancelamento conforme livro validado')
+
+LABELS.update(bank_account='Conta bancária', bank_id='Movimento de origem', reference='Referência', source_hash='Hash da origem', external_id='Identificador bancário', inflow_cents='Entradas (R$)', outflow_cents='Saídas (R$)', net_movement_cents='Movimento líquido (R$)')

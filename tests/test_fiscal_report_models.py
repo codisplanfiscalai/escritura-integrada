@@ -90,6 +90,7 @@ class FiscalModelTests(unittest.TestCase):
 
     def test_assessments_show_actual_selection_and_traceability(self):
         _, text = extract(sample('fiscal-assessments'))
+        text = ' '.join(text.split())
         for expected in ['Competência', 'Crédito anterior', 'Débitos', 'Créditos', 'A recolher',
                          'Crédito a transportar', 'Responsável', 'Justificativa',
                          'Operador <fiscal>', 'Conferência & revisão concluídas',

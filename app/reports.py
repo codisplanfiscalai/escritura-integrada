@@ -3,10 +3,15 @@ import calendar
 from .core import DomainError, company_row, integer, iso_date, period, select_one
 
 class ReportsMixin:
-    def business_report(self,cid,kind,start,end,account_id=None,cost_center_id=None,query='',status='',direction=''):
+    def business_report(self,cid,kind,start,end,account_id=None,cost_center_id=None,query='',status='',direction='',bank_account=''):
         start,end=iso_date(start),iso_date(end)
         if start>end:raise DomainError('Período inicial posterior ao final.')
         query=str(query or '').casefold()
+        if kind=='bank-movements':
+            from .bank_report import bank_report
+            if account_id is not None or cost_center_id is not None or query or status or direction:
+                raise DomainError('Movimentação bancária aceita somente empresa, conta bancária e período.')
+            return bank_report(self.db,cid,start,end,bank_account)
         with self.db.read(snapshot=True) as conn:
             company=company_row(conn,cid)
             clauses=['l.company_id=?'];params=[cid]

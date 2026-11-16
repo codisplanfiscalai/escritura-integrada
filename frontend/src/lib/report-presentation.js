@@ -1,7 +1,7 @@
 // Apresentação da consulta. Não altera valores, grupos ou decisões tributárias.
 import {money,date,statusLabel,taxId} from './format.js';
 
-const labels={document_id:'Origem',journal_id:'Lançamento',title_id:'Título',ledger_id:'Memória',
+const labels={bank_id:'Movimento bancário',bank_account:'Conta bancária',reference:'Referência',source_hash:'Hash da origem',external_id:'Identificador bancário',inflow_cents:'Entradas',outflow_cents:'Saídas',net_movement_cents:'Movimento líquido',document_id:'Origem',journal_id:'Lançamento',title_id:'Título',ledger_id:'Memória',
  document:'Documento',number:'Número',date:'Escrituração',issue_date:'Emissão',series:'Série',model:'Espécie',
  partner_name:'Participante',partner_tax_id:'CPF/CNPJ',partner_state:'UF',partner_ie:'Inscrição estadual',
  cfop:'CFOP',ncm:'NCM',ncms:'NCMs da linha',line:'Linha',cst_icms:'CST ICMS',csosn:'CSOSN',origin:'Origem da mercadoria',
@@ -84,6 +84,7 @@ export function formatReportValue(key,value){
  return values[value]||String(value);
 }
 const schemas={
+ 'bank-movements':['bank_id','date','bank_account','reference','description','inflow_cents','outflow_cents','balance_cents'],
  diary:['journal_id','date','number','document','account_name','history','debit_cents','credit_cents','cost_center_name'],
  ledger:['journal_id','date','account_name','number','document','counterpart','history','debit_cents','credit_cents','balance_cents'],
  'consolidated-diary':['date','access_code','account_name','cost_center_name','debit_cents','credit_cents','journal_ids'],

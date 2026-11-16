@@ -19,6 +19,11 @@ CATALOG=[
     'status':'field_based_not_homologated','supported':True,
     'limitations':'Falta exemplar impresso equivalente para certificar aparência Prosoft. Não equivale a livro legal homologado.'}
    for kind,name,source in [
+    ('financial','Títulos por vencimento','Domínio financeiro existente'),
+    ('cash-flow','Caixa realizado','Baixas e estornos existentes'),
+    ('partners','Conciliação de clientes e fornecedores','Conciliação existente'),
+    ('fiscal-book','Livro auxiliar fiscal','Documentos declarados existentes'),
+    ('bank-movements','Movimentação bancária','Transações bancárias importadas; saldos de extrato não disponíveis'),
     ('diary','Diário Geral','CTB020600 / formulários'),
     ('consolidated-diary','Diário Consolidado','CTB020800 / formulários'),
     ('trial-balance','Balancete','CTB021400 / formulários'),
