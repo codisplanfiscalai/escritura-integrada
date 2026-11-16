@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "checks": [
+    "September: 52 documents across two pages; August: 1; October: zero cards/grid/export count",
+    "Combined operation/status/search, rapid month changes and KeepAlive navigation retain correct cards",
+    "Company B and next exercise empty; returning to A/current exercise restores September",
+    "Documents, journals, journal lines, titles and audit hashes unchanged after UI filtering/navigation"
+  ],
+  "console_errors": [],
+  "synthetic_only": true,
+  "browser_version": "141.0.7390.37"
+}

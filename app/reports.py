@@ -110,12 +110,23 @@ class ReportsMixin:
             if kind in {'diary','ledger'}:totals={'debit_cents':sum(r['debit_cents'] for r in rows),'credit_cents':sum(r['credit_cents'] for r in rows)}
             ledger_groups=[]
             if kind=='ledger':
+                # Counterparts include every line of the journal, even when the
+                # report filters an account/center or hides rows through search.
+                counterparts={}
+                if rows:
+                    for line in conn.execute('''SELECT DISTINCT l.journal_id,l.account_id,a.access_code
+                        FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+                        JOIN effective_accounts a ON a.id=l.account_id
+                        WHERE l.company_id=? AND j.date BETWEEN ? AND ?''',(cid,start,end)):
+                        counterparts.setdefault(line['journal_id'],[]).append((line['account_id'],line['access_code']))
+                by_account={}
                 for r in rows:
-                    others=[x['access_code'] for x in conn.execute('SELECT DISTINCT a.access_code FROM journal_lines l JOIN effective_accounts a ON a.id=l.account_id WHERE l.company_id=? AND l.journal_id=? AND l.account_id<>?',(cid,r['journal_id'],r['account_id']))]
-                    r['counterpart']=others[0] if len(others)==1 else 'Diversos' if others else ''
+                    others={code for aid,code in counterparts.get(r['journal_id'],[]) if aid!=r['account_id']}
+                    r['counterpart']=next(iter(others)) if len(others)==1 else 'Diversos' if others else ''
+                    by_account.setdefault(r['account_id'],[]).append(r)
                 for a in conn.execute('SELECT id,access_code,classifier,name FROM effective_accounts WHERE company_id=? AND analytical=1 ORDER BY classifier',(cid,)):
                     if account_id and a['id']!=account_id:continue
-                    movements=[r for r in rows if r['account_id']==a['id']]
+                    movements=by_account.get(a['id'],[])
                     if movements or openings.get(a['id']):ledger_groups.append({'account_id':a['id'],'access_code':a['access_code'],'classifier':a['classifier'],'account_name':a['name'],'opening_cents':openings.get(a['id'],0),'closing_cents':balances.get(a['id'],openings.get(a['id'],0)),'filtered':bool(query),'rows':movements})
                 if query:note+=' Pesquisa restringe os movimentos exibidos; os saldos incluem todos os movimentos da conta no período e centro selecionados.'
             return {'ledger_groups':ledger_groups,'company_code':company['prosoft_code'] or company['code'],'company_tax_id':company['tax_id'],'kind':kind,'company_id':cid,'company_name':company['name'],'start':start,'end':end,'rows':rows,'totals':totals,'scope_note':note,'account_id':account_id,'cost_center_id':cost_center_id,'filters':{'account_id':account_id,'cost_center_id':cost_center_id,'query':query,'status':status,'direction':direction}}
