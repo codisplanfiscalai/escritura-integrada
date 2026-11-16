@@ -146,6 +146,64 @@ class PostgresMigrationStageTests(CheckpointFixture):
             self.assertCountEqual([False, True], [f.result(timeout=30) for f in futures])
         verify_stage(self.database, self.checkpoint)
 
+    def registry_checkpoint(self):
+        from app.migration_checkpoint import create_checkpoint
+        third = self.core.save_registration(1, 'third-party',
+            {'name': 'Terceiro staging sintético', 'tax_id': '11144477735', 'data': {}}, 'fixture')
+        accountant = self.core.save_registration(1, 'accountant',
+            {'name': 'Contador staging sintético', 'tax_id': '52998224725',
+             'data': {'crc': '1SP000000', 'crc_state': 'SP', 'category': 'accountant'}}, 'fixture')
+        for cid in (1, 2):
+            for row, kind in ((third, 'third-party'), (accountant, 'accountant')):
+                self.core.link_registration(cid, kind, row['id'],
+                    {'company_id': cid, 'version': row['version']}, 'fixture')
+        checkpoint = self.root / 'registry_checkpoint'
+        create_checkpoint(self.source, checkpoint)
+        return checkpoint
+
+    def test_registry_stage_preserves_profiles_links_products_documents_and_restore(self):
+        checkpoint = self.registry_checkpoint()
+        before = inventory(self.source)
+        result = stage_checkpoint(self.database, checkpoint)
+        self.assertEqual('verified_staging_only', result['status'])
+        self.assertFalse(result['cutover_performed'])
+        tables = {t['name']: t for t in before['tables']}
+        names = ('shared_registrations', 'shared_registration_links', 'companies',
+                 'masters', 'documents', 'titles', 'user_permissions')
+        with self.core.db.read() as source, self.database.read() as target:
+            for name in names:
+                columns = [c['name'] for c in tables[name]['columns']]
+                expected = [dict(r) for r in source.execute(f'SELECT * FROM "{name}"')]
+                stored = target.execute('SELECT company_key,payload FROM migration_rows WHERE table_name=%s ORDER BY ordinal', (name,)).fetchall()
+                actual = [dict(zip(columns, map(decode_cell, r['payload']['cells']))) for r in stored]
+                self.assertCountEqual(expected, actual, name)
+                if name == 'shared_registration_links':
+                    self.assertEqual({'1', '2'}, {r['company_key'] for r in stored})
+                    self.assertTrue(any(r['master_id'] is None for r in actual))
+                    self.assertTrue(any(r['master_id'] is not None for r in actual))
+        self.assertTrue(stage_checkpoint(self.database, checkpoint)['duplicate'])
+        verify_stage(self.database, checkpoint)
+        self.assertEqual(before, inventory(self.source))
+        restore_checkpoint(checkpoint, self.root / 'registry_rollback')
+        self.assertEqual(before, inventory(self.root / 'registry_rollback/escritura.sqlite3'))
+        import sqlite3
+        with sqlite3.connect(self.root / 'registry_rollback/escritura.sqlite3') as restored:
+            self.assertEqual([], restored.execute('PRAGMA foreign_key_check').fetchall())
+
+    def test_registry_stage_rejects_missing_link_without_repairing_it(self):
+        checkpoint = self.registry_checkpoint()
+        stage_checkpoint(self.database, checkpoint)
+        with self.database.transaction() as conn:
+            count = conn.execute("SELECT count(*) AS n FROM migration_rows WHERE table_name='shared_registration_links'").fetchone()['n']
+            conn.execute("DELETE FROM migration_rows WHERE table_name='shared_registration_links' AND ordinal=1")
+        with self.assertRaises(StageConflict):
+            verify_stage(self.database, checkpoint)
+        with self.assertRaises(StageConflict):
+            stage_checkpoint(self.database, checkpoint)
+        with self.database.read() as conn:
+            self.assertEqual(count - 1, conn.execute("SELECT count(*) AS n FROM migration_rows WHERE table_name='shared_registration_links'").fetchone()['n'])
+        verify_checkpoint(checkpoint)
+
     def test_large_signed_totals_beyond_int64_are_preserved_in_manifest(self):
         with self.core.db.transaction() as conn:
             conn.execute("UPDATE migration_probe SET company_id=1,amount_cents=?", (2**63-1,))

@@ -61,3 +61,17 @@ ESCRITURA_DATA_DIR="$PWD/artifacts/cadastros-synced-qa/bootstrap" PYTHONPATH=.:t
 ```
 
 Os três roteiros de navegador de evidência cadastral, desempenho e guias foram atualizados para os novos nomes de menu, preservando suas verificações. Essa atualização passou na compilação, mas os roteiros não foram executados nesta rodada; a inspeção visual permanece pendente pelo limite descrito acima. A suíte backend integral, PostgreSQL real, binários e imagens não foram reexecutados nesta composição.
+
+## Correção do smoke da PR56 e cobertura adicional
+
+O CI 43832630368 falhou porque `smoke_browser.py` ainda procurava o menu antigo de participantes/produtos. A falha foi reproduzida no Chromium 141.0.7390.37. O roteiro agora abre **Vínculos locais de terceiros**, mantendo as assertivas anteriores. A única referência restante ao nome antigo é intencional no modo baseline histórico de `browser_performance.py`. Nenhum workflow foi alterado.
+
+`browser_shared_registrations.py`, chamado pelo mesmo smoke, acrescenta criação, edição, cancelamento, desativação, consulta na segunda empresa sem vínculo prévio, uso e preservação do mesmo ID/vínculos para Terceiros e Contadores. Esses dois grupos passaram no Chromium 141; quatro capturas dos editores e listagens em 1440×1000 foram inspecionadas. Não é homologação visual completa: permissões restritas continuam cobertas principalmente por testes API; os novos cadastros não foram inspecionados em todas as resoluções. O smoke local avançou por 14 grupos e falhou depois em `browser_exports.py`, esperando domcontentloaded da janela de impressão. A assertiva e a falha foram preservadas. Instalar Chromium 151 pelo comando oficial do Playwright falhou por arquivo ZIP truncado; a validação nessa versão depende do CI.
+
+### PostgreSQL: transporte verificado, sem runtime de domínio
+
+Cadastros continua operando sobre SQLite. O staging PostgreSQL existente guarda as linhas codificadas em `migration_rows` e o manifesto em `migration_checkpoint`; não cria tabelas operacionais de Cadastros, não executa CRUD/RBAC do domínio em PostgreSQL e não realiza cutover.
+
+Dois novos testes em `test_postgres_migration_stage.py` criam perfis sintéticos e vínculos nas duas empresas, incluindo master local de terceiro e vínculo de contador sem master. Comparam integralmente perfis, vínculos, empresas, masters/produtos, documentos, títulos e permissões após transporte; conferem segregação de empresa, repetição idempotente, fonte intacta e restauração SQLite com foreign_key_check. A remoção deliberada de um vínculo no staging deve ser detectada sem reparo automático. A integridade referencial operacional permanece validada no SQLite/restauração; o staging PostgreSQL verifica equivalência do transporte, não FKs operacionais do domínio.
+
+Localmente passaram 23 testes de Cadastros/checkpoint; os 11 testes de staging PostgreSQL foram pulados explicitamente por falta de servidor/DSN descartável. A fixture nova de Cadastros/checkpoint foi executada separadamente e verificada. O CI existente chama esse módulo com PostgreSQL real obrigatório; somente seu resultado no novo head comprova a execução dos dois casos adicionais. Os 19 testes backend e nove de staging PostgreSQL do head anterior não abrangiam estes novos casos e não representam suporte operacional de Cadastros nesse banco.
