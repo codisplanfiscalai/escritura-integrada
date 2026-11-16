@@ -21,6 +21,19 @@ def check_context(env, run_id, job):
         raise ValueError('Handoff exige o próprio run de release confiável, nunca artefatos de PR.')
 
 
+def archive_names(manifest):
+    names = []
+    for name in IMAGE_NAMES:
+        digest = manifest['images'][name].get('digest')
+        if digest is None:
+            names.append(name)
+        elif not DIGEST.fullmatch(digest):
+            raise ValueError('Digest de imagem reutilizada inválido: ' + name)
+    if 'app' not in names:
+        raise ValueError('Handoff validate deve incluir o app recém-construído.')
+    return names
+
+
 def export_handoff(directory, manifest, run_id, env):
     from export_images import save_gzip
     check_context(env, run_id, 'docker')
@@ -29,10 +42,11 @@ def export_handoff(directory, manifest, run_id, env):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     archive = directory / 'images.tar.gz'
-    save_gzip([manifest['images'][n]['reference'] for n in IMAGE_NAMES], archive, compresslevel=1)
+    names = archive_names(manifest)
+    save_gzip([manifest['images'][n]['reference'] for n in names], archive, compresslevel=1)
     write_json(directory / 'handoff.json', {'schema': 'escritura-image-handoff/1', 'run_id': str(run_id),
                'run_attempt': env.get('GITHUB_RUN_ATTEMPT'), 'archive_sha256': sha256_file(archive),
-               'archive_size': archive.stat().st_size, 'manifest': manifest})
+               'archive_size': archive.stat().st_size, 'archive_images': names, 'manifest': manifest})
 
 
 def verify_handoff(directory, expected, run_id, env):
@@ -54,6 +68,9 @@ def verify_handoff(directory, expected, run_id, env):
         item, wanted = manifest['images'][name], expected['images'][name]
         if any(item.get(k) != wanted.get(k) for k in IDENTITY) or not DIGEST.fullmatch(item.get('image_id') or ''):
             raise ValueError('Inputs/ID do handoff divergentes: ' + name)
+    names = archive_names(manifest)
+    if receipt.get('archive_images') != names:
+        raise ValueError('Inventário do handoff diverge das imagens novas e dos digests reutilizáveis.')
     archive = directory / 'images.tar.gz'
     if archive.stat().st_size != receipt.get('archive_size') or sha256_file(archive) != receipt.get('archive_sha256'):
         raise ValueError('Arquivo handoff corrompido; nenhuma imagem será carregada/publicada.')
@@ -79,9 +96,9 @@ def verify_handoff(directory, expected, run_id, env):
                     continue
                 if isinstance(config, dict) and {'os', 'architecture', 'config'} <= config.keys():
                     configs[member.name] = ('sha256:' + hashlib.sha256(raw).hexdigest(), config)
-    if not isinstance(records, list) or len(records) != len(IMAGE_NAMES):
+    if not isinstance(records, list) or len(records) != len(names):
         raise ValueError('Inventário Docker ausente ou incompleto.')
-    by_tag = {item['reference']: (name, item) for name, item in manifest['images'].items()}
+    by_tag = {item['reference']: (name, item) for name, item in manifest['images'].items() if name in names}
     seen = set()
     for record in records:
         tags = record.get('RepoTags', [])

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from image_tools import DIGEST, ROOT, IMAGE_NAMES, image_plan, load_catalog, run, write_json
-from image_handoff import export_handoff, verify_handoff
+from image_handoff import archive_names, export_handoff, verify_handoff
 
 
 def inspect_image(reference):
@@ -151,7 +151,7 @@ def main():
         if args.handoff:
             handed, archive = verify_handoff(args.handoff, manifest, args.run_id, os.environ)
             run(["docker", "image", "load", "--input", archive.resolve()])
-            for name in IMAGE_NAMES:
+            for name in archive_names(handed):
                 actual = inspect_image(manifest["images"][name]["reference"])
                 assert_identity(name, manifest["images"][name], actual, args.revision)
                 if actual["image_id"] != handed["images"][name]["image_id"]:
@@ -161,12 +161,18 @@ def main():
             image = manifest["images"][name]
             exists = publish and remote_exists(image["reference"])
             digest = pinned_remote(image["reference"]) if exists else (pinned_remote(image["reference"], optional=True) if not publish and name != "app" else None)
+            cached = handed['images'][name] if handed else None
+            if cached and cached.get('digest'):
+                if not exists or digest != cached['digest']:
+                    raise ValueError("Tag/digest remoto mudou desde validate: " + image['reference'])
             if digest:
                 pinned = image["repository"] + "@" + digest
                 run(["docker", "pull", "--platform", "linux/amd64", pinned])
                 run(["docker", "tag", pinned, image["reference"]])
                 actual = inspect_image(image["reference"])
                 assert_identity(name, image, actual, args.revision)
+                if cached and cached.get('digest') and actual['image_id'] != cached['image_id']:
+                    raise ValueError("ID remoto mudou desde validate: " + image['reference'])
                 image.update(reused=True, image_id=actual["image_id"], digest=digest, reuse_source="registry_digest")
             elif handed:
                 actual = inspect_image(image["reference"])

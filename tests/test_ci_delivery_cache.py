@@ -15,7 +15,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import build_images as builds
-from image_handoff import verify_handoff
+from image_handoff import archive_names, verify_handoff
 from image_tools import image_plan, sha256_file, write_json
 from scripts.ci.delivery_policy import delivery_mode, desktop_enabled
 from scripts.ci.ghcr_publication import receipt
@@ -50,6 +50,7 @@ class HandoffTests(unittest.TestCase):
                 item = tarfile.TarInfo(name); item.size = len(raw)
                 out.addfile(item, io.BytesIO(raw))
             for name, image in self.manifest['images'].items():
+                if image.get('digest'): continue
                 labels = {'io.escritura.content-id': image['content_id'],
                           'org.opencontainers.image.version': self.plan['version'],
                           'org.opencontainers.image.revision': ('b' if wrong_revision else 'a') * 40}
@@ -61,7 +62,7 @@ class HandoffTests(unittest.TestCase):
             add('manifest.json', json.dumps(records).encode())
         archive = self.dir / 'images.tar.gz'
         write_json(self.dir / 'handoff.json', {'schema': 'escritura-image-handoff/1', 'run_id': '123', 'run_attempt': '1',
-                   'manifest': self.manifest, 'archive_sha256': sha256_file(archive), 'archive_size': archive.stat().st_size})
+                   'manifest': self.manifest, 'archive_images': archive_names(self.manifest), 'archive_sha256': sha256_file(archive), 'archive_size': archive.stat().st_size})
 
     def check(self, plan=None, env=None, run_id='123'):
         return verify_handoff(self.dir, plan or self.plan, run_id, env or self.env)
@@ -71,6 +72,18 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(result['images'], self.manifest['images'])
         self.assertTrue(archive.is_file())
         self.check(env=dict(self.env, GITHUB_RUN_ATTEMPT='2'))
+
+    def test_already_pinned_services_are_not_duplicated_in_archive(self):
+        for name, item in self.manifest['images'].items():
+            if name != 'app': item['digest'] = 'sha256:' + 'e'*64
+        self.archive()
+        result, archive = self.check()
+        self.assertEqual(archive_names(result), ['app'])
+        with tarfile.open(archive) as bundle:
+            self.assertEqual(len(json.load(bundle.extractfile('manifest.json'))), 1)
+        receipt_path = self.dir/'handoff.json'; value=json.loads(receipt_path.read_text())
+        value['archive_images'].append('base'); write_json(receipt_path,value)
+        with self.assertRaises(ValueError): self.check()
 
     def test_changed_commit_version_catalog_platform_or_build_inputs_fail(self):
         for key, value in [('source_sha', 'b' * 40), ('version', '9.9.9-dev.99'),
@@ -282,13 +295,16 @@ class ImmutableReuseTests(unittest.TestCase):
 
 
 class BuildCompositionTests(unittest.TestCase):
-    def run_build(self, *, warm=False, handoff=False, invalid_handoff=False):
+    def run_build(self, *, warm=False, handoff=False, invalid_handoff=False, changed_remote=False):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
         root = Path(temporary.name); version = (ROOT/'VERSION').read_text().strip()
         (root/'VERSION').write_text(version)
         plan = image_plan(version, 'develop', 'a'*40)
         handed = copy.deepcopy(plan)
         for index, image in enumerate(handed['images'].values(),1): image['image_id'] = 'sha256:' + str(index)*64
+        if handoff and warm:
+            for name,item in handed['images'].items():
+                if name != 'app': item['digest']='sha256:'+'e'*64
         calls = []
         def run(command, **kwargs):
             command = [str(x) for x in command]; calls.append(command)
@@ -300,7 +316,7 @@ class BuildCompositionTests(unittest.TestCase):
             return result
         def inspect(reference):
             image = next(x for x in handed['images'].values() if x['reference'] == reference)
-            return {'platform':'linux/amd64','image_id':image['image_id'], 'digest':'sha256:'+'e'*64,
+            return {'platform':'linux/amd64','image_id':('sha256:'+'f'*64 if changed_remote and image['reference']==handed['images']['base']['reference'] else image['image_id']), 'digest':'sha256:'+'e'*64,
                     'labels':{'io.escritura.content-id':image['content_id'],
                               'org.opencontainers.image.revision':'a'*40,
                               'org.opencontainers.image.version':version}}
@@ -310,24 +326,28 @@ class BuildCompositionTests(unittest.TestCase):
         with patch.object(sys,'argv',argv), patch.object(builds,'ROOT',root), patch.object(builds,'image_plan',return_value=copy.deepcopy(plan)), \
              patch.object(builds,'run',side_effect=run), patch.object(builds,'inspect_image',side_effect=inspect), \
              patch.object(builds,'pinned_remote',return_value='sha256:'+'e'*64 if warm else None), \
-             patch.object(builds,'remote_exists',return_value=False), \
+             patch.object(builds,'remote_exists',side_effect=lambda ref: bool(warm and handoff and ref != handed['images']['app']['reference'])), \
              patch.object(builds,'verify_handoff',side_effect=ValueError('stale') if invalid_handoff else None, return_value=(handed,root/'images.tar.gz')), \
              patch.object(builds,'public_pull_probe',return_value={'public_pullable':True}):
-            if invalid_handoff:
+            if invalid_handoff or changed_remote:
                 with self.assertRaises(ValueError): builds.main()
             else: self.assertEqual(builds.main(),0)
         return calls
 
     def test_cold_validate_builds_six_warm_validate_one_and_handoff_publish_zero(self):
-        for options, expected in (({},6), ({'warm':True},1), ({'handoff':True},0)):
+        for options, expected in (({},6), ({'warm':True},1), ({'handoff':True},0), ({'handoff':True,'warm':True},0)):
             calls = self.run_build(**options)
             self.assertEqual(sum(c[:3] == ['docker','buildx','build'] for c in calls), expected)
             self.assertEqual(sum(len(c)>1 and c[1]=='scripts/smoke_images.py' for c in calls), 1)
             if not options.get('handoff'): self.assertFalse(any(c[:2]==['docker','push'] for c in calls))
-            if options.get('warm'):
+            if options.get('warm') and not options.get('handoff'):
                 pulls=[c for c in calls if c[:2]==['docker','pull']]
                 self.assertEqual(len(pulls),5); self.assertTrue(all('@sha256:' in c[-1] for c in pulls))
 
     def test_invalid_handoff_blocks_all_load_build_and_push_commands(self):
         calls = self.run_build(handoff=True,invalid_handoff=True)
         self.assertFalse(any(c[:3] in (['docker','image','load'],['docker','buildx','build']) or c[:2]==['docker','push'] for c in calls))
+
+    def test_changed_remote_image_after_validate_blocks_publication(self):
+        calls = self.run_build(handoff=True,warm=True,changed_remote=True)
+        self.assertFalse(any(c[:2]==['docker','push'] for c in calls))
