@@ -33,6 +33,8 @@ def create_app(data_dir=None, demo=False):
     @asynccontextmanager
     async def lifespan(application):
         worker.recover()
+        if not demo:
+            application.state.backups.start()
         from .import_package_cleanup import scheduler
         cleanup_task = asyncio.create_task(scheduler(database))
         try: yield
@@ -41,6 +43,7 @@ def create_app(data_dir=None, demo=False):
             import contextlib
             with contextlib.suppress(asyncio.CancelledError): await cleanup_task
             await asyncio.to_thread(worker.close)
+            await asyncio.to_thread(application.state.backups.close)
     application = FastAPI(lifespan=lifespan, title="Escritura Integrada", version=__version__, docs_url=None, redoc_url=None)
     application.state.core = core
     application.state.db = database
@@ -72,6 +75,8 @@ def create_app(data_dir=None, demo=False):
     application.state.lookups = LookupService(database)
     from .docker_updates import register as register_docker_updates
     register_docker_updates(application, core)
+    from .backups import register as register_backups
+    register_backups(application, core)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
     @application.exception_handler(DomainError)

@@ -38,3 +38,6 @@ release-output/
 storage-plan*.json
 storage-plan*.images.yaml
 compose.named*.yaml
+# Encrypted fiscal backups and external recovery keys must never be versioned.
+*.eibk
+*.key
