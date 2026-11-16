@@ -3,7 +3,7 @@ import {ref,watch,computed,onActivated,onDeactivated,onUnmounted} from 'vue';
 import {state,company,api,scope,can,allowedApi} from '../lib/workspace';
 import {useSuggestedCompetence} from '../lib/context-preferences.js';
 import {money,normalized} from '../lib/format';
-import {createProsoftExport,prosoftDownload} from '../lib/prosoft-export.js';
+import {createProsoftExport,prosoftDownload,prosoftManifest} from '../lib/prosoft-export.js';
 const props=defineProps({area:{type:String,default:'accounting'}});
 const competence=ref('');useSuggestedCompetence(state,competence);
 const routine=computed(()=>props.area+'.prosoft'),fiscal=computed(()=>props.area==='fiscal');
@@ -40,6 +40,7 @@ function addCfop(){if(!/^[0-9]{4}$/.test(newCfop.value)){s.error='Informe quatro
 const profile=computed({get:()=>fiscal.value?(s.config.record_types.length===2?'both':s.config.record_types[0]):(s.config.record_types.includes('CTA')?'journals_cta':'journals'),set:value=>{s.config.record_types=fiscal.value?(value==='both'?['incoming_notes','outgoing_notes']:[value]):(value==='journals_cta'?['LC1','LC2','CTA']:['LC1','LC2']);}});
 const ctaEnabled=computed(()=>s.config.record_types.includes('CTA'));
 const summary=computed(()=>s.preview?.manifest);
+const hasShortReferences=computed(()=>(summary.value?.trace||[]).some(row=>row.document_reference));
 const visibleTrace=computed(()=>(summary.value?.trace||[]).slice(0,100));
 const visibleWarnings=computed(()=>(summary.value?.warnings||[]).slice(0,100));
 const visibleSkipped=computed(()=>(summary.value?.skipped||[]).slice(0,100));
@@ -84,7 +85,7 @@ const warningLabel=code=>({FISCAL_TREATMENT_REQUIRED:'Tratamento do livro ainda 
      <label class="inline-choice"><input v-model="mapping.confirmed" type="checkbox"/>Conta do CFOP {{cfop}} conferida</label>
      <button class="button small" @click="delete s.config.cfop_accounts[cfop]">Remover CFOP {{cfop}}</button>
     </div>
-    <p class="message subtle">Itens, faturas, cadastros, ST/FCP/DIFAL, PIS/COFINS, IBS/CBS, ajustes e canceladas não são exportados. Campos sem origem conhecida ficam em branco; confira como o importador de destino trata esses brancos.</p>
+    <p class="message subtle">Itens, faturas, cadastros, ST/FCP/DIFAL, PIS/COFINS, IBS/CBS e ajustes não são exportados. Canceladas identificadas pelo livro validado e escrituradas são incluídas com valor zero e indicador próprio. Campos sem origem conhecida ficam em branco; confira como o importador de destino trata esses brancos.</p>
    </template>
    <template v-else>
     <h2>Mapeamento das contas</h2>
@@ -123,18 +124,19 @@ const warningLabel=code=>({FISCAL_TREATMENT_REQUIRED:'Tratamento do livro ainda 
  <section v-if="s.preview" class="panel report-controls" aria-label="Prévia da exportação Prosoft">
   <h2>Conferência do lote</h2><p>{{s.preview.filename}} · competência {{competence}} · plano {{s.config.plan_code}}</p>
   <template v-if="fiscal">
-   <div class="summary-strip"><div v-for="(total,direction) in summary.totals" :key="direction"><span>{{direction==='incoming'?'Entradas':'Saídas'}}</span><strong>{{total.documents}} notas · {{total.records}} registros · {{money(total.total_cents)}}</strong></div></div>
+   <div class="summary-strip"><div v-for="(total,direction) in summary.totals" :key="direction"><span>{{direction==='incoming'?'Entradas':'Saídas'}}</span><strong>{{total.documents}} notas · {{total.records}} registros · {{money(total.total_cents)}} · {{total.cancelled_documents||0}} canceladas</strong></div></div>
    <p>Selecionados: {{summary.selection_count}} documentos · {{money(summary.selected_total_cents)}}. Não exportados: {{summary.skipped.length}}. Avisos: {{summary.warnings.length}} linhas.</p>
    <details v-if="summary.warnings.length"><summary>Avisos informativos ({{summary.warnings.length}})</summary><p v-for="(w,i) in visibleWarnings" :key="i">Documento #{{w.document_id}}, linha {{w.line}}: {{w.codes.map(warningLabel).join('; ')}}.</p><p v-if="summary.warnings.length>100">Mostrando os primeiros 100 avisos. O manifesto do download contém todos.</p></details>
    <details v-if="summary.skipped.length" open><summary>Documentos não exportados ({{summary.skipped.length}})</summary><p v-for="(row,i) in visibleSkipped" :key="i">Documento #{{row.document_id}} · {{money(row.total_cents)}} · {{skipLabel(row.reason)}}</p><p v-if="summary.skipped.length>100">Mostrando os primeiros 100. A prévia e o manifesto preservam todos os motivos.</p></details>
   </template>
   <template v-else><p>{{summary.journals}} lançamentos · {{summary.records}} registros · CTA {{summary.record_counts?.CTA||0}}</p><p>Débitos {{money(summary.debit_cents)}} · créditos {{money(summary.credit_cents)}}</p></template>
-  <details><summary>Origem dos registros ({{summary.trace.length}})</summary><div class="table-scroll"><table><thead><tr><th>Registro</th><th>Origem</th><th v-if="fiscal">Escrituração / emissão</th><th>Total</th></tr></thead><tbody><tr v-for="(row,i) in visibleTrace" :key="i"><td>{{fiscal?`${row.file} · ${row.record}`:row.order}}</td><td>{{fiscal?`Documento #${row.document_id} · ${row.number}`:`Lançamento #${row.journal_id} · ${row.journal_number}`}}</td><td v-if="fiscal">{{row.posting_date}} / {{row.issue_date}}</td><td>{{money(row.total_cents)}}</td></tr></tbody></table></div><p v-if="summary.trace.length>100">Mostrando os primeiros 100 registros. A exportação inclui todos os registros cobertos.</p></details>
+  <p v-if="!fiscal&&hasShortReferences" class="report-note">Referências longas recebem forma curta somente neste arquivo. As originais permanecem nos lançamentos e no mapa de conferência.</p>
+  <details><summary>Origem dos registros ({{summary.trace.length}})</summary><div class="table-scroll"><table><thead><tr><th>Registro</th><th>Origem</th><th v-if="fiscal">Situação</th><th v-else>Referência no arquivo / original</th><th v-if="fiscal">Escrituração / emissão</th><th>Total</th></tr></thead><tbody><tr v-for="(row,i) in visibleTrace" :key="i"><td>{{fiscal?`${row.file} · ${row.record}`:row.order}}</td><td>{{fiscal?`Documento #${row.document_id} · ${row.number}`:`Lançamento #${row.journal_id} · ${row.journal_number}`}}</td><td v-if="fiscal">{{row.cancelled?'Cancelada no livro':'Regular'}}</td><td v-else>{{row.document_reference?.exported||'Mantida'}}<small v-if="row.document_reference">{{row.document_reference.original}}</small></td><td v-if="fiscal">{{row.posting_date}} / {{row.issue_date}}</td><td>{{money(row.total_cents)}}</td></tr></tbody></table></div><p v-if="summary.trace.length>100">Mostrando os primeiros 100 registros. A exportação inclui todos os registros cobertos.</p></details>
   <details><summary>Conversões de texto para ASCII ({{summary.text_changes.length}})</summary><p v-for="(change,i) in summary.text_changes" :key="i">{{change.field}}: {{change.original}} → {{change.exported}}</p></details>
   <label v-if="summary.text_changes.length" class="inline-choice"><input v-model="s.ascii" type="checkbox" :disabled="disabled"/>Revisei e aceito as conversões de texto exibidas.</label>
   <label class="inline-choice"><input v-model="s.reviewed" type="checkbox" :disabled="disabled"/>Conferi a empresa, o plano e os mapeamentos no destino.</label>
   <button v-if="can(routine,'export')" class="button primary" :disabled="disabled||!s.reviewed||(summary.text_changes.length&&!s.ascii)||(fiscal&&!summary.trace.length)" @click="controller.run(true)">Confirmar exportação</button>
-  <p v-if="s.result"><a class="button outline" :href="prosoftDownload(s.result)" download>Baixar {{s.result.filename}}</a></p>
+  <p v-if="s.result"><a class="button outline" :href="prosoftDownload(s.result)" download>Baixar {{s.result.filename}}</a> <a v-if="!fiscal&&hasShortReferences" class="button outline" :href="prosoftManifest(s.result)" download>Baixar mapa de referências</a></p>
   <small class="wrap-anywhere">SHA-256: {{s.preview.sha256}}</small>
   <p class="report-note">Repetir o download não cria outro lote no aplicativo. Reimportar o mesmo TXT no Prosoft pode duplicar movimentos; confira o histórico no destino.</p>
  </section>

@@ -18,6 +18,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+from deploy_storage import TARGETS
 from build_images import assert_identity, remote_exists
 from export_images import save_gzip, verify_load
 from image_tools import GHCR_PREFIX, IMAGE_NAMES, OPTIONAL_NAMES, image_plan, load_catalog, validate_manifest, validate_version
@@ -91,11 +92,27 @@ class InfrastructureTests(unittest.TestCase):
     def test_runtime_lock_pins_all_runtime_packages_and_windows_marker(self):
         text = (ROOT / "docker/runtime.lock").read_text()
         blocks = [b for b in text.split("\n\n") if re.search(r"(?m)^[a-z][\w.-]*==", b)]
-        self.assertEqual(len(blocks), 38)
+        self.assertEqual(len(blocks), 41)
         for block in blocks:
             self.assertRegex(block, r"--hash=sha256:[0-9a-f]{64}")
         self.assertIn('colorama==0.4.6 ; sys_platform == "win32"', text)
+        for pin in ('cryptography==50.0.0', 'cffi==2.1.1', 'pycparser==3.0'):
+            self.assertIn(pin, text)
         self.assertNotIn("--extra-index-url", text)
+
+    def test_a1_runtime_platform_markers_preserve_macos_intel_base_app(self):
+        from packaging.requirements import Requirement
+        from scripts.ci.dependencies import runtime_constraints
+        pins=[Requirement(line) for line in runtime_constraints((ROOT/'docker/runtime.lock').read_text()).splitlines()]
+        a1=[pin for pin in pins if pin.name in {'cryptography','cffi','pycparser'}]
+        self.assertEqual(3,len(a1))
+        for system,machine,expected in [('darwin','x86_64',False),('darwin','arm64',True),('linux','x86_64',True),('win32','AMD64',True)]:
+            for pin in a1:
+                self.assertEqual(expected,pin.marker.evaluate({'sys_platform':system,'platform_machine':machine}))
+        requirement=next(Requirement(line) for line in (ROOT/'requirements.txt').read_text().splitlines() if line.startswith('cryptography=='))
+        self.assertFalse(requirement.marker.evaluate({'sys_platform':'darwin','platform_machine':'x86_64'}))
+        spec=(ROOT/'escritura-integrada-macos.spec').read_text()
+        self.assertIn("if platform.machine() != 'x86_64':",spec)
 
     def test_distribution_names_are_safe_and_semver_plus_maps_to_oci(self):
         self.assertEqual(validate_version("1.2.3-dev.4+build.5"), "1.2.3-dev.4_build.5")
@@ -144,7 +161,13 @@ class InfrastructureTests(unittest.TestCase):
                 self.assertEqual(service["pull_policy"], "always" if name == "app" else "missing")
                 self.assertIn("healthcheck", service)
                 for mount in service.get("volumes", []):
-                    self.assertIn(mount.split(":")[0], data["volumes"])
+                    self.assertEqual(mount["type"], "bind")
+                    expected = "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name
+                    if name == "app":
+                        expected = "${ESCRITURA_APP_DATA_BIND:-" + expected + "}"
+                    self.assertEqual(mount["source"], expected)
+                    self.assertEqual(mount["target"], TARGETS[name])
+                    self.assertEqual(mount["bind"], {"create_host_path": False})
                 count += len(service.get("ports", []))
                 if name != "app":
                     self.assertEqual(service["profiles"], [name])
@@ -161,9 +184,8 @@ class InfrastructureTests(unittest.TestCase):
         self.assertNotEqual(prod["name"], dev["name"])
         self.assertNotEqual(prod["services"]["app"]["ports"], dev["services"]["app"]["ports"])
         for data in (prod, dev):
-            for volume in data["volumes"].values():
-                self.assertNotIn("name", volume)
-                self.assertNotIn("external", volume)
+            self.assertNotIn("volumes", data)
+        self.assertNotEqual(prod["services"]["app"]["volumes"], dev["services"]["app"]["volumes"])
         self.assertEqual((ROOT / "compose.yaml").read_bytes(), (ROOT / "deploy/production/compose.yaml").read_bytes())
 
     def test_dockge_ports_use_short_syntax_with_the_same_loopback_and_tcp_mapping(self):
@@ -228,6 +250,9 @@ class InfrastructureTests(unittest.TestCase):
             pairs = dict(line.split("=", 1) for line in value.splitlines() if "=" in line and not line.startswith("#"))
             self.assertEqual(pairs["ESCRITURA_PORT"], port)
             self.assertEqual(pairs["COMPOSE_PROJECT_NAME"], "escritura-" + environment)
+            self.assertEqual(pairs["ESCRITURA_APP_DATA_BIND"], "")
+            example = (ROOT / 'deploy' / environment / '.env.example').read_text()
+            self.assertIn('ESCRITURA_APP_DATA_BIND=\n', example)
             self.assertNotIn("@sha256", value)
             for key, content in pairs.items():
                 if "PASSWORD" in key:
@@ -271,7 +296,7 @@ class InfrastructureTests(unittest.TestCase):
                 before = {k: v for k, v in base["services"][name].items() if k not in {"image", "pull_policy"}}
                 after = {k: v for k, v in merged["services"][name].items() if k not in {"image", "pull_policy"}}
                 self.assertEqual(before, after)
-            self.assertEqual(base["volumes"], merged["volumes"])
+            self.assertEqual(base.get("volumes", {}), merged.get("volumes", {}))
             self.assertEqual(base["name"], merged["name"])
 
     def test_ci_validates_online_and_fixed_configs_for_each_optional_profile(self):
@@ -312,9 +337,14 @@ class InfrastructureTests(unittest.TestCase):
             shutil.copytree(ROOT / "deploy", root / "deploy")
             (root / "docs").mkdir()
             (root / "docker").mkdir()
+            (root / "scripts").mkdir()
+            shutil.copy2(ROOT / "scripts/deploy_storage.py", root / "scripts/deploy_storage.py")
+            shutil.copy2(ROOT / "docs/DOCKER_STORAGE.md", root / "docs/DOCKER_STORAGE.md")
             shutil.copy2(ROOT / "docs/DEPLOY.md", root / "docs/DEPLOY.md")
             shutil.copy2(ROOT / "docker/THIRD-PARTY.md", root / "docker/THIRD-PARTY.md")
             poison = b"SYNTHETIC_SECRET_MUST_NEVER_BE_PACKAGED"
+            (root / "data/private-stack/app").mkdir(parents=True)
+            (root / "data/private-stack/app/private.xml").write_bytes(poison)
             for name in (".env", "escritura.sqlite3", "recovered.exe", "private-source.py"):
                 (root / name).write_bytes(poison)
             output = Path(temp) / "output"
@@ -323,18 +353,26 @@ class InfrastructureTests(unittest.TestCase):
             for entry in result["packages"]:
                 with zipfile.ZipFile(output / entry["file"]) as archive:
                     self.assertEqual({Path(n).name for n in archive.namelist()},
-                                     {"compose.yaml", "compose.release.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "THIRD-PARTY.md"})
+                                     {"compose.yaml", "compose.release.yaml", "compose.existing-bind.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "STORAGE.md", "deploy_storage.py", "THIRD-PARTY.md"})
                     for name in archive.namelist():
                         self.assertNotIn(poison, archive.read(name))
                     compose_name = next(name for name in archive.namelist() if Path(name).name == "compose.yaml")
                     bundled_compose = json.loads(archive.read(compose_name))
                     template = json.loads((root / "deploy" / entry["environment"] / "compose.yaml").read_text())
                     self.assertEqual(bundled_compose, template)
+                    existing_name = next(name for name in archive.namelist() if Path(name).name == "compose.existing-bind.yaml")
+                    existing = json.loads(archive.read(existing_name))
+                    self.assertEqual(set(existing), {"services"})
+                    self.assertEqual(set(existing["services"]), {"app"})
+                    self.assertEqual(existing["services"]["app"], {"volumes": [{"type": "bind", "source": "./data/app", "target": "/data", "bind": {"create_host_path": False}}]})
                     # Assert the shipped bytes, not just equality to a possibly stale template.
                     for service_name, service in bundled_compose["services"].items():
                         self.assertEqual(service["pull_policy"], "always" if service_name == "app" else "missing")
                     release_name = next(name for name in archive.namelist() if Path(name).name == "compose.release.yaml")
                     self.assertEqual(json.loads(archive.read(release_name)), release_compose(data))
+                    deploy_doc = archive.read(next(name for name in archive.namelist() if Path(name).name == "DEPLOY.md")).decode()
+                    self.assertIn("(STORAGE.md)", deploy_doc)
+                    self.assertNotIn("(DOCKER_STORAGE.md", deploy_doc)
                     readme_name = next(name for name in archive.namelist() if Path(name).name == "LEIA-ME.txt")
                     readme = archive.read(readme_name).decode()
                     self.assertIn("-f compose.yaml -f compose.release.yaml up -d --pull never", readme)
@@ -342,6 +380,8 @@ class InfrastructureTests(unittest.TestCase):
                     self.assertIsInstance(bundled_compose["services"]["app"]["ports"][0], str)
                 self.assertTrue((output / (entry["file"] + ".sha256")).is_file())
             self.assertEqual(result, package(data, output, root=root))
+            self.assertTrue(result["contains_admin_helper"])
+            self.assertFalse(result["contains_application_source"])
 
     def test_save_stream_is_valid_gzip_and_failure_removes_partial(self):
         payload = b"synthetic docker-save stream\n" * 1000

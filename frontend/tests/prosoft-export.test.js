@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createProsoftExport,prosoftDefaults,prosoftDownload} from '../src/lib/prosoft-export.js';
+import {createProsoftExport,prosoftDefaults,prosoftDownload,prosoftManifest} from '../src/lib/prosoft-export.js';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 function setup(area='fiscal'){
  const ctx={cid:1,year:'2026',module:area,period:'2026-11',area},calls=[];
@@ -63,7 +63,7 @@ test('ASCII and destination review apply to the displayed preview without changi
 test('accounting uses its own endpoint and legacy file route',async()=>{
  const c=setup('accounting');await c.load();await c.run();c.s.reviewed=true;await c.run(true);
  assert.equal(c.calls.at(-1).path,'/prosoft/confirm');assert.equal(c.calls.at(-1).body.batch,'1');
- assert.equal(prosoftDownload(c.s.result),'/api/companies/1/exports/8/download');c.dispose();
+ assert.equal(prosoftDownload(c.s.result),'/api/companies/1/exports/8/download');assert.equal(prosoftManifest(c.s.result),'/api/companies/1/prosoft/exports/8/manifest?download=1');c.dispose();
 });
 test('deactivated or disposed views reject pending work',async()=>{
  const c=setup();await c.load();const pending=deferred();c.setRequest(()=>pending.promise);const old=c.run();c.dispose();pending.resolve({preview_hash:'wrong'});await old;
@@ -89,4 +89,9 @@ test('a confirmed file response cannot recreate a download link after switching 
  const pending=deferred();c.setRequest(()=>pending.promise);const confirm=c.run(true);
  c.ctx.cid=2;c.reset('0088');pending.resolve({id:99,filename:'old-company.zip'});await confirm;
  assert.equal(c.s.result,null);assert.equal(c.s.preview,null);assert.equal(c.s.config.company_code,'0088');c.dispose();
+});
+
+test('reference map URL uses the confirmed company and cannot become a fiscal download',()=>{
+ assert.equal(prosoftManifest({cid:7,id:91,area:'accounting'}),'/api/companies/7/prosoft/exports/91/manifest?download=1');
+ assert.equal(prosoftManifest({cid:7,id:91,area:'fiscal'}),'');
 });

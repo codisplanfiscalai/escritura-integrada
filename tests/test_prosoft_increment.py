@@ -88,12 +88,12 @@ class FiscalCodecTests(unittest.TestCase):
         self.assertEqual(b'18.00', line[135:140]); self.assertEqual(b' ' * 14, line[107:121])
         self.assertEqual('000', m['trace'][0]['classification']['cst_icms'])
 
-    def test_unknown_species_unsupported_pending_and_cancelled_are_explicit(self):
+    def test_unknown_species_unsupported_and_pending_are_explicit(self):
         docs = [document(id=1, model='57'), document(id=2, status='pending'),
-                document(id=3, book_cancellation={'source':'Synthetic book'}), document(id=4)]
+                document(id=3), document(id=4)]
         files, m = encode_fiscal(docs, {})
         self.assertFalse(files); self.assertEqual(4, len(m['skipped']))
-        self.assertEqual({'model_not_supported','not_booked','cancellation_not_supported','species_mapping_required'}, {v['reason'] for v in m['skipped']})
+        self.assertEqual({'model_not_supported','not_booked','species_mapping_required'}, {v['reason'] for v in m['skipped']})
         self.assertEqual(40004, sum(v['total_cents'] for v in m['skipped']))
 
     def test_no_rounding_truncation_or_control_characters(self):

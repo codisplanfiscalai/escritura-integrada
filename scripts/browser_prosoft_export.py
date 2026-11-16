@@ -74,10 +74,17 @@ def main():
                     doc=post(f'/companies/{a}/documents',{'direction':direction,'number':number,'model':model,'series':'1','issue_date':'2026-10-30','posting_date':'2026-11-06',
                         'partner_name':'Contraparte sintética','cfop':'1102' if direction=='incoming' else '5102','total':total,'source':{'file':'synthetic.xml'},'source_hash':'synthetic-'+number})
                     if book:post(f'/companies/{a}/documents/{doc["id"]}/book',{'version':doc['version'],'reason':'Teste sintético','lines':[]})
+                for number,direction,model in [('100000005','incoming','55'),('100000006','outgoing','65')]:
+                    doc=post(f'/companies/{a}/documents',{'direction':direction,'number':number,'model':model,'series':'1',
+                        'issue_date':'2026-10-30','posting_date':'2026-11-06','partner_name':'Contraparte sintética cancelada',
+                        'partner_tax_id':'11222333000181','cfop':'1102' if direction=='incoming' else '5102','total':'0.00','taxes':{},'items':[],
+                        'book_cancellation':{'source':'Livro sintético','responsible':'Teste','reason':'Conferência sintética'}})
+                    doc=post(f'/companies/{a}/documents/{doc["id"]}/review',{'version':doc['version'],'reason':'Conferência sintética'})
+                    post(f'/companies/{a}/documents/{doc["id"]}/book',{'version':doc['version'],'reason':'Teste sintético','lines':[]})
                 accounts={row['access_code']:row['id'] for row in get(f'/companies/{a}/accounts')}
                 center=post(f'/companies/{a}/cost-centers',{'code':'SYNCC','name':'Centro sintético'})
                 party=post(f'/companies/{a}/masters/participant',{'code':'SYNP','name':'Terceiro sintético','tax_id':'11222333000181','data':{}})
-                post(f'/companies/{a}/journals',{'date':'2026-11-06','document':'SYN100','history':'Synthetic journal','idempotency_key':'synthetic-prosoft','lines':[
+                post(f'/companies/{a}/journals',{'date':'2026-11-06','document':'REFERENCIA CONTABIL SINTETICA LONGA','history':'Synthetic journal','idempotency_key':'synthetic-prosoft','lines':[
                     {'account_id':accounts['3'],'debit':'100.01','credit':'0','cost_center_id':center['id'],'participant_id':party['id']},
                     {'account_id':accounts['5'],'debit':'0','credit':'100.01'}]})
                 post(f'/companies/{a}/exercises',{'module':'accounting','year':2027})
@@ -103,20 +110,24 @@ def main():
                 page.reload();nav('Exportação Prosoft fiscal');expect(code).to_have_value('99');expect(page.get_by_label('Espécie Prosoft do modelo 55',exact=True)).to_have_value('NFE')
                 check('Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload')
                 page.get_by_role('button',name='Gerar prévia',exact=True).click()
-                preview=page.get_by_role('region',name='Prévia da exportação Prosoft');expect(preview).to_contain_text('Selecionados: 4 documentos')
+                preview=page.get_by_role('region',name='Prévia da exportação Prosoft');expect(preview).to_contain_text('Selecionados: 6 documentos')
                 expect(preview).to_contain_text('Não exportados: 2');expect(preview).to_contain_text('Modelo não coberto')
                 preview.get_by_text('Avisos informativos',exact=False).click();expect(preview).to_contain_text('Tratamento do livro ainda não informado')
                 confirm=preview.get_by_role('button',name='Confirmar exportação',exact=True);expect(confirm).to_be_disabled()
                 preview.get_by_label('Conferi a empresa, o plano e os mapeamentos no destino.',exact=True).check();expect(confirm).to_be_enabled();confirm.click()
-                link=preview.get_by_role('link',name=re.compile('^Baixar '));expect(link).to_be_visible();first_url=link.get_attribute('href')
+                link=preview.get_by_role('link',name=re.compile('^Baixar (PROSOFT_|CTBLCTOS)'));expect(link).to_be_visible();first_url=link.get_attribute('href')
                 raw=download(link,'synthetic-fiscal.zip')
                 with ZipFile(BytesIO(raw)) as z:
-                    assert [len(row) for row in z.read('ENTRADAS.TXT').splitlines()]==[2340]
-                    assert [len(row) for row in z.read('SAIDAS.TXT').splitlines()]==[2611]
+                    assert [len(row) for row in z.read('ENTRADAS.TXT').splitlines()]==[2340,2340]
+                    assert [len(row) for row in z.read('SAIDAS.TXT').splitlines()]==[2611,2611]
                     manifest=json.loads(z.read('manifest.json'));assert manifest['plan_code']=='0052'
                     assert manifest['totals']['incoming']['total_cents']==10001 and manifest['totals']['outgoing']['total_cents']==5002
                     assert len(manifest['skipped'])==2 and manifest['homologated_in_destination'] is False
+                    assert all(manifest['totals'][direction]['cancelled_documents']==1 for direction in ('incoming','outgoing'))
+                    assert [row[808:809] for row in z.read('ENTRADAS.TXT').splitlines()]==[b'0',b'1']
+                    assert [row[929:930] for row in z.read('SAIDAS.TXT').splitlines()]==[b'0',b'1']
                 confirm.click();expect(link).to_have_attribute('href',first_url)
+                preview.get_by_text('Origem dos registros (4)',exact=True).click();expect(preview.get_by_role('cell',name='Cancelada no livro',exact=True)).to_have_count(2)
                 shot('fiscal-preview-desktop.png');check('Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote')
                 page.get_by_label('Tipo de exportação Prosoft',exact=True).select_option('outgoing_notes');expect(preview).to_have_count(0)
                 page.get_by_role('button',name='Salvar mapeamentos nesta empresa',exact=True).click();expect(page.locator('.prosoft-view:visible [role="status"]')).to_contain_text('Mapeamentos salvos nesta empresa')
@@ -162,6 +173,13 @@ def main():
                 preview.get_by_label('Conferi a empresa, o plano e os mapeamentos no destino.',exact=True).check();confirm.click();expect(link).to_be_visible()
                 txt=download(link,'synthetic-accounting.txt');rows=txt.splitlines();assert list(map(len,rows))==[208,448]
                 assert rows[0][:3]==b'CTA' and rows[0][61:63]==b'21' and rows[1][73:87]==b'000123        '
+                preview.get_by_text('Origem dos registros (1)',exact=True).click()
+                expect(preview.get_by_text('REFERENCIA CONTABIL SINTETICA LONGA',exact=True)).to_be_visible()
+                reference_map=json.loads(download(preview.get_by_role('link',name='Baixar mapa de referências',exact=True),'synthetic-accounting-manifest.json'))
+                reference=reference_map['trace'][0]['document_reference']
+                assert reference['original']=='REFERENCIA CONTABIL SINTETICA LONGA' and rows[1][20:30]==reference['exported'].encode('ascii')
+                assert len(reference['exported'])==10 and get(f'/companies/{a}/journals?period=2026-11')[0]['document']==reference['original']
+                check('Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada')
                 shot('accounting-preview-desktop.png');check('Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições')
                 page.get_by_label('Tipo de exportação Prosoft',exact=True).select_option('journals')
                 page.get_by_role('button',name='Salvar mapeamentos nesta empresa',exact=True).click();expect(page.locator('.prosoft-view:visible [role="status"]')).to_contain_text('Mapeamentos salvos nesta empresa')

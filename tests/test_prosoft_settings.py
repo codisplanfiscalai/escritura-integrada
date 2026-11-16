@@ -8,6 +8,7 @@ from app.business import BusinessCore
 from app.core import DomainError
 import test_core as base
 import test_prosoft_increment as prior
+import test_prosoft_cancel_references as approvals
 import test_global_account_plans as plans
 
 
@@ -82,6 +83,52 @@ class ProsoftSettingsTests(unittest.TestCase):
         self.assertEqual(1,pre['manifest']['record_counts']['CTA'])
         self.assertEqual(['LC1','LC2','CTA'],pre['manifest']['selected_record_types'])
         self.put(saved['settings']|{'record_types':['SLD']},2,mode='accounting',status=400)
+
+
+    def test_saved_fiscal_selection_keeps_approved_cancelled_record(self):
+        approvals.ProsoftCancellationReferenceApiTests.cancellation(self,'incoming','901')
+        outgoing=approvals.ProsoftCancellationReferenceApiTests.cancellation(self,'outgoing','902')
+        before=self.economic_snapshot()
+        saved=self.put(self.cfg()|{'record_types':['outgoing_notes']})
+        payload=saved['settings']|{'period':'2026-11','settings_version':saved['version']}
+        preview=self.post('/prosoft-fiscal/preview',payload)
+        self.assertEqual({'SAIDAS.TXT'},set(preview['manifest']['files']))
+        self.assertEqual([outgoing['id']],[row['document_id'] for row in preview['manifest']['trace']])
+        self.assertEqual(1,preview['manifest']['totals']['outgoing']['cancelled_documents'])
+        saved=self.post('/prosoft-fiscal/confirm',payload|{'preview_hash':preview['preview_hash'],'destination_reviewed':True})
+        from io import BytesIO
+        from zipfile import ZipFile
+        response=self.client.get(self.scope(f"/prosoft-fiscal/exports/{saved['id']}/download"))
+        self.assertEqual(200,response.status_code)
+        with ZipFile(BytesIO(response.content)) as archive:
+            self.assertEqual(b'1',archive.read('SAIDAS.TXT')[929:930])
+        self.assertEqual(before,self.economic_snapshot())
+
+    def test_saved_cta_choice_preserves_short_reference_and_immutable_map(self):
+        self.core.create_journal(self.a['id'],self.journal()|{'document':'SAIDAS-FISCAIS','history':'Synthetic'},'synthetic')
+        before=self.economic_snapshot()
+        cfg=self.get('accounting')['settings']|{'company_code':'99','accounts':{str(a['id']):{'code':a['access_code'],'confirmed':True} for a in self.accounts}}
+        cfg['accounts'][str(self.aid['3'])].update(third_mode='none',create_account={'destination_missing':True,'classifier':'1.01','name':'Synthetic','cost_center_mode':'0','reconciliation':'0'})
+        saved=self.put(cfg,mode='accounting');payload=saved['settings']|{'period':'2026-11','settings_version':saved['version']}
+        first=self.post('/prosoft/preview',payload)
+        self.assertEqual(0,first['manifest']['record_counts']['CTA'])
+        reference=first['manifest']['trace'][0]['document_reference']
+        self.assertEqual('SAIDAS-FISCAIS',reference['original'])
+        saved=self.put(saved['settings']|{'record_types':['LC1','LC2','CTA']},saved['version'],mode='accounting')
+        payload=saved['settings']|{'period':'2026-11','settings_version':saved['version']}
+        preview=self.post('/prosoft/preview',payload)
+        self.assertEqual(reference,preview['manifest']['trace'][0]['document_reference'])
+        self.assertEqual(1,preview['manifest']['record_counts']['CTA'])
+        saved=self.post('/prosoft/confirm',payload|{'preview_hash':preview['preview_hash'],'destination_reviewed':True})
+        response=self.client.get(self.scope(f"/prosoft/exports/{saved['id']}/manifest"))
+        self.assertEqual(200,response.status_code)
+        self.assertEqual(reference,response.json()['trace'][0]['document_reference'])
+        attachment=self.client.get(self.scope(f"/prosoft/exports/{saved['id']}/manifest?download=1"))
+        self.assertEqual(200,attachment.status_code)
+        self.assertIn('attachment; filename=',attachment.headers['content-disposition'])
+        self.assertTrue(attachment.headers['content-type'].startswith('application/json'))
+        self.assertEqual(response.json(),attachment.json())
+        self.assertEqual(before,self.economic_snapshot())
 
     def test_saved_changes_invalidate_export_version_and_legacy_payload_remains_valid(self):
         self.booked();saved=self.put(self.cfg())

@@ -1,6 +1,6 @@
 # Prosoft: interface, escolha dos layouts e mapeamentos por empresa
 
-Este incremento depende da PR40 (`5b528cdd06e9b267187f905695c7ec75ebae7bf9`). Acrescenta a operação pela interface e configurações persistentes aos exportadores já existentes. Não implementa os layouts restantes nem comprova aceite dos arquivos na instalação Prosoft.
+Este incremento foi recomposto sobre develop após a integração confirmada da PR40 (`4204eae`). Acrescenta a operação pela interface e configurações persistentes aos exportadores já existentes. Não implementa os layouts restantes nem comprova aceite dos arquivos na instalação Prosoft.
 
 ## Escolhas disponíveis
 
@@ -11,6 +11,50 @@ No módulo **Contábil → Integração Prosoft**, o mesmo campo permite escolhe
 **SPED é uma ferramenta interna separada.** A exportação Prosoft usa os layouts próprios de importação do destino. Um arquivo produzido pela ferramenta SPED pode servir a outras aplicações, mas isso não transforma SPED em sinônimo destes perfis Prosoft.
 
 A escolha do tipo, a empresa e o plano do destino, além dos mapeamentos, são salvos separadamente para cada empresa e área fiscal/contábil. O plano de conferência padrão continua 050 (`0050`), com outro plano aceito por escolha explícita. Não altera o plano ativo nem o cadastro remoto. Confira o mesmo plano ao importar: esses arquivos não têm campo de plano.
+
+## Composição com a PR40 integrada
+
+A composição preserva escolha de tipos, mapeamentos versionados por empresa,
+identidades globais/locais, permissões e descarte de respostas tardias. A base
+contém as decisões aprovadas de incluir canceladas escrituradas pelo livro e de
+encurtar somente referências longas do arquivo contábil. A prévia mostra situação
+da nota, contagem de canceladas e original/referência curta. Quando houver
+referência curta, o download adicional do mapa usa o manifesto imutável do lote,
+com a mesma permissão de exportação e opção explícita `?download=1` para receber
+o JSON como anexo. A consulta JSON normal continua disponível. O fluxo geral de
+proteção de downloads não foi alterado. Não altera referências na aplicação.
+
+Os três conflitos de composição foram resolvidos mantendo os cenários de CI
+Prosoft e saídas contábeis, todos os serviços de `BusinessCore` e a seleção fiscal
+sem restaurar a antiga omissão de canceladas. SPED, recepção A1, preparação
+ECD/ECF e outras rotinas do develop permanecem independentes. Os testes do novo
+head, base e CI estão registrados na descrição da PR; os resultados históricos
+abaixo não certificam sozinhos esta composição nem o destino Prosoft.
+
+## Validação da recomposição
+
+- **449 testes backend passaram**, zero falhas/erros/skips, em 164,138 s incluindo
+  descoberta, em 35 módulos. Incluem configurações/identidades, permissões,
+  contexto, canceladas, referência curta/mapa, seleções com/sem CTA, recepção,
+  saídas diárias/estornos, competência, SPED e preparação ECD/ECF.
+- **177 testes frontend**, build Vite, sintaxe, YAML e diff-check passaram.
+  Aviso preexistente de chunk acima de 500 kB; nenhum lock/requisito alterado.
+- Chromium Headless Shell **141** local passou nos nove grupos do ensaio integrado:
+  persistência, empresa/plano, seleção fiscal/CTA, contexto/respostas tardias,
+  desktop/mobile, canceladas nas posições corretas e na prévia, referência curta
+  no LC1, mapa JSON baixado e dados econômicos preservados. Sem erros JavaScript.
+- Após o avanço do develop para dev.22, somente cinco manifests de versão foram
+  incorporados. A conferência adicional passou em **92 testes backend** sem
+  falhas/erros/skips, em 25,464 s, e o build, os **177 testes frontend** e o
+  navegador integrado foram repetidos com sucesso nessa versão.
+- O primeiro ensaio identificou que o guard geral de arquivos recusa JSON sem
+  declaração de anexo. O manifesto recebeu opção explícita de download; o guard
+  foi preservado, permissões/conteúdo foram testados e o cenário completo foi
+  repetido com sucesso. A consulta JSON normal permanece compatível.
+
+A suíte integral backend, PostgreSQL operacional, Chromium 151 e pacotes nativos
+são exigidos no CI do head publicado; estes resultados locais não os substituem.
+Não houve ensaio ou homologação no Prosoft real. Somente dados sintéticos.
 
 ## Operação
 
@@ -101,7 +145,7 @@ Conferência estrutural dos dois PDFs e dos três modelos Excel do `Prosoft.zip`
 
 Os nomes dos modelos Excel são `PlanoDeSaudeR4010ModeloPadrao.xlsx`, `ContasPagarReceberModeloPadrao.xlsx` e `InventarioModeloPadrao.xlsx`. Nenhum modelo recebido foi copiado para a PR. A planilha de acompanhamento de homologação e o pacote privado continuam referências externas, sem dados transpostos para exemplos publicados. Nenhum módulo SPED, contabilização diária, desempenho, Docker ou produção é alterado por esta frente.
 
-## Validação
+## Validação anterior à recomposição
 
 A descoberta existente do CI inclui os testes novos de backend e frontend. O workflow também executa `scripts/browser_prosoft_export.py` e coleta apenas artefatos produzidos por esse ensaio sintético. A base encadeada `feat/prosoft-fiscal-accounting-increment` foi adicionada ao gatilho de pull request; permissões de CI continuam `contents: read`, sem etapa de release/deploy.
 
@@ -119,7 +163,7 @@ git diff --check
 
 Neste ambiente, as dependências DANFE da aplicação foram disponibilizadas no `PYTHONPATH` por diretório temporário já existente. O navegador local foi o Chromium Headless Shell 141 já instalado, selecionado por `ESCRITURA_TEST_BROWSER`; o Chromium comum não iniciou por restrição de socket do ambiente. Não houve alteração de requisitos/locks. O teste usa servidor local, SQLite descartável, contas/terceiros/documentos fictícios, arquivos sintéticos e fechamento válido de competência sem documentos pendentes.
 
-Validação final:
+Resultados do head anterior da interface:
 
 - **354 testes de backend passaram em 137,555 s**, em 24 módulos: 12 testes novos e 342 regressões, incluindo a cobertura da PR40, permissões/contexto, plano compartilhado, reprocessamento, retenção de pacotes e infraestrutura/CI. Os novos cenários incluem persistência/isolamento/reinício do serviço, seleção de layouts, versões, concorrência, rollback da configuração/auditoria, fechamento preservado, referências de outra empresa, aliases e API legada.
 - **154 testes de frontend passaram**, sendo 16 novos em relação à base, com a regressão de competência anterior adaptada ao componente real. Testam snapshots de payload, tipo escolhido, rascunhos, conflitos, respostas tardias de load/save/preview/confirm, empresa/mês/exercício/módulo, navegação, materialização de alias e preparação de um plano sintético de 10 mil contas sem expandir todas em mapeamentos vazios.

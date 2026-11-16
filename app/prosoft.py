@@ -17,6 +17,36 @@ def ascii_field(value,label,width,changes):
     return transformed.ljust(width)
 
 
+def _short_document_reference(original):
+    # Ten ASCII characters (50 hash bits); the complete original stays in the manifest.
+    return base64.b32encode(bytes.fromhex(digest(original.encode('utf-8')))).decode('ascii')[:10]
+
+
+def document_references(journals):
+    """Only long originals get aliases; reject any ambiguity before emitting bytes.
+
+    Mapping depends on the exact original, not order, month, selection or database IDs.
+    Short existing references retain their original ASCII conversion/review behavior.
+    """
+    originals = sorted({str(j['document'] or '') for j in journals})
+    reserved = {}
+    for original in originals:
+        width = max(10, len(unicodedata.normalize('NFKD', original)))
+        normalized = ascii_field(original, 'Documento', width, []).rstrip(' ')
+        if len(original) <= 10:
+            reserved[normalized] = original
+    aliases = {}
+    for original in originals:
+        if len(original) <= 10: continue
+        exported = _short_document_reference(original)
+        if exported in reserved and reserved[exported] != original:
+            raise DomainError('Colisão entre referências contábeis de exportação; nenhum lote foi gerado. Confira o mapa de referências.',
+                              409, 'document_reference_collision')
+        reserved[exported] = original
+        aliases[original] = exported
+    return aliases
+
+
 def numeric(value,width,label,zero=False):
     value=str(value)
     if not re.fullmatch(r'[0-9]{1,'+str(width)+'}',value) or (not zero and int(value)==0):
@@ -112,6 +142,7 @@ def encode_journals(journals,mappings,centers,batch,allow_ascii=False,participan
     records,account_trace=encode_account_registrations(journals,mappings,changes) if 'CTA' in record_types else ([],[])
     trace=[]
     if not journals or len(journals)>99999:raise DomainError('Selecione de 1 a 99999 lançamentos.')
+    references = document_references(journals)
     for order,j in enumerate(journals,1):
         if not 2<=len(j['lines'])<=200:raise DomainError(f'Lançamento {j["number"]}: CTBLCTOS permite até 200 partidas.')
         resolved=[]
@@ -144,7 +175,7 @@ def encode_journals(journals,mappings,centers,batch,allow_ascii=False,participan
         header=list(' '*448)
         put(header,1,3,'LC1');put(header,4,5,numeric(order,5,'Ordem'))
         put(header,12,1,'1' if len(resolved)==2 else '2');put(header,13,8,''.join(reversed(j['date'].split('-'))))
-        put(header,21,10,ascii_field(j['document'],'Documento '+str(j['number']),10,changes));put(header,31,5,numeric(batch,5,'Lote',True))
+        put(header,21,10,ascii_field(references.get(str(j['document'] or ''),j['document']),'Documento '+str(j['number']),10,changes));put(header,31,5,numeric(batch,5,'Lote',True))
         put(header,36,30,'ESCRITURA INTEGRADA'.ljust(30))
         history=ascii_field(j['history'],'Histórico '+str(j['number']),240,changes)
         if len(resolved)==2:
@@ -161,7 +192,12 @@ def encode_journals(journals,mappings,centers,batch,allow_ascii=False,participan
                     (12,1,line['nature']),(13,5,line['account']),(18,14,line['third']),(32,5,line['center']),
                     (37,16,monetary(line['value'])),(53,240,history)]:put(detail,pos,width,value)
                 records.append(''.join(detail))
-        trace.append({'order':order,'journal_id':j['id'],'journal_number':j['number'],'line_count':len(resolved),'total_cents':j['total_cents']})
+        entry={'order':order,'journal_id':j['id'],'journal_number':j['number'],'line_count':len(resolved),'total_cents':j['total_cents']}
+        original=str(j['document'] or '')
+        if original in references:
+            entry['document_reference']={'original':original,'exported':references[original],
+                                         'scheme':'sha256-base32-10','original_sha256':digest(original.encode('utf-8'))}
+        trace.append(entry)
     raw=('\r\n'.join(records)+'\r\n').encode('ascii')
     return raw,{'layout':LAYOUT,'selected_record_types':record_types,'records':len(records),'journals':len(journals),'trace':trace,'text_changes':changes,
         'account_registrations':account_trace,'record_counts':{kind:sum(r.startswith(kind) for r in records) for kind in ('CTA','LC1','LC2')},

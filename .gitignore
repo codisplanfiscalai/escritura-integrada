@@ -26,3 +26,15 @@ release-output/
 *.tar
 *.tar.gz
 *.qcow2
+
+# Credenciais A1 são configuradas fora do repositório.
+*.pfx
+*.p12
+*.pem
+*.key
+
+.docker-updater/
+# Private Docker storage migration plans and pre-migration Compose backups.
+storage-plan*.json
+storage-plan*.images.yaml
+compose.named*.yaml

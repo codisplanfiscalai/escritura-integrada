@@ -23,7 +23,8 @@ Somente código, documentação e testes construídos com dados fictícios entra
 | LC1/LC2 | Fluxo anterior preservado, 448/342 posições, hash, lote e download | Não cria lançamentos novos; não muda contabilização diária da outra frente |
 | TRC | Não gerado; referência de terceiro do LC1/LC2 continua disponível | Resolver divergência CPF na convenção geral versus tabela TRC e sobreposição de posições 501–508 no PDF antes de perfil cadastral |
 | SLD | Não gerado | Definir exercício, saldo inicial versus movimentos mensais, terceiros/centros e política de reaplicação no destino; impedir somar duas vezes saldos e lançamentos |
-| Demais fiscal | Não gerados | Itens, faturas, meios de pagamento, cadastros, ST/FCP/DIFAL, PIS/COFINS, IBS/CBS, ajustes, serviços/transporte e canceladas |
+| Canceladas escrituradas pelo livro validado | Identidade e total zero preservados; Nota Cancelada = 1, entrada 809 / saída 930 | Não cria/valida evento eletrônico nem altera escrituração |
+| Demais fiscal | Não gerados | Itens, faturas, meios de pagamento, cadastros, ST/FCP/DIFAL, PIS/COFINS, IBS/CBS, ajustes e serviços/transporte |
 | Prosoft/PVA | Não executados | Sem acesso confirmado à instalação Windows/RDP; nenhum aceite de importação ou validação PVA desta versão |
 
 ## API fiscal
@@ -75,6 +76,7 @@ Posições abaixo são contadas a partir de 1. Cada linha vem da mesma função 
 | Escrituração / emissão | `posting_date` / `issue_date`, DDMMAA | 19×6 / 25×6 | 20×6 / 728×6 |
 | Número moderno | `number`, zero à esquerda, sem corte | 869×10 | 989×10 e 999×10, mesmo número inicial/final |
 | Espécie Windows / série moderna | Mapeamento explícito / `series` atual | 858×5 / 864×3 | 978×5 / 984×3 |
+| Nota cancelada | Evidência validada pelo serviço existente; 1 cancelada / 0 regular | 809×1 | 930×1 |
 | Desdobramento | Ordem estável das linhas: 1–9, A–Z | 43×1 | 19×1 |
 | Acesso fiscal no destino | `cfop_accounts[cfop]`, quando confirmado | 44×5 | 26×5 |
 | CFOP atual | CFOP da linha analítica | 624×4 | 734×4 |
@@ -115,6 +117,50 @@ Para emitir CTA, incluir `create_account` **dentro de um mapeamento de conta mov
 CTA usa classificador sem pontuação, completado com zeros à direita até 15 posições; nome até 30; terceiro `none/optional/required` → 1/2/3; centro 0/1/2/3; conciliação 0/1. Plano especial é opcional (`special_classifier`, até 20 posições, e `special_name`, até 80). Políticas são explícitas; campos obrigatórios não são inferidos do código local. Os fillers permanecem brancos. CTA só é emitido para contas efetivamente usadas e aparece antes de LC1/LC2; sua sequência é independente. Definições iguais no mesmo acesso são deduplicadas, mantendo a trilha dos IDs locais. Definições ou políticas conflitantes para o mesmo acesso e centro obrigatório ausente são recusados. Referências globais passam pela resolução de alias já existente antes do encoder; não se assume igualdade de IDs entre empresas.
 
 Sem `create_account`, o TXT contábil permanece LC1/LC2. A prévia agora informa `account_registrations`, `record_counts`, `plan_code` e limites. A chave histórica de layout dos lotes foi mantida por compatibilidade; conferir os tipos efetivos em `record_counts`. Este recurso não importa TRC, não gera SLD nem substitui o intercâmbio de plano completo `CTBPLANO` que já existe.
+
+## Canceladas e referência contábil longa
+
+Decisão aprovada em 16/11/2026. Notas 55/65 já escrituradas como canceladas pelo
+livro validado integram o TXT, identificadas como `1` nas posições 809 (entrada)
+e 930 (saída), conforme páginas 3/13 do layout fiscal; notas regulares recebem
+`0`. Quantidades incluem as canceladas e `cancelled_documents` as distingue.
+Os valores continuam zero pela função analítica existente. Identidade, emissão,
+escrituração, fonte e evidência permanecem na trilha. Não se cria evento
+eletrônico, não se cancela documento regular e não se incluem pendentes ainda
+não escrituradas. Sem mapeamento da tabela da instalação, `Situação Docto`
+continua em branco; o indicador comprovado é `Nota Cancelada`.
+
+O indicador regular passa de branco para `0`, alterando os bytes e a identidade
+de novas prévias fiscais; gere nova prévia após atualizar. Lotes antigos não são
+recodificados nem modificados e continuam disponíveis para download.
+
+No LC1, a referência ocupa 21×10. Somente originais com mais de dez caracteres
+recebem dez caracteres ASCII: os dez primeiros da codificação Base32 do SHA-256
+dos bytes UTF-8 da referência exata. O resultado independe da empresa,
+competência, ordem, seleção e repetição. Não é corte do texto. Controles continuam
+proibidos. Referências curtas conservam a conversão/revisão ASCII anterior.
+Histórico e demais campos mantêm larguras e validações.
+
+Cada linha afetada inclui `document_reference` no manifesto: `original`,
+`exported`, `scheme=sha256-base32-10` e `original_sha256`, junto dos IDs/ordem do
+lançamento. O manifesto é salvo no lote imutável e consultável em
+`GET /api/companies/{cid}/prosoft/exports/{id}/manifest`, sob
+`accounting.prosoft:export`; não serve outra empresa ou layout. O TXT continua
+somente CTA/LC1/LC2. Nenhuma referência da aplicação é renomeada e não há novo
+schema ou tabela.
+
+O espaço do hash curto é finito (50 bits), sem garantia de unicidade global no
+Prosoft. Colisão entre originais distintos na seleção, inclusive com referência
+curta já existente, retorna `409 document_reference_collision` antes de gravar
+lote/auditoria. Não há salting dependente da ordem ou reassociação silenciosa.
+Originais iguais podem repetir a mesma forma curta, com IDs de lançamentos
+distintos na trilha. Essa referência não constitui idempotência no destino.
+Lotes antigos permanecem imutáveis. Referências curtas no plano padrão mantêm a
+identidade contábil histórica do lote.
+
+A [matriz por arquivo e registro](MATRIZ_LAYOUTS_PROSOFT.md) separa os perfis
+Prosoft da ferramenta SPED. A PR44 não foi alterada; sua composição com esta base
+deve repetir os testes de UI e seleção. Não houve teste no Prosoft real.
 
 ## Integridade e operação
 

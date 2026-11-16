@@ -69,3 +69,5 @@ export function createProsoftExport({context,request,references=async()=>({accou
  return {s,dirty,load,save,run,reset,invalidate,ensureAccounts,dispose:()=>{invalidate();stop();}};
 }
 export const prosoftDownload=result=>`/api/companies/${result.cid}${result.area==='fiscal'?'/prosoft-fiscal':''}/exports/${result.id}/download`;
+
+export const prosoftManifest=result=>result.area==='accounting'?`/api/companies/${result.cid}/prosoft/exports/${result.id}/manifest?download=1`:'';

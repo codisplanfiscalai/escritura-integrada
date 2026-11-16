@@ -12,6 +12,8 @@ datas += [(str(root/'app/auditor_engine/data'), 'app/auditor_engine/data')]
 datas += [(str(root/'app/data'), 'app/data')]
 datas += collect_data_files('reportlab', includes=['fonts/*'])
 for package in ('BrazilFiscalReport','fpdf2','fonttools','python-barcode','phonenumbers','qrcode','lxml'):datas+=copy_metadata(package)
+if platform.machine() != 'x86_64':
+    for package in ('cryptography','cffi','pycparser'):datas+=copy_metadata(package)
 datas += collect_data_files('brazilfiscalreport')
 datas += collect_data_files('fpdf')
 a=Analysis([str(root/'app/desktop.py')],pathex=[str(root)],binaries=[],datas=datas,
