@@ -87,6 +87,8 @@ class PostgresDatabase:
     depende da migração dos serviços e de testes próprios antes de uso na API.
     """
 
+    backend = "postgresql"  # Preparatory database, not an operational backup source.
+
     def __init__(self, settings: PostgresSettings):
         self.settings = settings
 

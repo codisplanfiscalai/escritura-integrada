@@ -241,7 +241,9 @@ class PlanTests(unittest.TestCase):
                 if args[0] in {'ps', 'volume'}: return ''
                 return json.dumps({'services': {'app': {'volumes': [{'type': 'bind', 'source': str(root / 'data/app'), 'target': '/data'}]}}})
             with mock.patch.object(storage, 'image_id', return_value='sha256:' + 'a'*64), \
-                    mock.patch.object(storage, 'docker', side_effect=docker), self.assertRaisesRegex(storage.StorageError, 'layout padrão novo'):
+                    mock.patch.object(storage, 'docker', side_effect=docker), \
+                    mock.patch.object(storage, 'bind_configuration', return_value=('synthetic','./data/app')), \
+                    self.assertRaisesRegex(storage.StorageError, 'layout padrão novo'):
                 storage.make_plan(root, 'synthetic', 'synthetic')
             self.assertFalse((root / 'data').exists())
 
@@ -405,6 +407,170 @@ class AppCheckProtocolTests(unittest.TestCase):
                 configured_user[0] = "0:0"
                 with self.assertRaisesRegex(storage.StorageError, "sobrescreve USER"):
                     storage.check_app(compose, "synthetic")
+
+
+class BindSelectionTests(unittest.TestCase):
+    @staticmethod
+    def database(path):
+        import sqlite3
+        connection = sqlite3.connect(path)
+        try:
+            with connection:
+                connection.execute('CREATE TABLE synthetic_fixture(value INTEGER)')
+        finally:
+            # The transaction context manager commits/rolls back; it does not close.
+            connection.close()
+
+    def test_database_fixture_closes_connection_before_cleanup(self):
+        import sqlite3
+        connect = sqlite3.connect
+        opened = []
+        def tracked(*args, **kwargs):
+            connection = connect(*args, **kwargs)
+            opened.append(connection)
+            return connection
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / 'fixture.sqlite3'
+            with mock.patch('sqlite3.connect', side_effect=tracked):
+                self.database(database)
+            try:
+                self.assertEqual(len(opened), 1)
+                with self.assertRaises(sqlite3.ProgrammingError):
+                    opened[0].execute('SELECT 1')
+                database.unlink()
+            finally:
+                for connection in opened:
+                    connection.close()
+
+    def test_only_existing_database_layout_is_selected_without_writes(self):
+        for source in ('./data/app', './data/develop/app'):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary); folder=root/source; folder.mkdir(parents=True)
+                db=folder/'escritura.sqlite3'; self.database(db); db.chmod(0o600)
+                before=db.read_bytes(),db.stat().st_mtime_ns,stat.S_IMODE(db.stat().st_mode)
+                selected=storage.select_app_bind(root,'develop')
+                self.assertEqual(selected['source'],source)
+                self.assertEqual(before,(db.read_bytes(),db.stat().st_mtime_ns,stat.S_IMODE(db.stat().st_mode)))
+
+    def test_both_paths_refuse_even_if_one_is_empty_and_explicit_wins(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            for source in ('./data/app','./data/develop/app'):
+                (root/source).mkdir(parents=True)
+            self.database(root/'data/app/escritura.sqlite3')
+            with self.assertRaisesRegex(storage.StorageError,'ambíguo'):
+                storage.select_app_bind(root,'develop')
+            self.assertEqual(storage.select_app_bind(root,'develop','./data/app')['source'],'./data/app')
+            with self.assertRaisesRegex(storage.StorageError,'sem escritura.sqlite3'):
+                storage.select_app_bind(root,'develop','./data/develop/app')
+
+    def test_absent_and_empty_paths_never_create_an_app_database(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            with self.assertRaises(storage.StorageError): storage.select_app_bind(root,'develop')
+            self.assertEqual(list(root.iterdir()),[])
+            self.assertEqual(storage.select_app_bind(root,'develop',fresh=True)['source'],'./data/develop/app')
+            self.assertEqual(list(root.iterdir()),[])
+            (root/'data/app').mkdir(parents=True)
+            with self.assertRaises(storage.StorageError): storage.select_app_bind(root,'develop')
+            with self.assertRaises(storage.StorageError): storage.select_app_bind(root,'develop',fresh=True)
+            self.assertFalse((root/'data/develop').exists())
+            (root/'data/app/escritura.sqlite3').touch()
+            with self.assertRaisesRegex(storage.StorageError,'vazio/truncado'): storage.select_app_bind(root,'develop')
+
+    def test_explicit_missing_other_namespace_and_external_paths_never_fall_back(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); (root/'data/app').mkdir(parents=True); (root/'data/app/escritura.sqlite3').touch()
+            for source in ('./missing','./data/production/app','../app','/data/app','./data/../app','./.'):
+                with self.subTest(source=source),self.assertRaises(storage.StorageError): storage.select_app_bind(root,'develop',source)
+
+    @unittest.skipUnless(os.name=='posix','Linux data paths')
+    def test_symlink_database_or_path_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); (root/'data/app').mkdir(parents=True)
+            (root/'data/app/escritura.sqlite3').symlink_to(root/'elsewhere')
+            with self.assertRaises(storage.StorageError): storage.select_app_bind(root,'develop')
+            (root/'data/app/escritura.sqlite3').unlink(); (root/'data/app').rmdir(); (root/'data/app').symlink_to(root)
+            with self.assertRaises(storage.StorageError): storage.select_app_bind(root,'develop')
+
+    def test_record_preserves_settings_mode_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); path=root/'.env'
+            text='# synthetic settings\nCOMPOSE_PROJECT_NAME=develop\nPASSWORD="synthetic-only"\nESCRITURA_APP_DATA_BIND=\n'
+            path.write_text(text); path.chmod(0o600)
+            storage.record_app_bind(root,'develop','./data/app')
+            self.assertIn('PASSWORD="synthetic-only"',path.read_text())
+            self.assertIn('ESCRITURA_APP_DATA_BIND="./data/app"',path.read_text())
+            if os.name=='posix': self.assertEqual(stat.S_IMODE(path.stat().st_mode),0o600)
+            before=path.stat().st_ino,path.read_bytes()
+            storage.record_app_bind(root,'develop','./data/app')
+            self.assertEqual(before,(path.stat().st_ino,path.read_bytes()))
+            path.write_bytes(b'SYNTHETIC_SECRET="unchanged"\r\nESCRITURA_APP_DATA_BIND=\r\n# keep\r\n')
+            storage.record_app_bind(root,'develop','./data/app')
+            self.assertTrue(path.read_bytes().startswith(b'SYNTHETIC_SECRET="unchanged"\r\n'))
+            self.assertTrue(path.read_bytes().endswith(b'# keep\r\n'))
+
+    def test_duplicate_and_multiline_dotenv_are_not_overwritten(self):
+        for text in ('ESCRITURA_APP_DATA_BIND=\nESCRITURA_APP_DATA_BIND=./data/app\n', 'PASSWORD="line1\nline2"\n'):
+            with tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary); path=root/'.env'; path.write_text(text)
+                with self.assertRaises(storage.StorageError): storage.record_app_bind(root,'develop','./data/app')
+                self.assertEqual(path.read_text(),text)
+
+    def test_concurrent_dotenv_change_and_symlink_are_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); path=root/'.env'; path.write_text('ESCRITURA_APP_DATA_BIND=\n')
+            snapshot=storage.env_snapshot(path)
+            path.write_text('ESCRITURA_APP_DATA_BIND=./operator-choice\n')
+            with self.assertRaises(storage.StorageError):
+                storage.record_app_bind(root,'develop','./data/app',expected=(snapshot,))
+            self.assertIn('./operator-choice',path.read_text())
+            if os.name=='posix':
+                path.unlink(); path.symlink_to(root/'private-target')
+                with self.assertRaises(storage.StorageError): storage.record_app_bind(root,'develop','./data/app')
+                self.assertFalse((root/'private-target').exists())
+
+    def test_another_project_using_flat_bind_is_refused(self):
+        for alias in (False, True):
+            with self.subTest(alias=alias), tempfile.TemporaryDirectory() as temporary:
+                # Match prepare_app's canonical host path, including Windows short-name resolution.
+                root=Path(temporary).resolve(); (root/'compose.yaml').write_text('{}')
+                env=root/'.env'; env.write_text('ESCRITURA_APP_DATA_BIND=\n')
+                incoming=root
+                if alias:
+                    (root/'alias').mkdir()
+                    incoming=root/'alias/..'
+                def docker(*args,**kwargs):
+                    if args[0]=='ps':
+                        return '' if 'label=com.docker.compose.project=develop' in args else 'other'
+                    if args[0]=='inspect' and '--format' in args:
+                        return json.dumps({'project':'production','mounts':[{'Type':'bind','Source':str(root/'data/app')}]})
+                    self.fail('Unexpected Docker call after cross-project detection')
+                with mock.patch.dict(os.environ,{},clear=True), \
+                        mock.patch.object(storage,'bind_configuration',return_value=('develop','')), \
+                        mock.patch.object(storage,'image_id',return_value='sha256:'+'a'*64), \
+                        mock.patch.object(storage,'bind_scan',return_value={'source':'./data/app','identity':{},'reason':'detected'}), \
+                        mock.patch.object(storage,'probe_app_image') as probe, \
+                        mock.patch.object(storage,'record_app_bind') as record, \
+                        mock.patch.object(storage,'docker',side_effect=docker), self.assertRaisesRegex(storage.StorageError,'outro projeto'):
+                    storage.prepare_app(incoming,'develop','local')
+                probe.assert_not_called()
+                record.assert_not_called()
+                self.assertEqual(env.read_text(),'ESCRITURA_APP_DATA_BIND=\n')
+
+    def test_permission_refusal_does_not_write_env_or_start_a_container(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); (root/'compose.yaml').write_text('{}'); env=root/'.env'; env.write_text('ESCRITURA_APP_DATA_BIND=\n')
+            with mock.patch.dict(os.environ,{},clear=True), \
+                    mock.patch.object(storage,'bind_configuration',return_value=('develop','')), \
+                    mock.patch.object(storage,'image_id',return_value='sha256:'+'a'*64), \
+                    mock.patch.object(storage,'bind_scan',return_value={'source':'./data/app','identity':{},'reason':'detected'}), \
+                    mock.patch.object(storage,'docker',return_value='') as docker, \
+                    mock.patch.object(storage,'probe_app_image',return_value={'permissions_ok':False,'identity':{'uid':10001,'gid':10001}}), \
+                    self.assertRaisesRegex(storage.StorageError,'Permissões'):
+                storage.prepare_app(root,'develop','local')
+            self.assertEqual(env.read_text(),'ESCRITURA_APP_DATA_BIND=\n')
+            self.assertTrue(all(c.args[0]=='ps' for c in docker.call_args_list))
 
 
 if __name__ == "__main__":

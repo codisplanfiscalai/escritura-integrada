@@ -14,7 +14,7 @@ async function mount(file){
  globalThis.__periodView={state,company:ref({prosoft_code:'1'}),api:(path,options)=>path.endsWith('/settings')&&options.method==='GET'?Promise.resolve({settings:prosoftDefaults('accounting','1'),version:0}):new Promise(resolve=>requests.push({path,options,resolve})),scope:(p,cid=state.companyId)=>`/companies/${cid}${p}`,useResource:()=>({data:ref({accounts:[],centers:[]})}),notify:()=>{},can:()=>true,allowedApi:async()=>[],writable:()=>true};
  const mock=url('export const {state,company,api,scope,useResource,notify,can,allowedApi,writable}=globalThis.__periodView; // mount '+(++mountSequence));
  const {descriptor}=parse(await readFile(new URL(`../src/views/${file}.vue`,import.meta.url),'utf8'));
- const code=compileScript(descriptor,{id:'period-view'}).content.replace(/from ['"]vue['"]/g,`from '${vue}'`).replace(/from ['"]\.\.\/lib\/([^'"]+)['"]/g,(_,name)=>`from '${name==='workspace'?mock:new URL(`../src/lib/${name.replace(/\.js$/,'')}.js`,import.meta.url).href}'`);
+ const code=compileScript(descriptor,{id:'period-view'}).content.replace(/import (\w+) from ['"][^'"]+\.vue['"];?/g,'const $1={render:()=>null};').replace(/from ['"]vue['"]/g,`from '${vue}'`).replace(/from ['"]\.\.\/lib\/([^'"]+)['"]/g,(_,name)=>`from '${name==='workspace'?mock:new URL(`../src/lib/${name.replace(/\.js$/,'')}.js`,import.meta.url).href}'`);
  const component={...(await import(url(code))).default};let view;const setup=component.setup;component.setup=(p,c)=>{view=setup(p,c);return()=>null;};
  const app=createRenderer({createComment:()=>({}),insert:()=>{},remove:()=>{},parentNode:()=>null,nextSibling:()=>null}).createApp(component);app.mount({});
  return {state,view,requests,close:()=>{app.unmount();delete globalThis.__periodView;}};
@@ -38,4 +38,20 @@ test('Prosoft retains unsaved company mappings across an exercise change and inv
   h.state.period='2027-11';await nextTick();await new Promise(resolve=>setTimeout(resolve,10));
   assert.equal(v.competence.value,'2027-09');assert.equal(v.s.config.accounts[7].code,'700');assert.equal(v.s.preview,null);
  }finally{h.close();}
+});
+
+
+test('Prosoft subguides preserve draft, filters, competence and preview; reload cancellation is safe',async()=>{
+ const h=await mount('ProsoftView'),v=h.view;await new Promise(resolve=>setTimeout(resolve,10));
+ const previousWindow=globalThis.window;
+ try{
+  v.s.config.plan_code='0052';v.query.value='caixa';v.onlyUsed.value=false;v.competence.value='2026-08';
+  await new Promise(resolve=>setTimeout(resolve,10));
+  const pending=v.controller.run();h.requests.shift().resolve({filename:'synthetic'});await pending;
+  const config=JSON.stringify(v.s.config);
+  for(const section of ['settings','coverage','export','export']){v.selectSection(section);await nextTick();}
+  assert.equal(v.s.preview.filename,'synthetic');assert.equal(JSON.stringify(v.s.config),config);
+  assert.equal(v.query.value,'caixa');assert.equal(v.onlyUsed.value,false);assert.equal(v.competence.value,'2026-08');
+  globalThis.window={confirm:()=>false};v.reloadSaved();assert.equal(v.s.config.plan_code,'0052');assert.equal(v.s.preview.filename,'synthetic');
+ }finally{globalThis.window=previousWindow;h.close();}
 });

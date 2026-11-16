@@ -1,0 +1,308 @@
+{
+  "synthetic_only": true,
+  "failed_head": "6d074ad19d9db6354606ddce55ba3efabe9f186d",
+  "develop_base": "67a5e2e0b3c65fe7948827d6d66da5361970bfb1",
+  "version": "0.9.0-dev.23",
+  "ci_failure": {
+    "run_id": 43815102624,
+    "job_id": 133125255095,
+    "artifact_id": 14202577340,
+    "step": "Validar exportações Prosoft e mapeamentos por empresa no Chromium",
+    "browser_version": "151.0.7922.34",
+    "error": "Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for get_by_label(\"Espécie Prosoft do modelo 55\", exact=True)\n",
+    "completed_check_groups": 8,
+    "visible_heading": "Exportação Prosoft contábil",
+    "visible_company": "Empresa sintética Prosoft B",
+    "domain_tests_before_browser": {
+      "tests_run": 1214,
+      "failures": 0,
+      "errors": 0
+    },
+    "github_test_merge_sha": "c0903e255028d47360cbe13f19100735f87e6a52"
+  },
+  "cause": "The acceptance scenario requested company B and immediately clicked the fiscal menu. App.navigate intentionally returns while state.contextBusy is true. The click was ignored; company B eventually loaded in the accounting view. A generic company-code field became enabled there, but the fiscal species field never existed.",
+  "reproductions": {
+    "chromium141": {
+      "ok": false,
+      "synthetic_only": true,
+      "checks": [
+        "Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload",
+        "Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote",
+        "Escolha de layout fiscal persistida: somente saídas gera apenas SAIDAS.TXT; registros não selecionados têm motivo e retornar a ambas preserva intenção",
+        "Editar campos remove prévia/download; troca de empresa descarta prévia atrasada e não leva mapeamentos à empresa B",
+        "Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada",
+        "Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições",
+        "Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro",
+        "Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno"
+      ],
+      "console_errors": [],
+      "browser_version": "141.0.7390.37",
+      "context_network_latency_ms": 750,
+      "error": "Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for get_by_label(\"Espécie Prosoft do modelo 55\", exact=True)\n"
+    },
+    "chromium151": {
+      "ok": false,
+      "synthetic_only": true,
+      "checks": [
+        "Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload",
+        "Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote",
+        "Escolha de layout fiscal persistida: somente saídas gera apenas SAIDAS.TXT; registros não selecionados têm motivo e retornar a ambas preserva intenção",
+        "Editar campos remove prévia/download; troca de empresa descarta prévia atrasada e não leva mapeamentos à empresa B",
+        "Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada",
+        "Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições",
+        "Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro",
+        "Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno"
+      ],
+      "console_errors": [],
+      "browser_version": "151.0.7922.34",
+      "context_network_latency_ms": 750,
+      "error": "Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for get_by_label(\"Espécie Prosoft do modelo 55\", exact=True)\n"
+    },
+    "same_visible_heading_after_failure": true
+  },
+  "fixed_chromium141": {
+    "ok": true,
+    "synthetic_only": true,
+    "checks": [
+      "Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload",
+      "Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote",
+      "Escolha de layout fiscal persistida: somente saídas gera apenas SAIDAS.TXT; registros não selecionados têm motivo e retornar a ambas preserva intenção",
+      "Editar campos remove prévia/download; troca de empresa descarta prévia atrasada e não leva mapeamentos à empresa B",
+      "Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada",
+      "Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições",
+      "Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro",
+      "Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno",
+      "Navegação aguarda a troca de empresa/módulo e confirma a guia fiscal sob latência de 750 ms",
+      "Exportação em competência fechada permitida; documentos/fontes/lançamentos/partidas/títulos/contas/centros/cadastros econômicos com hashes idênticos"
+    ],
+    "console_errors": [],
+    "browser_version": "141.0.7390.37",
+    "context_network_latency_ms": 750
+  },
+  "fixed_chromium151_runs": [
+    {
+      "ok": true,
+      "synthetic_only": true,
+      "checks": [
+        "Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload",
+        "Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote",
+        "Escolha de layout fiscal persistida: somente saídas gera apenas SAIDAS.TXT; registros não selecionados têm motivo e retornar a ambas preserva intenção",
+        "Editar campos remove prévia/download; troca de empresa descarta prévia atrasada e não leva mapeamentos à empresa B",
+        "Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada",
+        "Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições",
+        "Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro",
+        "Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno",
+        "Navegação aguarda a troca de empresa/módulo e confirma a guia fiscal sob latência de 750 ms",
+        "Exportação em competência fechada permitida; documentos/fontes/lançamentos/partidas/títulos/contas/centros/cadastros econômicos com hashes idênticos"
+      ],
+      "console_errors": [],
+      "browser_version": "151.0.7922.34",
+      "context_network_latency_ms": 750
+    },
+    {
+      "ok": true,
+      "synthetic_only": true,
+      "checks": [
+        "Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload",
+        "Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote",
+        "Escolha de layout fiscal persistida: somente saídas gera apenas SAIDAS.TXT; registros não selecionados têm motivo e retornar a ambas preserva intenção",
+        "Editar campos remove prévia/download; troca de empresa descarta prévia atrasada e não leva mapeamentos à empresa B",
+        "Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada",
+        "Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições",
+        "Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro",
+        "Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno",
+        "Navegação aguarda a troca de empresa/módulo e confirma a guia fiscal sob latência de 750 ms",
+        "Exportação em competência fechada permitida; documentos/fontes/lançamentos/partidas/títulos/contas/centros/cadastros econômicos com hashes idênticos"
+      ],
+      "console_errors": [],
+      "browser_version": "151.0.7922.34",
+      "context_network_latency_ms": 750
+    },
+    {
+      "ok": true,
+      "synthetic_only": true,
+      "checks": [
+        "Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload",
+        "Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote",
+        "Escolha de layout fiscal persistida: somente saídas gera apenas SAIDAS.TXT; registros não selecionados têm motivo e retornar a ambas preserva intenção",
+        "Editar campos remove prévia/download; troca de empresa descarta prévia atrasada e não leva mapeamentos à empresa B",
+        "Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada",
+        "Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições",
+        "Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro",
+        "Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno",
+        "Navegação aguarda a troca de empresa/módulo e confirma a guia fiscal sob latência de 750 ms",
+        "Exportação em competência fechada permitida; documentos/fontes/lançamentos/partidas/títulos/contas/centros/cadastros econômicos com hashes idênticos"
+      ],
+      "console_errors": [],
+      "browser_version": "151.0.7922.34",
+      "context_network_latency_ms": 750
+    }
+  ],
+  "integration_chromium151": {
+    "ok": true,
+    "synthetic_only": true,
+    "checks": [
+      "Pagination, empty/combined/rapid filters and KeepAlive navigation are read-only",
+      "Daily: 0.01 + 10.02 => one balanced 10.03 journal; lost response after commit and exact-key retry do not duplicate; both sources traced",
+      "Individual: three notes/dates/CFOP/accounts => three journals; company B has two independent journals; saved company mode and previous movements preserved",
+      "Fiscal fields, original single journal and receivable preserved; independent daily report read-only and balanced at 43.22",
+      "Closed accounting month refuses UI generation even with permissive legacy defaults; reopening permits it; FK and all journals balanced",
+      "Both menus share integration: incoming preview/close read-only; daily sales setting preserved; two purchases remain individual; lost-response exact retry and alternate menu do not duplicate; origins/FK/balance preserved",
+      "Configuration and controls remain within the 1100px viewport; wide table scroll is contained"
+    ],
+    "console_errors": [],
+    "browser_version": "151.0.7922.34",
+    "read_only_hashes": {
+      "before": {
+        "documents": "1900e01c290c499fc70950818f7ef2f793c9eaed61ebff5a2131ad3f0c3fc80e",
+        "journals": "108291e4d579c7d35d1505481ff903236fe52bed1d7b0326bf7e4cedefb778a0",
+        "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+        "titles": "37ffcdab6d0816290075c5ac6f5008b27a68717476e03bf9e84fdfd8895d9341",
+        "audit": "c85fbe94dfa4bf089028db90a3b148b30ab7a83a261e6eef25d86570e21b7092"
+      },
+      "after": {
+        "documents": "1900e01c290c499fc70950818f7ef2f793c9eaed61ebff5a2131ad3f0c3fc80e",
+        "journals": "108291e4d579c7d35d1505481ff903236fe52bed1d7b0326bf7e4cedefb778a0",
+        "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+        "titles": "37ffcdab6d0816290075c5ac6f5008b27a68717476e03bf9e84fdfd8895d9341",
+        "audit": "c85fbe94dfa4bf089028db90a3b148b30ab7a83a261e6eef25d86570e21b7092"
+      }
+    },
+    "replay_hashes": {
+      "before": {
+        "documents": "0b2a3ac99676a3d9e326813473a47e7049b183bc7a08e630146014debf79c826",
+        "journals": "785ead46936096f9daceba96362ed7f78987ebf54732aa4a3fafda6554db7da9",
+        "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+        "titles": "37ffcdab6d0816290075c5ac6f5008b27a68717476e03bf9e84fdfd8895d9341",
+        "audit": "43229a8e2cbfbcaa05b7564ea3286b413396009e94f75b0301315af2707937f7"
+      },
+      "after": {
+        "documents": "0b2a3ac99676a3d9e326813473a47e7049b183bc7a08e630146014debf79c826",
+        "journals": "785ead46936096f9daceba96362ed7f78987ebf54732aa4a3fafda6554db7da9",
+        "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+        "titles": "37ffcdab6d0816290075c5ac6f5008b27a68717476e03bf9e84fdfd8895d9341",
+        "audit": "43229a8e2cbfbcaa05b7564ea3286b413396009e94f75b0301315af2707937f7"
+      }
+    },
+    "report_hashes": {
+      "before": {
+        "documents": "7d3266f26e5d56a315be37f8e164f707864eea51a920ce8075e246adbefb2fee",
+        "journals": "2d9ff87e8609b67ac0d072e723afd2d88c5d95ded671591c812c72c9aa024505",
+        "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+        "titles": "37ffcdab6d0816290075c5ac6f5008b27a68717476e03bf9e84fdfd8895d9341",
+        "audit": "9534207c9e80e6b42c9d16921be115299b5db14b9036e0136a2fa0c4eb2d2183"
+      },
+      "after": {
+        "documents": "7d3266f26e5d56a315be37f8e164f707864eea51a920ce8075e246adbefb2fee",
+        "journals": "2d9ff87e8609b67ac0d072e723afd2d88c5d95ded671591c812c72c9aa024505",
+        "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+        "titles": "37ffcdab6d0816290075c5ac6f5008b27a68717476e03bf9e84fdfd8895d9341",
+        "audit": "9534207c9e80e6b42c9d16921be115299b5db14b9036e0136a2fa0c4eb2d2183"
+      }
+    },
+    "incoming_preview_hashes": {
+      "before": {
+        "documents": "b1eb15cb6aaab245588714759d5473887100db11cef8f325055d3c7251c39651",
+        "journals": "5b1419b8c4899da8ec68baa81746c9f70f6187fe5eed26530acbb3eb9c088c24",
+        "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+        "titles": "37ffcdab6d0816290075c5ac6f5008b27a68717476e03bf9e84fdfd8895d9341",
+        "audit": "cdfddb0aae0875f594562477cf9dfbe94e1e30463e7ef52038f01c7ce0d2ae18"
+      },
+      "after": {
+        "documents": "b1eb15cb6aaab245588714759d5473887100db11cef8f325055d3c7251c39651",
+        "journals": "5b1419b8c4899da8ec68baa81746c9f70f6187fe5eed26530acbb3eb9c088c24",
+        "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+        "titles": "37ffcdab6d0816290075c5ac6f5008b27a68717476e03bf9e84fdfd8895d9341",
+        "audit": "cdfddb0aae0875f594562477cf9dfbe94e1e30463e7ef52038f01c7ce0d2ae18"
+      }
+    },
+    "incoming_replay_hashes": {
+      "before": {
+        "documents": "8b1c94436cb159142addf58983173a321727a09ef15bdddd9d635812ba3fd0eb",
+        "journals": "32bb174d6e199e3567a24bc52daf39ab9f461eb0dcc048ab6aca388a0df2e747",
+        "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+        "titles": "37ffcdab6d0816290075c5ac6f5008b27a68717476e03bf9e84fdfd8895d9341",
+        "audit": "03f9ef3427560cfba1ee7fd15d4cc4e98f04202cd967148d7c66241c23b77048"
+      },
+      "after": {
+        "documents": "8b1c94436cb159142addf58983173a321727a09ef15bdddd9d635812ba3fd0eb",
+        "journals": "32bb174d6e199e3567a24bc52daf39ab9f461eb0dcc048ab6aca388a0df2e747",
+        "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+        "titles": "37ffcdab6d0816290075c5ac6f5008b27a68717476e03bf9e84fdfd8895d9341",
+        "audit": "03f9ef3427560cfba1ee7fd15d4cc4e98f04202cd967148d7c66241c23b77048"
+      }
+    },
+    "final_journals": {
+      "A": 8,
+      "B": 2
+    }
+  },
+  "backend": {
+    "modules": [
+      "test_fiscal_sales_accounting",
+      "test_fiscal_incoming_accounting",
+      "test_fiscal_sales_composition",
+      "test_fiscal_accounting_prosoft_composition",
+      "test_prosoft_increment",
+      "test_prosoft_cancel_references",
+      "test_prosoft_reception_composition",
+      "test_prosoft_settings",
+      "test_workspace_context",
+      "test_browser_cfop_checks",
+      "test_browser_script_bootstrap"
+    ],
+    "tests_run": 124,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 68.2,
+    "ok": true
+  },
+  "frontend": {
+    "tests": 181,
+    "passed": 181,
+    "failed": 0,
+    "skipped": 0,
+    "milliseconds": 3103.381648
+  },
+  "build": {
+    "ok": true,
+    "seconds": 4.3,
+    "main_bundle_kb": 839.78,
+    "gzip_kb": 249.28,
+    "warning": "Existing >500 kB bundle warning unchanged."
+  },
+  "preservation": {
+    "product_paths_unchanged": [
+      "app",
+      "frontend",
+      ".github/workflows"
+    ],
+    "locator_timeout_ms_before": 15000,
+    "locator_timeout_ms_after": 15000,
+    "original_prosoft_check_groups": 9,
+    "fixed_prosoft_check_groups": 10,
+    "new_check": "Context readiness, company and fiscal target tab under 750 ms network latency",
+    "original_download_hash_balance_closed_period_checks_preserved": true,
+    "fixed_scenario_sha256": "22b3f739aaecb6113000630fbd07e577a4c4513fa5185dadb842e4649d3ec21d",
+    "fixed_scenario_git_blob": "7c00107219818df08088b7c459c8eaa99ecbc123"
+  },
+  "browser_install": {
+    "playwright": "1.62.0",
+    "chromium": "151.0.7922.34",
+    "official_source": "https://storage.googleapis.com/chrome-for-testing-public/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip",
+    "archive_bytes": 120231126,
+    "isolated_install": true,
+    "playwright_CDN_attempt": "Returned invalid/truncated ZIP, not counted as browser success."
+  },
+  "checks": {
+    "python_ast": true,
+    "git_diff_check": true,
+    "version_parity": true
+  },
+  "limits": [
+    "Not a new full-repository suite; 124 targeted backend checks and 181 frontend tests ran locally, plus deterministic Chromium before/after and repetitions.",
+    "Existing integration pending import automation, item allocation and previous individual buttons remains partial.",
+    "No application/workflow changes, real data, backups, production, final merge, release or deployment."
+  ]
+}

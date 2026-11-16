@@ -62,7 +62,8 @@ def balance_row(key, value, debits=0, credits=0, line_ids=()):
             'movement_line_ids': list(line_ids)}
 
 
-def _snapshot(conn, cid, start, end):
+def _snapshot(conn, cid, start, end, *, include_balances=True):
+    """Read shared evidence; callers may omit unused derived balance summaries."""
     company = company_row(conn, cid)
     warnings = [
         {'code': 'PREPARATION_ONLY', 'message': 'JSON preparatório, sem arquivo ECD, assinatura, transmissão ou validação oficial.'},
@@ -155,38 +156,40 @@ def _snapshot(conn, cid, start, end):
                              'message': 'Competência armazenada difere da data; agrupamento usa a data real preservada.'})
         journal['source_record_sha256'] = digest(journal)
         (before if journal['date'] < start else selected).append(journal)
-        if journal['date'] < start:
+        if include_balances and journal['date'] < start:
             for line in journal['lines']:
                 key = (line['account_id'], line['cost_center_id'])
                 prior[key] += int(line['debit']['cents']) - int(line['credit']['cents'])
                 prior_lines[key].append(line['id'])
-    order = lambda key: (key[0], key[1] is not None, key[1] or 0)
-    initial = [{'account_id': key[0], 'cost_center_id': key[1], 'recorded_balance': amount(prior[key]),
-                'line_ids': prior_lines[key], 'ecd_opening_balance': None} for key in sorted(prior, key=order)]
-    period_journals = defaultdict(list)
-    for journal in selected:
-        period_journals[journal['date'][:7]].append(journal)
-    monthly = []
-    rolling = dict(prior)
-    for first, last in months(start, end):
-        movements = defaultdict(lambda: [0, 0, []])
-        entries = period_journals[first[:7]]
-        for journal in entries:
-            for line in journal['lines']:
-                key = (line['account_id'], line['cost_center_id'])
-                movements[key][0] += int(line['debit']['cents'])
-                movements[key][1] += int(line['credit']['cents'])
-                movements[key][2].append(line['id'])
-        rows = [balance_row(key, rolling.get(key, 0), *movements.get(key, (0, 0, [])))
-                for key in sorted(rolling.keys() | movements.keys(), key=order)]
-        rolling = {(r['account_id'], r['cost_center_id']): int(r['recorded_closing']['cents']) for r in rows}
-        monthly.append({'start': first, 'end': last, 'journal_ids': [j['id'] for j in entries], 'balances': rows})
+    initial, monthly = [], []
+    if include_balances:
+        order = lambda key: (key[0], key[1] is not None, key[1] or 0)
+        initial = [{'account_id': key[0], 'cost_center_id': key[1], 'recorded_balance': amount(prior[key]),
+                    'line_ids': prior_lines[key], 'ecd_opening_balance': None} for key in sorted(prior, key=order)]
+        period_journals = defaultdict(list)
+        for journal in selected:
+            period_journals[journal['date'][:7]].append(journal)
+        monthly = []
+        rolling = dict(prior)
+        for first, last in months(start, end):
+            movements = defaultdict(lambda: [0, 0, []])
+            entries = period_journals[first[:7]]
+            for journal in entries:
+                for line in journal['lines']:
+                    key = (line['account_id'], line['cost_center_id'])
+                    movements[key][0] += int(line['debit']['cents'])
+                    movements[key][1] += int(line['credit']['cents'])
+                    movements[key][2].append(line['id'])
+            rows = [balance_row(key, rolling.get(key, 0), *movements.get(key, (0, 0, [])))
+                    for key in sorted(rolling.keys() | movements.keys(), key=order)]
+            rolling = {(r['account_id'], r['cost_center_id']): int(r['recorded_closing']['cents']) for r in rows}
+            monthly.append({'start': first, 'end': last, 'journal_ids': [j['id'] for j in entries], 'balances': rows})
     if not selected:
         warnings.append({'code': 'NO_RECORDED_JOURNALS_IN_RANGE', 'message': 'Ausência de lançamentos no intervalo não atesta inatividade ou saldo zero ECD.'})
     used_centers = sorted({line['cost_center_id'] for j in journals for line in j['lines'] if line['cost_center_id'] in centers})
     selected_debits = sum(int(j['reconciliation']['debits']['cents']) for j in selected)
     selected_credits = sum(int(j['reconciliation']['credits']['cents']) for j in selected)
-    return {'schema_version': 1, 'artifact_type': 'ecd_preparation_snapshot_json',
+    result = {'schema_version': 1, 'artifact_type': 'ecd_preparation_snapshot_json',
         'complete_ecd': False, 'validated_in_official_program': False, 'transmitted': False,
         'warnings_block_export': False, 'reference': deepcopy(REFERENCE),
         'scope': {'company_id': cid, 'calendar_year': int(start[:4]), 'start': start, 'end': end,
@@ -205,6 +208,12 @@ def _snapshot(conn, cid, start, end):
                      'historical_definitions_attested': False, 'opening_balances_attested': False,
                      'signers': None, 'financial_statements': None, 'functional_currency': None,
                      'candidates_are_serialized_ecd_records': False, 'history_per_line': 'journal_header_only'}, 'warnings': warnings}
+
+    if not include_balances:
+        del result['monthly_balances']
+        del result['opening_history']['recorded_balances']
+        result['derived_balances_omitted'] = True
+    return result
 
 
 def accounting_snapshot(core, cid, start, end):

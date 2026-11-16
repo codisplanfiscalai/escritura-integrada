@@ -95,3 +95,5 @@ def register_sped_generator_routes(app, core, check_period):
                     'content_base64': base64.b64encode(content).decode()}
 
     register_ecd_snapshot_routes(app, core, check_period)
+    from .contributions_snapshot import register_contributions_routes
+    register_contributions_routes(app, core, check_period)

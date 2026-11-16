@@ -20,7 +20,7 @@ def deployment_env(manifest, environment):
     rows = ["# Gerado da publicação verificada. Não contém usuários/senhas predefinidos.",
             "# Develop segue :develop online; compose.release.yaml fixa a publicação para offline/rollback.",
             "COMPOSE_PROJECT_NAME=escritura-" + environment,
-            "# Caminho HOST do bind do app. Vazio usa ./data/<projeto>/app; em bind existente, preserve ./data/app.",
+            "# Preparação obrigatória: init (nova) ou prepare-app (existente) grava o bind detectado. Vazio bloqueia Compose.",
             "ESCRITURA_APP_DATA_BIND=",
             "ESCRITURA_BIND=127.0.0.1", "ESCRITURA_PORT=" + port,
             "ESCRITURA_IMAGE=" + app_reference, "ESCRITURA_COOKIE_SECURE=0", "",
@@ -55,16 +55,23 @@ Stack já usando ./data/app:/data: preserve esse caminho. Não execute init ou
 migrate nem recopie o volume antigo. Leia a seção de bind existente em STORAGE.md.
 compose.existing-bind.yaml é um override explícito para esse caminho, sem cópia
 ou alteração de permissões. Não substitua mounts dos demais serviços sem revisão.
-Nos templates novos, ESCRITURA_APP_DATA_BIND=./data/app no .env preserva esse
-bind; vazio usa ./data/<projeto>/app. Não substitua seu .env privado pelo exemplo.
+Não substitua seu .env privado pelo exemplo. Antes de atualizar uma stack existente:
+   python3 deploy_storage.py prepare-app --project <projeto-atual> --helper-image <imagem-local-do-app>
+Esse comando detecta ./data/app ou ./data/<projeto>/app, valida USER/permissões e
+grava somente o bind no .env; não move dados, baixa imagens ou inicia containers.
+Dois caminhos existentes, ausência de SQLite ou permissões incorretas bloqueiam
+sem sobrescrever .env/dados. Override explícito válido tem prioridade.
+Compose puro/Dockge não examina o filesystem: campo vazio agora bloqueia sem
+adivinhar namespace. prepare-app precisa rodar no host antes do pull/up do painel.
 Antes de subir, use check-app conforme STORAGE.md; ownership incorreto pode
 impedir UID 10001 de abrir SQLite mesmo quando a cópia preservou todos os bytes.
 
 1. Extraia este pacote em um diretório próprio.
-2. Instalação nova: baixe/carregue a imagem do app (docker compose pull app).
+2. Instalação nova: baixe/carregue a imagem do app (docker pull <imagem-do-app-no-.env>).
 3. Prepare as pastas com Python 3.10+ e a imagem LOCAL da aplicação:
    python3 deploy_storage.py init --project escritura-{environment} --helper-image <imagem-do-app-no-.env>
    Use o mesmo COMPOSE_PROJECT_NAME do .env; não execute init numa stack existente.
+   init grava o bind isolado por projeto no .env automaticamente, sem criar banco.
 4. Execute: docker compose up -d
 5. Confira permissões e health (Started sozinho não valida startup):
    python3 deploy_storage.py check-app --compose-file compose.yaml --project escritura-{environment} --require-health --wait-health-seconds 120
@@ -130,7 +137,7 @@ A ferramenta recusa destinos existentes, mantém os volumes originais e não alt
 os arquivos Compose. Não execute nenhuma cópia com bancos/serviços em execução.
 Faça backup consistente e testado antes de atualizar. Nunca use down -v em dados
 que deseja manter. Um rollback da imagem não desfaz migrações de banco.
-Online: docker compose up -d. Com :develop/:latest, não é preciso trocar a tag
+Atualização: execute prepare-app antes de docker compose up -d. Com :develop/:latest, não é preciso trocar a tag
 no .env a cada versão. docker compose pull app baixa a imagem, mas é o up que
 aplica a atualização. No Dockge, salve o Compose e execute a ação de atualizar/
 implantar que faz pull/up; reiniciar o container existente não busca imagem.

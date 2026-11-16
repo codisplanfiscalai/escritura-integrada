@@ -41,3 +41,10 @@ compose.named*.yaml
 
 # Generated local PDF.js codecs (npm prebuild/predev).
 frontend/public/pdfjs-codecs/
+# Encrypted fiscal backups and external recovery keys must never be versioned.
+*.eibk
+*.key
+
+# Experimental encrypted PostgreSQL fixtures; never publish payloads.
+*.eipg
+*.pgpass

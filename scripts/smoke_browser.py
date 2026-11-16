@@ -77,7 +77,7 @@ def main():
                         expect(page.get_by_role('dialog')).to_have_count(0)
                         assert page.request.get(url+'/api/session').json()['active_company_id']==cid
                         check('Editar outra empresa mantém a empresa ativa')
-                        nav('Participantes, produtos e serviços')
+                        nav('Vínculos locais de terceiros')
                         page.get_by_role('button',name='Novo cadastro',exact=True).click()
                         page.get_by_label('Código *',exact=True).fill('P-UI')
                         page.get_by_label('Nome / razão social *',exact=True).fill('Fornecedor digitado — sintético')
@@ -96,6 +96,8 @@ def main():
                         page.get_by_role('button',name='Salvar cadastro',exact=True).click()
                         expect(page.get_by_role('dialog')).to_have_count(0)
                         check('CNPJ: consulta simulada, comparação, aplicação seletiva e persistência de múltiplas IEs')
+                        from browser_shared_registrations import run as shared_registrations
+                        shared_registrations(page,url,cid,nav,check,shot)
                         accounts=page.request.get(url+f'/api/companies/{cid}/accounts').json();aid={a['access_code']:str(a['id']) for a in accounts}
                         participants=page.request.get(url+f'/api/companies/{cid}/masters/participant').json();participant=next(p for p in participants if p['code']=='P-UI')
                         assert len(participant['data']['profile']['state_registrations'])==2

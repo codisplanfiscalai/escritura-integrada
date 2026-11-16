@@ -10,6 +10,7 @@ import sqlite3
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -29,7 +30,7 @@ def digest(char):
 class FakeDocker:
     def __init__(self):
         self.current = {'container_id': 'a'*64, 'image_id': digest('b'), 'digest': digest('c'),
-                        'version': '0.9.0-dev.1', 'uid_gid': '10001:10001', 'configuration_hash': 'd'*64}
+                        'version': '0.9.0-dev.1', 'uid_gid': '10001:10001', 'configuration_hash': 'd'*64, 'configured_channel':'develop'}
         self.target = {'digest': digest('e'), 'platform_digest': digest('e'), 'image_id': digest('f'),
                        'version': '0.9.0-dev.2', 'revision': 'f'*40}
         self.pulls = 0
@@ -76,6 +77,27 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(self.docker.installed(), before)
         self.assertEqual(1, self.docker.pulls)
 
+    def test_current_source_for_both_channels_cannot_be_selected_or_guessed(self):
+        for channel in ('develop','latest'):
+            self.docker.current['configured_channel']=channel
+            with patch.object(self.docker,'resolve',wraps=self.docker.resolve) as resolve:
+                plan=self.executor.dispatch({'action':'check-current'})
+                self.assertEqual(channel,plan['channel']);resolve.assert_called_once_with(channel)
+                with self.assertRaises(Refusal):self.executor.dispatch({'action':'check','channel':'latest' if channel=='develop' else 'develop'})
+                resolve.assert_called_once_with(channel)
+        self.docker.current['configured_channel']=None
+        with patch.object(self.docker,'resolve') as resolve:
+            self.assertFalse(self.executor.status()['preparation_supported'])
+            with self.assertRaises(Refusal) as caught:self.executor.dispatch({'action':'check-current'})
+            self.assertEqual('channel_unresolved',caught.exception.code);resolve.assert_not_called()
+        self.assertEqual(0,self.docker.pulls)
+
+    def test_configuration_change_after_check_cannot_download_another_source(self):
+        plan=self.executor.check()
+        self.docker.current['configured_channel']='latest'
+        self.prepare(plan)
+        self.assertEqual('failed',self.finish()['state']);self.assertEqual(0,self.docker.pulls)
+
     def test_concurrent_repeat_and_new_keys_on_same_plan_are_deduplicated(self):
         plan = self.executor.check('develop')
         self.docker.release.clear()
@@ -83,7 +105,7 @@ class ExecutorTests(unittest.TestCase):
             jobs = list(pool.map(lambda _: self.prepare(plan), range(6)))
         self.assertEqual(1, len({j['id'] for j in jobs}))
         self.assertEqual(jobs[0]['id'], self.prepare(plan, '2'*32)['id'])
-        other = self.executor.check('latest')
+        other = self.executor.check('develop')
         with self.assertRaisesRegex(Refusal, 'andamento'): self.prepare(other, '3'*32)
         self.docker.release.set()
         self.assertEqual('prepared', self.finish()['state'])
@@ -177,7 +199,7 @@ class DockerContractTests(unittest.TestCase):
         self.labels = {'org.opencontainers.image.source':'https://github.com/codisplanfiscalai/escritura-integrada',
                        'org.opencontainers.image.version':'0.9.0-dev.1', 'org.opencontainers.image.revision':'a'*40}
         self.image = {'Id':digest('b'),'Os':'linux','Architecture':'amd64', 'Config':{'User':'10001:10001','Labels':self.labels}, 'RepoDigests':[REPOSITORY+'@'+digest('c')]}
-        self.container = {'Image':digest('b'), 'Config':{'User':'10001:10001','Labels':{'com.docker.compose.project':'synthetic-stack','com.docker.compose.service':'app'},'Env':['SYNTHETIC_SECRET=never-report']},
+        self.container = {'Image':digest('b'), 'Config':{'Image':REPOSITORY+':develop','User':'10001:10001','Labels':{'com.docker.compose.project':'synthetic-stack','com.docker.compose.service':'app'},'Env':['SYNTHETIC_SECRET=never-report']},
                           'HostConfig':{'RestartPolicy':{'Name':'unless-stopped'}},
                           'Mounts':[{'Destination':'/data','Type':'bind','Source':self.docker.data_bind,'RW':True}]}
 
@@ -197,6 +219,14 @@ class DockerContractTests(unittest.TestCase):
             self.container = original
         self.container['Config']['User'] = '0:0'
         with self.assertRaises(Refusal): self.inspect()
+
+    def test_channel_requires_exact_configured_reference_not_labels_or_cache(self):
+        for channel in ('develop','latest'):
+            self.container['Config']['Image']=REPOSITORY+':'+channel
+            self.assertEqual(channel,self.inspect()['configured_channel'])
+        for reference in ('',REPOSITORY+'@'+digest('c'),REPOSITORY+':0.9.0-dev.17',REPOSITORY+':0.8.0','evil/'+REPOSITORY+':latest'):
+            self.container['Config']['Image']=reference
+            self.assertIsNone(self.inspect()['configured_channel'])
 
     def test_digest_and_uid_verification_after_pull(self):
         target = {'digest':digest('c'),'image_id':digest('b'),'version':'0.9.0-dev.1','revision':'a'*40}
@@ -231,7 +261,7 @@ class UpdateApiTests(unittest.TestCase):
         self.app.state.docker_executor=self.stub
 
     def test_auth_csrf_origin_and_admin_are_required_without_company(self):
-        endpoints=[('GET','/api/docker-updates',None),('POST','/api/docker-updates/check',{'channel':'develop'}),
+        endpoints=[('GET','/api/docker-updates',None),('POST','/api/docker-updates/check',{}),
                    ('POST','/api/docker-updates/prepare',{'plan_id':'a'*32,'idempotency_key':'b'*32})]
         with TestClient(self.app) as anonymous:
             for method,path,body in endpoints:
@@ -250,10 +280,20 @@ class UpdateApiTests(unittest.TestCase):
         self.app.state.docker_executor=ExecutorClient('')
         result=self.client.get('/api/docker-updates').json()
         self.assertFalse(result['configured']);self.assertIsNone(result['installed'])
-        self.assertEqual(503,self.client.post('/api/docker-updates/check',json={'channel':'develop'}).status_code)
+        self.assertEqual(503,self.client.post('/api/docker-updates/check',json={}).status_code)
         for body in ({'channel':'main'},{'channel':'develop','image':'evil'},{'channel':'latest','service':'redis'}):
             self.assertEqual(422,self.client.post('/api/docker-updates/check',json=body).status_code)
         self.assertIn(self.client.post('/api/docker-updates/apply',json={}).status_code,(404,405))
+
+    def test_web_has_no_channel_selection_and_diagnostics_remain_admin_only(self):
+        self.assertEqual(200,self.client.post('/api/docker-updates/check',json={}).status_code)
+        self.stub.call.assert_called_once_with('check-current')
+        for channel in ('develop','latest'):
+            self.assertEqual(422,self.client.post('/api/docker-updates/check',json={'channel':channel}).status_code)
+        self.stub.reset_mock()
+        with self.app.state.db.transaction() as db:db.execute("UPDATE users SET role='viewer'")
+        self.assertEqual(403,self.client.get('/api/docker-updates').status_code)
+        self.stub.call.assert_not_called()
 
 
 @unittest.skipUnless(sys.platform == 'linux', 'SO_PEERCRED requires Linux')
@@ -275,7 +315,7 @@ class SocketBoundaryTests(unittest.TestCase):
 
     def test_real_socket_plan_and_job_round_trip(self):
         client,executor,_=self.start()
-        plan=client.call('check',channel='latest')
+        plan=client.call('check-current')
         job=client.call('prepare',plan_id=plan['id'],idempotency_key='1'*32,actor='1')
         executor.pool.shutdown(wait=True)
         result=client.call('status')['jobs'][0]
@@ -283,6 +323,17 @@ class SocketBoundaryTests(unittest.TestCase):
         self.assertNotEqual(plan['id'],result['id'])
         self.assertEqual('prepared',result['state'])
         self.assertFalse(result['application_updated'])
+
+    def test_current_lookup_waits_for_slow_registry_without_using_short_admission_timeout(self):
+        client,executor,_=self.start()
+        original=executor.docker.resolve
+        def slow_lookup(channel):
+            time.sleep(4.2)
+            return original(channel)
+        with patch.object(executor.docker,'resolve',side_effect=slow_lookup):
+            plan=client.call('check-current')
+        self.assertEqual('develop',plan['channel'])
+        self.assertEqual(0,executor.docker.pulls)
 
     def test_wrong_peer_uid_and_missing_socket_cannot_execute(self):
         from app.core import DomainError

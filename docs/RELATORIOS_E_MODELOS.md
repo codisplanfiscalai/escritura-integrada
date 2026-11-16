@@ -2,7 +2,9 @@
 
 ## Operação
 
-Em Contábil ou Fiscal → Relatórios, selecione o relatório, o período e os filtros pertinentes. O campo **Modelo de impressão** oferece somente os modelos específicos disponíveis para aquele relatório. Alternativas genéricas substituídas não aparecem na seleção. Informe a folha inicial e gere a consulta antes de exportar ou abrir a prévia.
+Em Contábil ou Fiscal → Relatórios, selecione o relatório, o período e os filtros pertinentes. Abra **Mais filtros e opções de impressão** para selecionar conta, centro, pesquisa, filtros fiscais e opções de impressão. O campo **Modelo de impressão** oferece somente os modelos específicos disponíveis para aquele relatório. Alternativas genéricas substituídas não aparecem na seleção. Informe a folha inicial e gere a consulta antes de exportar ou abrir a prévia.
+
+O link **Sobre os modelos** abre uma explicação do catálogo e de sua cobertura; consultar o catálogo não é um passo obrigatório. Os limites do modelo ficam em uma seção recolhível. **Cancelar consulta** interrompe a espera na interface; trocar filtros durante a carga descarta a resposta antiga.
 
 A tabela, os totalizadores e as ações de CSV, Excel, PDF e prévia ficam vinculados aos filtros da última consulta gerada. Alterar controles não muda silenciosamente o destino da exportação. Para aplicar os novos filtros, gere outra consulta. Trocar empresa, exercício ou relatório invalida a consulta anterior e fecha a prévia.
 

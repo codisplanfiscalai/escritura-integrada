@@ -1,0 +1,168 @@
+{
+  "base_sha": "cd0a7ed05a2b6f336cccd4b3788b70d860fb0a24",
+  "base_version": "0.9.0-dev.36",
+  "provenance": "Local worktree with the three source changes below, before the documentation commit. Synthetic fixtures only. Not a clean-HEAD or CI claim.",
+  "source_sha256": {
+    "frontend/src/views/FiscalSalesAccountingView.vue": "8912084e5fee0a80c331efde4e811ac1fb7e36712ca79959013294b2b835303b",
+    "frontend/tests/fiscal-sales-accounting.test.js": "8c49b58e373440b5fa7751b915bbc8e541d1b49bd75315ff3d41973370905c71",
+    "scripts/browser_fiscal_sales_accounting.py": "f9b373afaa1fd795c01b814a3450f2a9d55fdaa3b16dd24c331c9b2c8fa3c83a"
+  },
+  "frontend": {
+    "passed": 202,
+    "failed": 0,
+    "skipped": 0,
+    "command": "node --test frontend/tests/*.test.js"
+  },
+  "backend": {
+    "modules": [
+      "test_fiscal_sales_accounting",
+      "test_fiscal_incoming_accounting",
+      "test_direct_fiscal_accounting",
+      "test_fiscal_sales_composition",
+      "test_fiscal_accounting_prosoft_composition",
+      "test_workspace_context"
+    ],
+    "tests_run": 71,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 76.067,
+    "ok": true
+  },
+  "browser": {
+    "ok": true,
+    "synthetic_only": true,
+    "checks": [
+      "Pagination, empty/combined/rapid filters and KeepAlive navigation are read-only",
+      "Compact notes/actions, repeated subguides and keyboard retain selection/accounts/history with zero extra reads; desktop and 390px layouts stay contained",
+      "Canceling a read-only preview under latency preserves selection and data; a fresh preview remains available",
+      "Daily direct accounts, optional model regression preserved: 0.01 + 10.02 => one balanced 10.03 journal; lost response after commit and exact-key retry do not duplicate; both sources traced",
+      "Individual: three notes/dates/CFOP/accounts => three journals; company B has two independent journals; saved company mode and previous movements preserved",
+      "Fiscal fields, original single journal and receivable preserved; independent daily report read-only and balanced at 43.22",
+      "Closed accounting month refuses UI generation even with permissive legacy defaults; reopening permits it; FK and all journals balanced",
+      "Both menus share direct-account integration without required models: incoming preview/close read-only; daily sales setting preserved; two purchases remain individual; lost-response exact retry and alternate menu do not duplicate; origins/FK/balance preserved",
+      "Fresh company C has no accounting models: two direct sales consolidate at 10.03; two direct purchases stay individual; all origins and balances preserved without creating models",
+      "F8 competence changes return to notes, apply the current month and preserve all accounting/fiscal data; both access headings match their modules",
+      "Configuration and controls remain within the 1100px viewport; wide table scroll is contained"
+    ],
+    "console_errors": [],
+    "browser_version": "151.0.7922.34",
+    "read_only_hashes": {
+      "before": {
+        "documents": "8daeac02e0d846e975bdad609a830035b1a816a7a5dafc43160299495c447151",
+        "journals": "bda6d7c3adaafa22ae7df4fb176dd8b3e775f9f831b181e6d45537b322222aa8",
+        "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+        "titles": "427afde704911fba834616afe10b63f3d960c305e99329393d9c05a8fd6a7f24",
+        "audit": "6e4f3ce3ee4b5af0873178cdb169f5a820a3b890c6df5c508cb3652e45d77a33"
+      },
+      "after": {
+        "documents": "8daeac02e0d846e975bdad609a830035b1a816a7a5dafc43160299495c447151",
+        "journals": "bda6d7c3adaafa22ae7df4fb176dd8b3e775f9f831b181e6d45537b322222aa8",
+        "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+        "titles": "427afde704911fba834616afe10b63f3d960c305e99329393d9c05a8fd6a7f24",
+        "audit": "6e4f3ce3ee4b5af0873178cdb169f5a820a3b890c6df5c508cb3652e45d77a33"
+      }
+    },
+    "desktop_notes_table_top": 632.28125,
+    "subguide_read_request_count": 0,
+    "replay_hashes": {
+      "before": {
+        "documents": "81cab8eb3f232d514410c7bdec1b866058f930e4bd4af0eec7c790aabd2ba912",
+        "journals": "7393a8b59a1e7c5e07f8ebc95d0389613c489df483aae4e55e33c183a0db6aad",
+        "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+        "titles": "427afde704911fba834616afe10b63f3d960c305e99329393d9c05a8fd6a7f24",
+        "audit": "4598c8468b530289bd15bab4de6e7085490da81e179c5fbc472b6918e1feba76"
+      },
+      "after": {
+        "documents": "81cab8eb3f232d514410c7bdec1b866058f930e4bd4af0eec7c790aabd2ba912",
+        "journals": "7393a8b59a1e7c5e07f8ebc95d0389613c489df483aae4e55e33c183a0db6aad",
+        "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+        "titles": "427afde704911fba834616afe10b63f3d960c305e99329393d9c05a8fd6a7f24",
+        "audit": "4598c8468b530289bd15bab4de6e7085490da81e179c5fbc472b6918e1feba76"
+      }
+    },
+    "report_hashes": {
+      "before": {
+        "documents": "98f6e8d63a74e3f4d8d8fd41f9741531794109ba798324a2ea8e935dacf455f0",
+        "journals": "8811d3b23c33bfe2f12435202e571e49acb82255519f8a781b207c35b6fad042",
+        "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+        "titles": "427afde704911fba834616afe10b63f3d960c305e99329393d9c05a8fd6a7f24",
+        "audit": "e1c1c2772be2c36bba5b648910eace856b83d83e632da21d2ec5b7937cf8cead"
+      },
+      "after": {
+        "documents": "98f6e8d63a74e3f4d8d8fd41f9741531794109ba798324a2ea8e935dacf455f0",
+        "journals": "8811d3b23c33bfe2f12435202e571e49acb82255519f8a781b207c35b6fad042",
+        "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+        "titles": "427afde704911fba834616afe10b63f3d960c305e99329393d9c05a8fd6a7f24",
+        "audit": "e1c1c2772be2c36bba5b648910eace856b83d83e632da21d2ec5b7937cf8cead"
+      }
+    },
+    "incoming_preview_hashes": {
+      "before": {
+        "documents": "d062bed0e2a33a85352d1e9a91fcc15a7475fb3072e13ce25cdcc4a33cc079ba",
+        "journals": "1bcbbcceed07514b24fdd637086b3791fa3ce6aacf3c8c8b03ce678a7855d3fd",
+        "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+        "titles": "427afde704911fba834616afe10b63f3d960c305e99329393d9c05a8fd6a7f24",
+        "audit": "bb53668af28859e261ef86394ca94ae896207587b0191c4adb28e841a0315742"
+      },
+      "after": {
+        "documents": "d062bed0e2a33a85352d1e9a91fcc15a7475fb3072e13ce25cdcc4a33cc079ba",
+        "journals": "1bcbbcceed07514b24fdd637086b3791fa3ce6aacf3c8c8b03ce678a7855d3fd",
+        "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+        "titles": "427afde704911fba834616afe10b63f3d960c305e99329393d9c05a8fd6a7f24",
+        "audit": "bb53668af28859e261ef86394ca94ae896207587b0191c4adb28e841a0315742"
+      }
+    },
+    "incoming_replay_hashes": {
+      "before": {
+        "documents": "caf043651dc08973ff409cec09465d63d2d7bc6a47d86a2a7bfb0980214a3dc7",
+        "journals": "cfc8047b443253f853a9b9ff90f8948efa20c3858a7d4839b6b553a7ca498632",
+        "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+        "titles": "427afde704911fba834616afe10b63f3d960c305e99329393d9c05a8fd6a7f24",
+        "audit": "7984457796ac9480e805e878f2a8334bab321343ad90f9cd6af206c55dc8c141"
+      },
+      "after": {
+        "documents": "caf043651dc08973ff409cec09465d63d2d7bc6a47d86a2a7bfb0980214a3dc7",
+        "journals": "cfc8047b443253f853a9b9ff90f8948efa20c3858a7d4839b6b553a7ca498632",
+        "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+        "titles": "427afde704911fba834616afe10b63f3d960c305e99329393d9c05a8fd6a7f24",
+        "audit": "7984457796ac9480e805e878f2a8334bab321343ad90f9cd6af206c55dc8c141"
+      }
+    },
+    "no_models_company_journals": 3,
+    "workspace_month_hashes": {
+      "before": {
+        "documents": "ee0753df482fe19206e4be41f021980ca5f935fe65ecf8dbb9e01df5861d8890",
+        "journals": "6096811d704c34a9d26e92b172ac5ee63b80edd0e9d0d73fb09a56c585e99aea",
+        "journal_lines": "5b60843e612bb5d986fa82de1491d9bb30d5a909c15f516e9cb79940cf968e9c",
+        "titles": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "audit": "c3299aadfe76b9dc5c7d88c9818ddf969e13762851cfb172e21e81d740697f12"
+      },
+      "after": {
+        "documents": "ee0753df482fe19206e4be41f021980ca5f935fe65ecf8dbb9e01df5861d8890",
+        "journals": "6096811d704c34a9d26e92b172ac5ee63b80edd0e9d0d73fb09a56c585e99aea",
+        "journal_lines": "5b60843e612bb5d986fa82de1491d9bb30d5a909c15f516e9cb79940cf968e9c",
+        "titles": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "audit": "c3299aadfe76b9dc5c7d88c9818ddf969e13762851cfb172e21e81d740697f12"
+      }
+    },
+    "final_journals": {
+      "A": 8,
+      "B": 2,
+      "C": 3
+    }
+  },
+  "build": {
+    "ok": true,
+    "seconds": 5.79,
+    "main_bundle_kb": 870.82,
+    "main_bundle_gzip_kb": 257.8,
+    "warning": "Main chunk above 500 kB"
+  },
+  "version_check": "python scripts/ci/versioning.py check --expected 0.9.0-dev.36",
+  "limits": [
+    "Targeted backend regression, not the entire backend suite",
+    "No local PostgreSQL, packaged Qt, Windows/macOS, production, scale benchmark or accessibility certification",
+    "CI of the published commit must be checked separately"
+  ]
+}

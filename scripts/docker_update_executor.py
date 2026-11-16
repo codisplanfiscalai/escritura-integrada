@@ -111,6 +111,9 @@ class Docker:
         return {'container_id': ids[0], 'image_id': valid_digest(image['Id']),
                 'digest': valid_digest(digests[0]) if digests else None,
                 'version': self.version(labels), 'uid_gid': cfg['User'],
+                # Only the actual configured reference proves the update source.
+                # Version labels, cached tags and digests cannot identify a channel.
+                'configured_channel': next((c for c in ('develop','latest') if cfg.get('Image')==REPOSITORY+':'+c), None),
                 'configuration_hash': hashed({'config': cfg, 'host': container['HostConfig'], 'mounts': mounts})}
 
     @staticmethod
@@ -249,9 +252,10 @@ class Executor:
         except Refusal as exc:
             installed, error = None, exc.detail
         return {'configured': True, 'installed': installed, 'installed_error': error,
+                'preparation_supported': bool(installed and installed.get('configured_channel') in ('develop','latest')),
                 'jobs': [self.job(r) for r in rows], 'cutover_supported': False, 'limitation': LIMITATION}
 
-    def check(self, channel):
+    def check(self, channel=None):
         with self.lock:
             with self.db() as db:
                 if db.execute('SELECT count(*) FROM plans WHERE created>?', (time.time() - 3600,)).fetchone()[0] >= 12:
@@ -261,6 +265,12 @@ class Executor:
                 db.execute('DELETE FROM plans WHERE created<? AND id NOT IN (SELECT plan_id FROM jobs)', (time.time() - 3600,))
                 db.execute('INSERT INTO plans VALUES(?,?,?)', (pid, time.time(), '{}'))
             installed = self.docker.installed()
+            configured = installed.get('configured_channel')
+            if configured not in ('develop','latest'):
+                raise Refusal('Referência configurada não identifica develop/latest com segurança. Não há inferência por versão, digest ou cache.', 'channel_unresolved')
+            if channel is not None and channel!=configured:
+                raise Refusal('A consulta não pode mudar o canal configurado.', 'configured_channel_mismatch')
+            channel=configured
             target = self.docker.resolve(channel)
             plan = {'id': pid, 'channel': channel, 'installed': installed, 'target': target,
                     'expires_at': time.time() + 300, 'cutover_supported': False}
@@ -309,6 +319,8 @@ class Executor:
         try:
             if self.docker.installed() != plan['installed']:
                 raise Refusal('Instalação/configuração mudou desde a consulta. Consulte novamente.', 'installed_changed')
+            if plan['channel']!=plan['installed'].get('configured_channel'):
+                raise Refusal('Preparação não corresponde ao canal configurado.', 'configured_channel_mismatch')
             if self.docker.resolve(plan['channel']) != plan['target']:
                 raise Refusal('O canal mudou desde a consulta. Consulte e confirme o novo digest.', 'target_changed')
             self.docker.space()
@@ -329,12 +341,14 @@ class Executor:
         if type(payload) is not dict:
             raise Refusal('Requisição inválida.', 'invalid_request', 422)
         action = payload.get('action')
-        fields = {'status': {'action'}, 'check': {'action', 'channel'},
+        fields = {'status': {'action'}, 'check-current': {'action'}, 'check': {'action', 'channel'},
                   'prepare': {'action', 'plan_id', 'idempotency_key', 'actor'}}
         if not isinstance(action, str) or action not in fields or set(payload) != fields[action]:
             raise Refusal('Operação não suportada. Corte/rollback não estão implementados.', 'unsupported_operation', 422)
         if action == 'status':
             return self.status()
+        if action == 'check-current':
+            return self.check()
         if action == 'check':
             if payload['channel'] not in ('develop', 'latest'):
                 raise Refusal('Canal inválido.', 'invalid_channel', 422)

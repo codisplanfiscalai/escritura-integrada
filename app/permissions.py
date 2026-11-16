@@ -10,6 +10,7 @@ ACTIONS = {'read': 'Consultar', 'create': 'Incluir', 'edit': 'Editar', 'delete':
 ROUTINES = {
     'fiscal.documents': ('Escrituração e documentos', 'read create edit delete book reverse export print'),
     'fiscal.imports': ('Importações fiscais', 'read import export delete'),
+    'fiscal.shared_parties': ('Catálogo global de terceiros', 'read create edit delete'),
     'fiscal.masters': ('Cadastros fiscais', 'read create edit delete'),
     'fiscal.parameters': ('Parametrizações fiscais', 'read create edit delete'),
     'fiscal.assessments': ('Apurações e ajustes', 'read create edit reverse book export print'),
@@ -30,6 +31,7 @@ ROUTINES = {
     'financial.settlements': ('Baixas financeiras', 'read settle reverse'),
     'financial.reconciliation': ('Conciliação bancária e de participantes', 'read import edit reverse export print'),
     'financial.reports': ('Relatórios financeiros', 'read export print'),
+    'accounting.accountants': ('Cadastro de contadores', 'read create edit delete'),
     'system.companies': ('Cadastro da empresa', 'read edit'),
     'system.audit': ('Auditoria da empresa', 'read export'),
 }
@@ -130,7 +132,7 @@ def route_policy(path, method, query, payload, session):
         return None, None, False
     if path in {'/api/context', '/api/logout', '/api/permissions/me', '/api/permissions/catalog'}:
         return None, None, False
-    if re.match(r'^/api/(users|groups|access-audit|storage|docker-updates)(/|$)', path):
+    if re.match(r'^/api/(users|groups|access-audit|storage|docker-updates|backups)(/|$)', path):
         return None, None, True
     if path == '/api/companies':
         return None, None, write
@@ -145,10 +147,10 @@ def route_policy(path, method, query, payload, session):
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
-    if root == 'fiscal-sales-accounting':
+    if root in {'fiscal-sales-accounting', 'fiscal-purchases-accounting'}:
         if tail.endswith('/settings'):
             return 'accounting.accounts', 'edit' if write else 'read', False
-        return 'accounting.journals', 'create' if write else 'read', False
+        return 'accounting.journals', 'create' if write and not tail.endswith('/preview') else 'read', False
     if root == 'accounting-entry-defaults':
         return 'accounting.journals', 'read', False
     if root == 'accounting-settings' and '/plan-manager' in tail:
@@ -176,6 +178,12 @@ def route_policy(path, method, query, payload, session):
             return 'accounting.imports', 'export', False
         if write:return 'accounting.imports', 'import', False
         return 'accounting.accounts', 'read', False
+    if root == 'registrations':
+        kind = tail.strip('/').split('/')[1] if len(tail.strip('/').split('/')) > 1 else ''
+        routine = {'third-party':'fiscal.shared_parties','accountant':'accounting.accountants'}.get(kind,'invalid')
+        if tail.endswith(('/use','/links')):
+            return ('fiscal.masters','create',False) if kind=='third-party' else (routine,'edit',False)
+        return routine, action, write
     if root == 'third-parties':
         return 'fiscal.masters', ('read' if not write or tail.endswith('/reuse-preview') else 'edit'), False
     if root == 'master-movements':
@@ -191,6 +199,8 @@ def route_policy(path, method, query, payload, session):
     if root == 'cfop-source-loads':
         return 'fiscal.masters', 'read' if tail.endswith('/preview') or not write else 'create', False
     if root == 'sped-generator':
+        if tail == '/sped-generator/contributions-snapshot' and method == 'GET':
+            return 'fiscal.documents', 'export', False
         if tail == '/sped-generator/accounting-snapshot' and method == 'GET':
             return 'accounting.journals', 'export', False
         return 'fiscal.documents', ('export' if method == 'POST' and tail.endswith(('/consolidation-export', '/bookkeeping-block-c')) else 'read' if not write else 'invalid'), False
@@ -205,6 +215,8 @@ def route_policy(path, method, query, payload, session):
         return 'fiscal.documents', 'export', False
     if root == 'documents' and tail.endswith('/account'):
         return 'accounting.journals', 'create', False
+    if tail == '/prosoft/observed-balances' and method == 'GET':
+        return 'accounting.prosoft', 'read', False
     if root == 'journal-participants': return 'accounting.journals', 'read', False
     mapping = {'accounts': 'accounting.accounts', 'cost-centers': 'accounting.cost_centers',
         'journals': 'accounting.journals', 'opening-balances': 'accounting.journals', 'documents': 'fiscal.documents',

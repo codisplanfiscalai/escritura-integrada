@@ -28,7 +28,7 @@ Os dados ficam em `./data/<COMPOSE_PROJECT_NAME>/app`, `redis`, `postgres`, `mys
 
 Se a stack já usa `./data/app:/data`, preserve esse caminho e o Compose instalado. O [override de compatibilidade](deploy/compose.existing-bind.yaml) é explícito e mantém essa pasta; não inicialize outra pasta nem recopie o volume de backup. Consulte a [rota para bind existente](docs/DOCKER_STORAGE.md#stack-já-usando-dataappdata).
 
-Os templates novos também aceitam `ESCRITURA_APP_DATA_BIND=./data/app` no `.env` para preservar esse bind; vazio mantém o padrão por projeto. A [pré-validação de permissões](docs/DOCKER_STORAGE.md#pré-validação-e-incidente-de-permissões-no-bind-do-app) usa o USER real da imagem instalada e detecta o caso `root:root 0600` sem reparar donos automaticamente. Depois da subida, `check-app --require-health` exige health e API; confira também os dados na interface.
+Antes de atualizar, execute `python3 deploy_storage.py prepare-app --project <projeto-atual> --helper-image <imagem-local-do-app>` no diretório do ZIP (no checkout, `scripts/deploy_storage.py`). Ele detecta o bind existente plano ou por projeto, valida acesso com o USER real e grava a escolha no `.env`, preservando credenciais. Campo vazio bloqueia o Compose; ele não consegue selecionar diretórios sozinho. Dois caminhos, banco ausente e permissões incorretas são recusados, sem criar/copiar dados. Veja o [fluxo de preparação](docs/DOCKER_STORAGE.md#resolver-o-bind-antes-de-atualizar). `init` prepara e registra o namespace somente para instalações novas. Após subir, confira health/API e dados na interface.
 
 Instalação nova: no diretório do ZIP, prepare as pastas com `python3 deploy_storage.py init --project <nome-exato-do-.env> --helper-image <imagem-local-do-app>`, após baixar/carregar a imagem. No checkout, o helper está em `scripts/deploy_storage.py`. O Compose recusa diretórios ausentes e a ferramenta recusa destinos existentes. Depois:
 
@@ -40,7 +40,7 @@ docker compose ps
 
 O app usa `pull_policy: always` nos templates online da raiz e dos dois ambientes: `up -d` consulta o registro mesmo com imagem em cache. `:develop` acompanha a pré-release e `:latest` a main estável; produção mantém uma tag versionada por padrão. Stacks existentes precisam incorporar essa política no Compose utilizado pelo Dockge/CLI. A atualização depende de executar pull/up, sem atualização contínua automática. Consulte [o procedimento de atualização](docs/DEPLOY.md#atualizar-canais-móveis-no-compose-e-dockge).
 
-**Sistema → Atualização Docker** oferece consulta e preparação por digest quando um executor externo é instalado e autorizado separadamente. O corte da aplicação ainda não está implementado: “imagem preparada” confirma somente o download. A instalação fica desativada por padrão; veja [escopo, segurança e pendências](docs/DOCKER_UPDATER.md).
+**Sistema → Atualização da aplicação** permite consultar e baixar uma versão quando o serviço administrativo é instalado e autorizado separadamente. A busca segue a configuração já existente, sem oferecer troca de canal ou alterar a versão em uso. “Download concluído” não significa atualização aplicada. A instalação fica desativada por padrão; veja [escopo, segurança e pendências](docs/DOCKER_UPDATER.md).
 
 **Apenas a porta da aplicação é publicada.** O endereço e a porta são configuráveis; o padrão de acesso é local. Os ambientes usam projetos e diretórios de dados separados. A interface, API e arquivos estáticos são atendidos na mesma origem.
 

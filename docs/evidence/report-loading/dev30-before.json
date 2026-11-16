@@ -1,0 +1,283 @@
+{
+  "label": "dev30-before",
+  "source_files_sha256": {
+    "app/api.py": "205f9596ca749ac41cc446cc1dc23038501f23e3d087db77cdec039d290b97c6",
+    "app/core.py": "a21dbcd2dabdf696e7a4c628634648df59f8087376df8cdfb033b94237e9c4b4",
+    "app/reports.py": "8c94225b202fe51d4454504dea76ae53cb765f22514c460e98354983a0656ca1"
+  },
+  "scope": "Synthetic in-process HTTP; no production, browser rendering or network latency",
+  "source_sha": "2bc2051486afeba3612b31fb112c32f213328cc9",
+  "fixture": {
+    "accounts": 22597,
+    "journals_added": 750,
+    "documents_added": 3000,
+    "periods": [
+      "2025-09",
+      "2026-08",
+      "2026-09"
+    ],
+    "demo_company": 1
+  },
+  "results": {
+    "/accounts": {
+      "samples_ms": [
+        531.429,
+        499.126,
+        492.699,
+        518.23,
+        490.016
+      ],
+      "median_ms": 499.126,
+      "read_selects": [
+        10,
+        10,
+        10,
+        10,
+        10
+      ],
+      "response_sha256": "151f40d7908fe00f03fd6813a7ed191deaca17f020cc129e6613a999071303d9",
+      "response_bytes": 5898676,
+      "rows": 22597
+    },
+    "/accounts?page=1&per_page=50": {
+      "samples_ms": [
+        27.693,
+        25.498,
+        29.388,
+        22.024,
+        30.162
+      ],
+      "median_ms": 27.693,
+      "read_selects": [
+        11,
+        11,
+        11,
+        11,
+        11
+      ],
+      "response_sha256": "0c3339e16b15d0a51a5340925aa507cd98d1dbff5f72bb65c7b4c92561dfd2b7",
+      "response_bytes": 12748,
+      "rows": 50
+    },
+    "/documents?year=2026": {
+      "samples_ms": [
+        1152.721,
+        1317.178,
+        1154.59,
+        1279.302,
+        1083.067
+      ],
+      "median_ms": 1154.59,
+      "read_selects": [
+        12,
+        12,
+        12,
+        12,
+        12
+      ],
+      "response_sha256": "ec383a8615f4fe6dfc05d12fbb165f605cb0528192cddd04ccbe0d0e1df3b7f1",
+      "response_bytes": 5991092,
+      "rows": 3002
+    },
+    "/documents?period=2026-09": {
+      "samples_ms": [
+        501.436,
+        476.801,
+        576.77,
+        560.797,
+        707.326
+      ],
+      "median_ms": 560.797,
+      "read_selects": [
+        12,
+        12,
+        12,
+        12,
+        12
+      ],
+      "response_sha256": "4c62b7e6c05c3ecb62b5925954cb33829455ef271fd746d69aa0f10e992a159e",
+      "response_bytes": 2994391,
+      "rows": 1500
+    },
+    "/journals?year=2026": {
+      "samples_ms": [
+        67.076,
+        64.95,
+        65.8,
+        63.841,
+        78.147
+      ],
+      "median_ms": 65.8,
+      "read_selects": [
+        11,
+        11,
+        11,
+        11,
+        11
+      ],
+      "response_sha256": "f23757316c77cd76b95c0443b6972ca4048adcaec839ada1f1b1195ce2d1510c",
+      "response_bytes": 466495,
+      "rows": 502
+    },
+    "/journals?period=2026-09": {
+      "samples_ms": [
+        47.073,
+        49.248,
+        47.892,
+        49.985,
+        128.544
+      ],
+      "median_ms": 49.248,
+      "read_selects": [
+        11,
+        11,
+        11,
+        11,
+        11
+      ],
+      "response_sha256": "68dd6a1aa5f78bd4652e8b113ff5e5e67b2b8b744699676901ee6d06a4efae40",
+      "response_bytes": 232531,
+      "rows": 250
+    },
+    "/dashboard?period=2026-09": {
+      "samples_ms": [
+        10.22,
+        14.662,
+        9.266,
+        9.129,
+        8.146
+      ],
+      "median_ms": 9.266,
+      "read_selects": [
+        30,
+        30,
+        30,
+        30,
+        30
+      ],
+      "response_sha256": "f1531817146b1921bfbeec67fb44b9ebd30e0ba9b1e0d249716d4bcc5fd657a2",
+      "response_bytes": 960,
+      "rows": 0
+    },
+    "/business-reports/diary?start=2026-09-01&end=2026-09-30": {
+      "samples_ms": [
+        46.325,
+        49.549,
+        46.926,
+        48.577,
+        46.851
+      ],
+      "median_ms": 46.926,
+      "read_selects": [
+        11,
+        11,
+        11,
+        11,
+        11
+      ],
+      "response_sha256": "a116061dc023f87f094de4ccd5277601f63f8c42772298990159b9f6f498d8b0",
+      "response_bytes": 173565,
+      "rows": 500
+    },
+    "/business-reports/ledger?start=2026-09-01&end=2026-09-30": {
+      "samples_ms": [
+        9983.586,
+        10519.57,
+        10823.307,
+        9972.754,
+        10553.338
+      ],
+      "median_ms": 10519.57,
+      "read_selects": [
+        512,
+        512,
+        512,
+        512,
+        512
+      ],
+      "response_sha256": "f4403d3eca3c5d07d0d59afddbeb060352e029aea796d772ccab6a92356661f3",
+      "response_bytes": 411813,
+      "rows": 500
+    },
+    "/business-reports/trial-balance?start=2026-09-01&end=2026-09-30": {
+      "samples_ms": [
+        573.843,
+        505.713,
+        512.114,
+        561.869,
+        663.564
+      ],
+      "median_ms": 561.869,
+      "read_selects": [
+        12,
+        12,
+        12,
+        12,
+        12
+      ],
+      "response_sha256": "fea4848e852bd899e649f520d17753ea51ad394499c18ee5cea4b9c7347321b8",
+      "response_bytes": 4450727,
+      "rows": 20544
+    },
+    "/business-reports/fiscal-documents?start=2026-09-01&end=2026-09-30": {
+      "samples_ms": [
+        196.294,
+        124.375,
+        172.511,
+        189.349,
+        106.533
+      ],
+      "median_ms": 172.511,
+      "read_selects": [
+        11,
+        11,
+        11,
+        11,
+        11
+      ],
+      "response_sha256": "b052336c06546230e8566d18b50600a00e41a6fee3f5ee69b1b97bd764a30e1c",
+      "response_bytes": 575782,
+      "rows": 1500
+    },
+    "/business-reports/fiscal-operations?start=2026-09-01&end=2026-09-30": {
+      "samples_ms": [
+        255.933,
+        282.691,
+        156.439,
+        203.767,
+        206.189
+      ],
+      "median_ms": 206.189,
+      "read_selects": [
+        11,
+        11,
+        11,
+        11,
+        11
+      ],
+      "response_sha256": "ac9513043b57a18bd51444b7631228e605dbfd9c640cb4a31d52c2ed281d6f9e",
+      "response_bytes": 8709,
+      "rows": 1
+    },
+    "/business-reports/ledger?start=2026-09-01&end=2026-09-30&format=csv": {
+      "samples_ms": [
+        11573.461,
+        10264.187,
+        10355.91,
+        9889.508,
+        9919.232
+      ],
+      "median_ms": 10264.187,
+      "read_selects": [
+        512,
+        512,
+        512,
+        512,
+        512
+      ],
+      "response_sha256": "552944c4f13090a3056801bc1041279fe85fe4a9840fcca19e28337e29b0cc99",
+      "response_bytes": 63505,
+      "rows": null
+    }
+  }
+}

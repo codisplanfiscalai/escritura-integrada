@@ -33,6 +33,8 @@ def create_app(data_dir=None, demo=False):
     @asynccontextmanager
     async def lifespan(application):
         worker.recover()
+        if not demo:
+            application.state.backups.start()
         from .import_package_cleanup import scheduler
         cleanup_task = asyncio.create_task(scheduler(database))
         try: yield
@@ -41,6 +43,7 @@ def create_app(data_dir=None, demo=False):
             import contextlib
             with contextlib.suppress(asyncio.CancelledError): await cleanup_task
             await asyncio.to_thread(worker.close)
+            await asyncio.to_thread(application.state.backups.close)
     application = FastAPI(lifespan=lifespan, title="Escritura Integrada", version=__version__, docs_url=None, redoc_url=None)
     application.state.core = core
     application.state.db = database
@@ -68,12 +71,16 @@ def create_app(data_dir=None, demo=False):
     register_fiscal_series(application,core,actor=lambda request:request.state.session["user"]["username"])
     from .bulk_api import register_bulk_routes
     register_bulk_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .shared_registration_api import register_routes as register_shared_routes
+    register_shared_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .third_party_api import register_third_party_routes
     register_third_party_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .lookups import LookupService
     application.state.lookups = LookupService(database)
     from .docker_updates import register as register_docker_updates
     register_docker_updates(application, core)
+    from .backups import register as register_backups
+    register_backups(application, core)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
     @application.exception_handler(DomainError)
@@ -486,6 +493,9 @@ def create_app(data_dir=None, demo=False):
     @application.get("/api/companies/{cid}/audit")
     def audit_entries(cid: int, limit: int = 100):
         return core.audit(cid, limit)
+
+    from .prosoft_balances import register_prosoft_balance_routes
+    register_prosoft_balance_routes(application, core, check_period)
 
     from .sped_generator.api import register_sped_generator_routes
     register_sped_generator_routes(application, core, check_period)
