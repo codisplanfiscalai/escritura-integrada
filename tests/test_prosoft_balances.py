@@ -1,0 +1,222 @@
+"""Synthetic-only SLD preparation; no external destination or certified opening."""
+import json
+import unittest
+from unittest.mock import patch
+from fastapi.testclient import TestClient
+import test_ecd_snapshot as existing
+from app.core import DomainError, digest
+from app.db import request_context
+from app.prosoft_balances import observed_balances, REQUIRED_READS
+
+
+class ProsoftBalancesTests(unittest.TestCase):
+    setUpBase = existing.EcdSnapshotTests.setUpBase
+    setUp = existing.EcdSnapshotTests.setUp
+    tearDown = existing.EcdSnapshotTests.tearDown
+    scope = existing.EcdSnapshotTests.scope
+    activate = existing.EcdSnapshotTests.activate
+    activate_accounting = existing.EcdSnapshotTests.activate_accounting
+    create_company = existing.EcdSnapshotTests.create_company
+    database_hash = existing.EcdSnapshotTests.database_hash
+    journal = existing.EcdSnapshotTests.journal
+    create = existing.EcdSnapshotTests.create
+
+    def get(self, start='2025-01-01', end='2025-12-31', cid=None, client=None, headers=None):
+        return (client or self.client).get(self.scope('/prosoft/observed-balances', cid),
+            params={'start': start, 'end': end}, headers=headers or {})
+
+    def snapshot(self, *args, **kwargs):
+        before = self.database_hash()
+        response = self.get(*args, **kwargs)
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(before, self.database_hash())
+        data = response.json()
+        self.assertEqual(digest(data['snapshot']), data['snapshot_sha256'])
+        self.assertEqual('no-store', response.headers['Cache-Control'])
+        return data['snapshot']
+
+    def party(self, code, cid=None):
+        return self.core.save_master(cid or self.a['id'], 'participant',
+            {'code': code, 'name': 'Nome privado sintético', 'tax_id': '', 'data': {}}, 'teste')['id']
+
+    def test_empty_is_unknown_and_deterministic(self):
+        s = self.snapshot()
+        self.assertEqual(s, self.snapshot())
+        self.assertEqual('blocked', s['sld_generation'])
+        self.assertIsNone(s['official_opening_balances'])
+        self.assertIsNone(s['destination_mappings'])
+        self.assertEqual('unknown', s['historical_integrity'])
+        self.assertEqual([], s['prior_history_balances'])
+        self.assertEqual(12, len(s['monthly_balances']))
+        for month in s['monthly_balances']:
+            self.assertEqual([], month['balances'])
+            self.assertEqual('no_recorded_journals', month['evidence'])
+            self.assertEqual('unknown', month['completeness'])
+
+    def test_grouping_party_center_history_reversal_and_missing_month(self):
+        p1, p2 = self.party('P1'), self.party('P2')
+        cc = self.core.save_cost_center(self.a['id'], {'code': 'C1', 'name': 'Sintético'}, 'teste')['id']
+        prior = self.create('prior', '2024-12-31', '10.01')
+        entry = self.create('parties', '2025-01-01', lines=[
+            {'account_id': self.aid['3'], 'participant_id': p1, 'cost_center_id': cc, 'debit': '1.01'},
+            {'account_id': self.aid['3'], 'participant_id': p2, 'cost_center_id': cc, 'debit': '2.02'},
+            {'account_id': self.aid['3'], 'participant_id': p1, 'debit': '3.03'},
+            {'account_id': self.aid['5'], 'credit': '6.06'}])
+        reversal = self.core.reverse_journal(self.a['id'], entry['id'],
+            {'date': '2025-03-01', 'reason': 'Estorno sintético'}, 'teste')
+        self.create('future', '2026-01-01', '99.00')
+        s = self.snapshot(end='2025-03-31')
+        rows = {(r['account_id'], r['participant_id'], r['cost_center_id']): r for r in s['monthly_balances'][0]['balances']}
+        self.assertEqual('101', rows[self.aid['3'], p1, cc]['observed_net_after']['cents'])
+        self.assertEqual('202', rows[self.aid['3'], p2, cc]['observed_net_after']['cents'])
+        self.assertEqual('303', rows[self.aid['3'], p1, None]['observed_net_after']['cents'])
+        self.assertEqual('1001', rows[self.aid['3'], None, None]['observed_net_before']['cents'])
+        self.assertEqual('no_recorded_journals', s['monthly_balances'][1]['evidence'])
+        for row in s['monthly_balances'][2]['balances']:
+            if row['participant_id']:
+                self.assertEqual('0', row['observed_net_after']['cents'])
+            self.assertIsNone(row['official_opening_balance'])
+        self.assertEqual([prior['id'], entry['id'], reversal['id']], [j['id'] for j in s['journal_evidence']])
+        self.assertEqual(reversal['id'], s['journal_evidence'][1]['reversed_by'])
+        self.assertEqual(entry['id'], s['journal_evidence'][2]['reversal_of'])
+        self.assertTrue(s['journal_evidence'][1]['audit_events'])
+        self.assertNotIn('Nome privado', json.dumps(s))
+
+    def test_precision_above_javascript_safe_integer(self):
+        for i in range(91):
+            self.create(f'large-{i}', '2025-01-01', '999999999999.99')
+        row = next(r for r in self.snapshot()['monthly_balances'][0]['balances'] if r['account_id'] == self.aid['3'])
+        self.assertEqual('9099999999999909', row['observed_debits']['cents'])
+        self.assertEqual('90999999999999.09', row['observed_debits']['decimal'])
+
+    def test_period_context_headers_and_company_isolation(self):
+        self.create('own', '2025-01-01', '1.00')
+        other = {a['access_code']: a['id'] for a in self.core.accounts(self.b['id'])}
+        self.create('other', '2025-01-01', cid=self.b['id'], lines=[
+            {'account_id': other['3'], 'debit': '9.00'}, {'account_id': other['5'], 'credit': '9.00'}])
+        s = self.snapshot()
+        self.assertEqual(1, len(s['journal_evidence']))
+        for start, end in [('2025-02-29', '2025-03-01'), ('2025-03-01', '2025-02-01'), ('2024-12-31', '2025-01-01')]:
+            self.assertEqual(400, self.get(start, end).status_code)
+        self.assertEqual(409, self.get('2024-01-01', '2024-12-31').status_code)
+        self.assertEqual(409, self.get(cid=self.b['id']).status_code)
+        for header, value in [('X-Company-Id', str(self.b['id'])), ('X-Year', '2026'), ('X-Module', 'fiscal')]:
+            self.assertEqual(409, self.get(headers={header: value}).status_code)
+        self.client.post('/api/context', json={'company_id': self.a['id'], 'period': '2025-01', 'module': 'fiscal'})
+        self.assertEqual(409, self.get().status_code)
+
+    def test_partial_month_explicit_opening_and_closed_period(self):
+        opening = self.core.create_opening(self.a['id'], self.journal('opening', '7.89', '2025-01-01'), 'teste')
+        self.create('selected', '2025-01-15', '1.00')
+        s = self.snapshot('2025-01-15', '2025-02-15')
+        self.assertEqual('2025-01-15', s['monthly_balances'][0]['start'])
+        self.assertEqual('2025-02-15', s['monthly_balances'][1]['end'])
+        self.assertEqual(opening['id'], s['journal_evidence'][0]['id'])
+        self.assertEqual('prior_history', s['journal_evidence'][0]['scope'])
+        for operation in ('close', 'reopen'):
+            r = self.client.post(self.scope('/periods/' + operation), json={'module': 'accounting', 'period': '2025-01', 'reason': 'Teste sintético'})
+            self.assertEqual(200, r.status_code, r.text)
+            self.assertEqual(s, self.snapshot('2025-01-15', '2025-02-15'))
+
+    def test_auth_permissions_live_revocation_and_catalog_only(self):
+        with TestClient(self.app) as anonymous:
+            self.assertEqual(401, self.get(client=anonymous).status_code)
+        grants = [{'company_id': self.a['id'], 'routine': r, 'action': 'read', 'effect': 'allow'} for r in REQUIRED_READS]
+        result = self.client.post('/api/users', json={'username': 'sld-reader', 'password': 'Synthetic-123!',
+            'role': 'custom', 'company_ids': [self.a['id']], 'permissions': grants})
+        self.assertEqual(201, result.status_code, result.text)
+        uid = result.json()['id']
+        with TestClient(self.app) as reader:
+            login = reader.post('/api/login', json={'username': 'sld-reader', 'password': 'Synthetic-123!'})
+            reader.headers['X-CSRF-Token'] = login.json()['csrf_token']
+            self.activate_accounting(client=reader)
+            self.assertEqual(200, self.get(client=reader).status_code)
+            for routine in REQUIRED_READS:
+                with self.core.db.transaction() as conn:
+                    conn.execute("UPDATE user_permissions SET effect='deny' WHERE user_id=? AND routine=?", (uid, routine))
+                self.assertEqual(403, self.get(client=reader).status_code)
+                with self.core.db.transaction() as conn:
+                    conn.execute("UPDATE user_permissions SET effect='allow' WHERE user_id=? AND routine=?", (uid, routine))
+            self.assertEqual(403, self.get(client=reader, cid=self.b['id']).status_code)
+            with self.core.db.transaction() as conn:
+                conn.execute('DELETE FROM user_permissions WHERE user_id=?', (uid,))
+                conn.execute("INSERT INTO user_permissions(user_id,company_id,routine,action,effect) VALUES(?,?,'fiscal.shared_parties','read','allow')", (uid, self.a['id']))
+            self.assertEqual(403, self.get(client=reader).status_code)
+            with self.core.db.transaction() as conn:
+                conn.execute('UPDATE users SET active=0 WHERE id=?', (uid,))
+            self.assertIn(self.get(client=reader).status_code, (401, 403))
+
+    def test_service_requires_session_and_revalidates_in_read_snapshot(self):
+        with self.assertRaises(DomainError) as error:
+            observed_balances(self.core, self.a['id'], '2025-01-01', '2025-01-31')
+        self.assertEqual(401, error.exception.status)
+        with self.core.db.read() as conn:
+            session = dict(conn.execute('SELECT * FROM sessions LIMIT 1').fetchone())
+        ctx = request_context.set({'user_id': session['user_id'], 'token_hash': session['token_hash']})
+        try:
+            with self.core.db.transaction() as conn:
+                conn.execute('DELETE FROM sessions WHERE token_hash=?', (session['token_hash'],))
+            with self.assertRaises(DomainError) as error:
+                observed_balances(self.core, self.a['id'], '2025-01-01', '2025-01-31')
+            self.assertEqual(401, error.exception.status)
+        finally:
+            request_context.reset(ctx)
+
+    def test_limits_fail_without_partial_response_or_mutation(self):
+        self.create('limit', '2025-01-01')
+        before = self.database_hash()
+        for name in ('MAX_SOURCE_ROWS', 'MAX_RESPONSE_BYTES'):
+            with patch('app.prosoft_balances.' + name, 1):
+                response = self.get()
+            self.assertEqual(413, response.status_code, response.text)
+            self.assertEqual('preparation_volume_limit', response.json()['code'])
+            self.assertNotIn('snapshot', response.json())
+        self.assertEqual(before, self.database_hash())
+
+    def test_colliding_codes_in_other_company_never_merge(self):
+        p1 = self.party('SAME')
+        p2 = self.party('SAME', self.b['id'])
+        centers = [self.core.save_cost_center(cid, {'code': 'SAME', 'name': 'Centro sintético'}, 'teste')['id']
+                   for cid in (self.a['id'], self.b['id'])]
+        for cid, party, center in [(self.a['id'], p1, centers[0]), (self.b['id'], p2, centers[1])]:
+            accounts = {a['access_code']: a['id'] for a in self.core.accounts(cid)}
+            self.create('same', '2025-01-01', cid=cid, lines=[
+                {'account_id': accounts['3'], 'participant_id': party, 'cost_center_id': center, 'debit': '1.01'},
+                {'account_id': accounts['5'], 'credit': '1.01'}])
+        for cid, party, center in [(self.a['id'], p1, centers[0]), (self.b['id'], p2, centers[1])]:
+            self.activate_accounting(cid)
+            s = self.snapshot(cid=cid)
+            self.assertEqual(cid, s['scope']['company_id'])
+            rows = [r for r in s['monthly_balances'][0]['balances'] if r['participant_id']]
+            self.assertEqual(1, len(rows))
+            self.assertEqual(party, rows[0]['participant_id'])
+            self.assertEqual(center, rows[0]['cost_center_id'])
+
+    def test_import_origin_limits_and_inconsistent_stored_period(self):
+        import base64
+        raw = ('id;date;document;history;account;debit;credit;cost_center\n'
+               'a;2025-01-03;SYN;Origem sintética;3;1.23;0.00;\n'
+               'a;2025-01-03;SYN;Origem sintética;5;0.00;1.23;\n').encode()
+        r = self.client.post(self.scope('/module-imports/preview'), json={'module': 'accounting',
+            'layout': 'journals-v1', 'year': 2025, 'filename': 'sld-synthetic.csv',
+            'content_base64': base64.b64encode(raw).decode()})
+        self.assertEqual(200, r.status_code, r.text)
+        batch = r.json()
+        r = self.client.post(self.scope(f"/module-imports/{batch['id']}/confirm"), json={
+            'module': 'accounting', 'fingerprint': batch['fingerprint'],
+            'selected': [record['_selection'] for record in batch['records']]})
+        self.assertEqual(200, r.status_code, r.text)
+        s = self.snapshot(end='2025-01-31')
+        journal = s['journal_evidence'][0]
+        ref = next(x for x in journal['source_references'] if x['entity'] == 'module_imports')
+        self.assertEqual(batch['id'], ref['id'])
+        self.assertEqual(batch['fingerprint'], ref['fingerprint'])
+        with self.core.db.transaction() as conn:
+            conn.execute('UPDATE journals SET period=?, total_cents=124 WHERE id=?', ('2025-02', journal['id']))
+        s = self.snapshot(end='2025-01-31')
+        self.assertEqual({'JOURNAL_TOTAL_MISMATCH', 'JOURNAL_PERIOD_MISMATCH'}, {w['code'] for w in s['source_anomalies']})
+        self.assertEqual([journal['id']], s['monthly_balances'][0]['journal_ids'])
+        before = self.database_hash()
+        with patch('app.prosoft_balances.MAX_IMPORT_JSON_CHARS', 1):
+            self.assertEqual(413, self.get().status_code)
+        self.assertEqual(before, self.database_hash())

@@ -213,6 +213,8 @@ def route_policy(path, method, query, payload, session):
         return 'fiscal.parameters', action, False
     if root == 'documents' and tail.endswith('/account'):
         return 'accounting.journals', 'create', False
+    if tail == '/prosoft/observed-balances' and method == 'GET':
+        return 'accounting.prosoft', 'read', False
     if root == 'journal-participants': return 'accounting.journals', 'read', False
     mapping = {'accounts': 'accounting.accounts', 'cost-centers': 'accounting.cost_centers',
         'journals': 'accounting.journals', 'opening-balances': 'accounting.journals', 'documents': 'fiscal.documents',
