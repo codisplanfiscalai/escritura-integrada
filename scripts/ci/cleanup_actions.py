@@ -106,9 +106,14 @@ def cleanup(gh, *, execute=False, max_delete=100, now=None):
         for cache in selected['candidates']:
             # Refresh before EACH deletion; a restored cache or a newly active/open
             # ref invalidates the plan. Read errors abort; DELETE is never retried.
-            refreshed = list(gh.pages(gh.base + '/actions/caches', key='actions_caches'))
-            new_refs, new_pr = active_refs(gh)
-            allowed = {item['id']: item for item in select_caches(refreshed, refs | new_refs, now=now, protect_all_pr=protect_all_pr or new_pr, max_delete=500)['candidates']}
+            try:
+                refreshed = list(gh.pages(gh.base + '/actions/caches', key='actions_caches'))
+                new_refs, new_pr = active_refs(gh)
+                allowed = {item['id']: item for item in select_caches(refreshed, refs | new_refs, now=now, protect_all_pr=protect_all_pr or new_pr, max_delete=500)['candidates']}
+            except (GitHubError, ValueError, KeyError) as exc:
+                report['errors'].append({'id': cache['id'], 'stage': 'refresh', 'error': str(exc),
+                                         'outcome': 'not_attempted', 'retried': False})
+                break  # Preserve confirmed prior deletions in the partial report.
             current = allowed.get(cache['id'])
             if current != cache:
                 report['skipped_after_refresh'].append(cache['id'])

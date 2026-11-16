@@ -210,6 +210,18 @@ class CacheSafetyTests(unittest.TestCase):
         self.assertEqual(result['deleted'], [])
         self.assertEqual(result['skipped_after_refresh'], [1])
 
+    def test_refresh_failure_keeps_partial_report_and_stops_later_deletions(self):
+        remote = CacheGitHub([cache(1, 'refs/heads/old'), cache(2, 'refs/heads/old2')])
+        original = remote.pages
+        def pages(path, **kwargs):
+            if remote.deletes: raise GitHubError('Rate limit during refresh', 403)
+            return original(path, **kwargs)
+        remote.pages = pages
+        result = cleanup(remote, execute=True, now=NOW)
+        self.assertEqual(remote.deletes, [1]); self.assertEqual(result['deleted'], [1])
+        self.assertEqual(result['errors'][0]['stage'], 'refresh')
+        self.assertEqual(result['errors'][0]['outcome'], 'not_attempted')
+
     def test_uncertain_delete_is_reported_once_without_retry(self):
         remote = CacheGitHub([cache(1, 'refs/heads/obsolete')])
         calls = []
