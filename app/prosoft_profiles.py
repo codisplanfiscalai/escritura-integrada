@@ -3,7 +3,7 @@ import re
 from .core import DomainError
 
 FISCAL_TYPES = ('incoming_notes', 'outgoing_notes')
-ACCOUNTING_TYPES = ('LC1', 'LC2', 'CTA')
+ACCOUNTING_TYPES = ('LC1', 'LC2', 'CTA', 'TRC')
 
 
 def valid_fiscal_species(value):
@@ -15,7 +15,7 @@ def valid_fiscal_species(value):
 
 def selected_types(mode, value=None):
     supported = FISCAL_TYPES if mode == 'fiscal' else ACCOUNTING_TYPES
-    if value is None: return list(supported)  # Preserve PR40's explicit API behavior.
+    if value is None: return list(FISCAL_TYPES if mode == 'fiscal' else ('LC1', 'LC2', 'CTA'))  # TRC requires explicit opt-in.
     if not isinstance(value, list) or not value or any(not isinstance(v, str) for v in value) or len(set(value)) != len(value) or not set(value) <= set(supported):
         raise DomainError('Selecione somente os tipos de registro Prosoft disponíveis neste perfil.')
     if mode == 'accounting' and not {'LC1', 'LC2'} <= set(value):

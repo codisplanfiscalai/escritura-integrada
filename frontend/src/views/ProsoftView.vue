@@ -4,7 +4,7 @@ import SectionTabs from '../components/SectionTabs.vue';
 import {state,company,api,scope,can,allowedApi} from '../lib/workspace';
 import {useSuggestedCompetence} from '../lib/context-preferences.js';
 import {money,normalized} from '../lib/format';
-import {createProsoftExport,prosoftDownload,prosoftManifest} from '../lib/prosoft-export.js';
+import {createProsoftExport,prosoftDownload,prosoftManifest,accountingProfile,accountingTypes} from '../lib/prosoft-export.js';
 const props=defineProps({area:{type:String,default:'accounting'}});
 const competence=ref('');useSuggestedCompetence(state,competence);
 const routine=computed(()=>props.area+'.prosoft'),fiscal=computed(()=>props.area==='fiscal');
@@ -43,8 +43,10 @@ watch([query,onlyUsed],()=>page.value=1);
 watch(mappingAccounts,records=>{if(s.loaded&&!s.loading)controller.ensureAccounts(records);},{flush:'sync'});
 function toggleCta(a,checked){if(checked)s.config.accounts[a.id].create_account={destination_missing:true,classifier:a.classifier||'',name:a.name||'',cost_center_mode:'0',reconciliation:'0'};else delete s.config.accounts[a.id].create_account;}
 function addCfop(){if(!/^[0-9]{4}$/.test(newCfop.value)){s.error='Informe quatro dígitos para o CFOP.';return;}s.config.cfop_accounts[newCfop.value]??={code:'',confirmed:false};newCfop.value='';}
-const profile=computed({get:()=>fiscal.value?(s.config.record_types.length===2?'both':s.config.record_types[0]):(s.config.record_types.includes('CTA')?'journals_cta':'journals'),set:value=>{s.config.record_types=fiscal.value?(value==='both'?['incoming_notes','outgoing_notes']:[value]):(value==='journals_cta'?['LC1','LC2','CTA']:['LC1','LC2']);}});
+const profile=computed({get:()=>fiscal.value?(s.config.record_types.length===2?'both':s.config.record_types[0]):accountingProfile(s.config.record_types),set:value=>{s.config.record_types=fiscal.value?(value==='both'?['incoming_notes','outgoing_notes']:[value]):accountingTypes(value);}});
 const ctaEnabled=computed(()=>s.config.record_types.includes('CTA'));
+const trcEnabled=computed(()=>s.config.record_types.includes('TRC'));
+function toggleTrc(p,checked){if(checked)s.config.participants[p.id].create_third={destination_missing:true,person_type:'legal',name:p.name||'',alias:'',state:''};else delete s.config.participants[p.id].create_third;}
 const summary=computed(()=>s.preview?.manifest);
 const hasShortReferences=computed(()=>(summary.value?.trace||[]).some(row=>row.document_reference));
 const visibleTrace=computed(()=>(summary.value?.trace||[]).slice(0,100));
@@ -56,8 +58,8 @@ const warningLabel=code=>({FISCAL_TREATMENT_REQUIRED:'Tratamento do livro ainda 
 
 <template>
 <div class="view prosoft-view">
- <header class="view-heading"><div><div class="eyebrow">{{fiscal?'INTEGRAÇÃO FISCAL':'INTEGRAÇÃO CONTÁBIL'}}</div><h1>Exportação Prosoft {{fiscal?'fiscal':'contábil'}}</h1><p>{{fiscal?'Notas de entrada e saída já escrituradas, modelos 55/65.':'Lançamentos LC1/LC2 e cadastro opcional CTA das contas movimentadas.'}}</p></div></header>
- <p class="message warning">Arquivo para conferir e importar no destino. Não homologado na instalação Prosoft. {{fiscal?'Perfil fiscal parcial; não gera EFD oficial nem transmite obrigações.':'TRC e SLD não são gerados.'}}</p>
+ <header class="view-heading"><div><div class="eyebrow">{{fiscal?'INTEGRAÇÃO FISCAL':'INTEGRAÇÃO CONTÁBIL'}}</div><h1>Exportação Prosoft {{fiscal?'fiscal':'contábil'}}</h1><p>{{fiscal?'Notas de entrada e saída já escrituradas, modelos 55/65.':'Lançamentos LC1/LC2 e cadastros opcionais CTA e TRC PJ dos movimentos.'}}</p></div></header>
+ <p class="message warning">Arquivo para conferir e importar no destino. Não homologado na instalação Prosoft. {{fiscal?'Perfil fiscal parcial; não gera EFD oficial nem transmite obrigações.':'TRC disponível somente para PJ com CNPJ numérico. SLD não é gerado.'}}</p>
  <p v-if="s.error" class="message error" role="alert">{{s.error}} <button class="button small" @click="selectSection('settings')">Revisar configuração e mapeamentos</button></p>
  <p v-if="s.message" class="message success" role="status">{{s.message}}</p>
  <p v-if="s.loading" role="status">Carregando mapeamentos da empresa…</p>
@@ -65,7 +67,7 @@ const warningLabel=code=>({FISCAL_TREATMENT_REQUIRED:'Tratamento do livro ainda 
   <div class="prosoft-context"><strong>{{company?.name}}</strong><span>Destino {{s.config.company_code||'não informado'}} · plano {{s.config.plan_code||'não informado'}}</span><span>Versão {{s.version}}{{dirty?' · edição ainda não salva':' · mapeamentos salvos'}}</span></div>
   <fieldset :disabled="disabled" class="prosoft-fields">
    <div class="form-grid">
-    <label>Tipo de exportação Prosoft<select aria-label="Tipo de exportação Prosoft" v-model="profile"><template v-if="fiscal"><option value="both">Notas de entrada e saída</option><option value="incoming_notes">Somente notas de entrada</option><option value="outgoing_notes">Somente notas de saída</option></template><template v-else><option value="journals">Lançamentos contábeis (LC1/LC2)</option><option value="journals_cta">Lançamentos e contas ausentes (LC1/LC2 + CTA)</option></template></select></label>
+    <label>Tipo de exportação Prosoft<select aria-label="Tipo de exportação Prosoft" v-model="profile"><template v-if="fiscal"><option value="both">Notas de entrada e saída</option><option value="incoming_notes">Somente notas de entrada</option><option value="outgoing_notes">Somente notas de saída</option></template><template v-else><option value="journals">Lançamentos contábeis (LC1/LC2)</option><option value="journals_cta">Lançamentos e contas ausentes (LC1/LC2 + CTA)</option><option value="journals_trc">Lançamentos e terceiros PJ ausentes (LC1/LC2 + TRC)</option><option value="journals_cta_trc">Lançamentos, contas e terceiros PJ ausentes (+ CTA + TRC)</option></template></select></label>
     <label>Competência da exportação<select v-model="competence" aria-label="Competência da exportação"><option value="">Selecione</option><option v-for="m in 12" :key="m" :value="`${state.period.slice(0,4)}-${String(m).padStart(2,'0')}`">{{String(m).padStart(2,'0')}}/{{state.period.slice(0,4)}}</option></select></label>
    </div>
    <p class="prosoft-scope">Serão considerados todos os {{fiscal?'documentos':'lançamentos'}} da competência de escrituração selecionada. A emissão pode ser de outro mês.</p>
@@ -130,14 +132,23 @@ const warningLabel=code=>({FISCAL_TREATMENT_REQUIRED:'Tratamento do livro ainda 
     <h2 v-if="s.records.centers.length">Centros de custo</h2>
     <div v-for="c in s.records.centers" :key="c.id" class="form-grid"><template v-if="s.config.centers[c.id]"><label>Código Prosoft do centro {{c.code}} · {{c.name}}<input v-model="s.config.centers[c.id].code" maxlength="5"/></label><label class="inline-choice"><input v-model="s.config.centers[c.id].confirmed" type="checkbox"/>Centro {{c.code}} conferido no destino</label></template></div>
     <h2 v-if="s.records.parties.length">Terceiros das partidas</h2>
-    <div v-for="p in s.records.parties" :key="p.id" class="form-grid"><template v-if="s.config.participants[p.id]"><label>Código Prosoft do terceiro {{p.name}}<input v-model="s.config.participants[p.id].code" maxlength="14"/></label><label>Tipo do terceiro {{p.name}}<select :aria-label="`Tipo do terceiro ${p.name}`" v-model="s.config.participants[p.id].third_type"><option value="normal">Normal</option><option value="free">Livre (sufixo L)</option></select></label><label class="inline-choice"><input v-model="s.config.participants[p.id].confirmed" type="checkbox"/>Terceiro {{p.name}} conferido no destino</label></template></div>
+    <div v-for="p in s.records.parties" :key="p.id" class="form-grid"><template v-if="s.config.participants[p.id]"><label>Código Prosoft do terceiro {{p.name}}<input v-model="s.config.participants[p.id].code" maxlength="14"/></label><label>Tipo do terceiro {{p.name}}<select :aria-label="`Tipo do terceiro ${p.name}`" v-model="s.config.participants[p.id].third_type"><option value="normal">Normal</option><option value="free">Livre (sufixo L)</option></select></label><label class="inline-choice"><input v-model="s.config.participants[p.id].confirmed" type="checkbox"/>Terceiro {{p.name}} conferido no destino</label>
+     <details v-if="trcEnabled"><summary>Cadastro opcional TRC PJ · {{p.name}}</summary>
+      <label class="inline-choice"><input type="checkbox" :checked="Boolean(s.config.participants[p.id].create_third)" @change="toggleTrc(p,$event.target.checked)"/>Incluir TRC PJ do terceiro {{p.name}}: confirme que está ausente no destino</label>
+      <div v-if="s.config.participants[p.id].create_third" class="form-grid">
+       <label>Razão social TRC do terceiro {{p.name}}<input v-model="s.config.participants[p.id].create_third.name" maxlength="60"/></label>
+       <label>Apelido TRC do terceiro {{p.name}}<input v-model="s.config.participants[p.id].create_third.alias" maxlength="20"/></label>
+       <label>UF TRC do terceiro {{p.name}}<input v-model="s.config.participants[p.id].create_third.state" maxlength="2"/></label>
+      </div>
+      <p class="report-note">Use o CNPJ numérico de 14 dígitos como código normal. O perfil grava somente os campos obrigatórios PJ; demais campos ficam em branco. Somente terceiros usados em partidas com referência são incluídos. Após criar o terceiro no destino, desmarque o cadastro TRC e salve; o aplicativo não consulta o destino.</p>
+     </details></template></div>
    </template>
   </fieldset>
   <button class="button outline" @click="selectSection('export')">Voltar à exportação</button>
  </section>
  <section v-show="section==='coverage'" :id="`prosoft-${area}-panel-coverage`" role="tabpanel" :aria-labelledby="`prosoft-${area}-tab-coverage`" tabindex="0" class="panel report-controls">
   <h2>Cobertura dos layouts</h2>
-   <details open><summary>Outros layouts recebidos e limites de cobertura</summary><p v-if="fiscal">Ainda não disponíveis: mapa resumo ECF, itens de notas/cupons, inventário, RCPE, produtos, faturas e seus itens, meios de pagamento, serviços municipais, valores avulsos, redução de base IBS/CBS e chaves complementares. As notas disponíveis têm cobertura parcial de campos. SPED é uma ferramenta interna separada e não substitui estes layouts de importação Prosoft.</p><p v-else>TRC (cadastro de terceiros) e SLD (saldos) ainda não são gerados. Referências a terceiros nos lançamentos continuam disponíveis. O intercâmbio de plano completo CTBPLANO permanece em Plano de contas.</p></details>
+   <details open><summary>Outros layouts recebidos e limites de cobertura</summary><p v-if="fiscal">Ainda não disponíveis: mapa resumo ECF, itens de notas/cupons, inventário, RCPE, produtos, faturas e seus itens, meios de pagamento, serviços municipais, valores avulsos, redução de base IBS/CBS e chaves complementares. As notas disponíveis têm cobertura parcial de campos. SPED é uma ferramenta interna separada e não substitui estes layouts de importação Prosoft.</p><p v-else>TRC PJ mínimo está disponível por escolha explícita, para CNPJ numérico movimentado e declarado ausente. TRC de pessoa física/livre e campos opcionais não são gerados. SLD (saldos) continua pendente. Referências a terceiros nos lançamentos permanecem disponíveis. O intercâmbio de plano completo CTBPLANO permanece em Plano de contas.</p></details>
     <p v-if="fiscal" class="message subtle">Itens, faturas, cadastros, ST/FCP/DIFAL, PIS/COFINS, IBS/CBS e ajustes não são exportados. Canceladas identificadas pelo livro validado e escrituradas são incluídas com valor zero e indicador próprio. Campos sem origem conhecida ficam em branco; confira como o importador de destino trata esses brancos.</p>
   <p>Os avisos, documentos não exportados, origens e conversões de texto aparecem na prévia do lote. Confira-os antes de confirmar a exportação.</p>
   <button class="button outline" @click="selectSection('export')">Voltar à exportação</button>
@@ -155,14 +166,15 @@ const warningLabel=code=>({FISCAL_TREATMENT_REQUIRED:'Tratamento do livro ainda 
    <details v-if="summary.warnings.length"><summary>Avisos informativos ({{summary.warnings.length}})</summary><p v-for="(w,i) in visibleWarnings" :key="i">Documento #{{w.document_id}}, linha {{w.line}}: {{w.codes.map(warningLabel).join('; ')}}.</p><p v-if="summary.warnings.length>100">Mostrando os primeiros 100 avisos. O manifesto do download contém todos.</p></details>
    <details v-if="summary.skipped.length" open><summary>Documentos não exportados ({{summary.skipped.length}})</summary><p v-for="(row,i) in visibleSkipped" :key="i">Documento #{{row.document_id}} · {{money(row.total_cents)}} · {{skipLabel(row.reason)}}</p><p v-if="summary.skipped.length>100">Mostrando os primeiros 100. A prévia e o manifesto preservam todos os motivos.</p></details>
   </template>
-  <template v-else><p>{{summary.journals}} lançamentos · {{summary.records}} registros · CTA {{summary.record_counts?.CTA||0}}</p><p>Débitos {{money(summary.debit_cents)}} · créditos {{money(summary.credit_cents)}}</p></template>
+  <template v-else><p>{{summary.journals}} lançamentos · {{summary.records}} registros · CTA {{summary.record_counts?.CTA||0}} · TRC PJ {{summary.record_counts?.TRC||0}}</p><p>Débitos {{money(summary.debit_cents)}} · créditos {{money(summary.credit_cents)}}</p></template>
+  <details v-if="!fiscal&&summary.third_registrations?.length"><summary>Origem dos cadastros TRC PJ ({{summary.record_counts.TRC}})</summary><p v-for="row in summary.third_registrations.slice(0,100)" :key="row.participant_id">TRC {{row.order}} · terceiro #{{row.participant_id}} · lançamentos {{row.journal_ids.join(', ')}}</p><p v-if="summary.third_registrations.length>100">Mostrando as primeiras 100 origens; o manifesto contém todas.</p></details>
   <p v-if="!fiscal&&hasShortReferences" class="report-note">Referências longas recebem forma curta somente neste arquivo. As originais permanecem nos lançamentos e no mapa de conferência.</p>
   <details><summary>Origem dos registros ({{summary.trace.length}})</summary><div class="table-scroll"><table><thead><tr><th>Registro</th><th>Origem</th><th v-if="fiscal">Situação</th><th v-else>Referência no arquivo / original</th><th v-if="fiscal">Escrituração / emissão</th><th>Total</th></tr></thead><tbody><tr v-for="(row,i) in visibleTrace" :key="i"><td>{{fiscal?`${row.file} · ${row.record}`:row.order}}</td><td>{{fiscal?`Documento #${row.document_id} · ${row.number}`:`Lançamento #${row.journal_id} · ${row.journal_number}`}}</td><td v-if="fiscal">{{row.cancelled?'Cancelada no livro':'Regular'}}</td><td v-else>{{row.document_reference?.exported||'Mantida'}}<small v-if="row.document_reference">{{row.document_reference.original}}</small></td><td v-if="fiscal">{{row.posting_date}} / {{row.issue_date}}</td><td>{{money(row.total_cents)}}</td></tr></tbody></table></div><p v-if="summary.trace.length>100">Mostrando os primeiros 100 registros. A exportação inclui todos os registros cobertos.</p></details>
   <details><summary>Conversões de texto para ASCII ({{summary.text_changes.length}})</summary><p v-for="(change,i) in summary.text_changes" :key="i">{{change.field}}: {{change.original}} → {{change.exported}}</p></details>
   <label v-if="summary.text_changes.length" class="inline-choice"><input v-model="s.ascii" type="checkbox" :disabled="disabled"/>Revisei e aceito as conversões de texto exibidas.</label>
   <label class="inline-choice"><input v-model="s.reviewed" type="checkbox" :disabled="disabled"/>Conferi a empresa, o plano e os mapeamentos no destino.</label>
   <button v-if="can(routine,'export')" class="button primary" :disabled="disabled||!s.reviewed||(summary.text_changes.length&&!s.ascii)||(fiscal&&!summary.trace.length)" @click="controller.run(true)">Confirmar exportação</button>
-  <p v-if="s.result"><a class="button outline" :href="prosoftDownload(s.result)" download>Baixar {{s.result.filename}}</a> <a v-if="!fiscal&&hasShortReferences" class="button outline" :href="prosoftManifest(s.result)" download>Baixar mapa de referências</a></p>
+  <p v-if="s.result"><a class="button outline" :href="prosoftDownload(s.result)" download>Baixar {{s.result.filename}}</a> <a v-if="!fiscal&&(hasShortReferences||summary.third_registration_profile)" class="button outline" :href="prosoftManifest(s.result)" download>{{hasShortReferences?'Baixar mapa de referências':'Baixar manifesto do lote'}}</a></p>
   <small class="wrap-anywhere">SHA-256: {{s.preview.sha256}}</small>
   <p class="report-note">Repetir o download não cria outro lote no aplicativo. Reimportar o mesmo TXT no Prosoft pode duplicar movimentos; confira o histórico no destino.</p>
  </section>

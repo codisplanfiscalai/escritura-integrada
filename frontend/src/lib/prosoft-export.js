@@ -1,6 +1,8 @@
 import {reactive,computed,watch} from 'vue';
 const copy=value=>JSON.parse(JSON.stringify(value));
 export const prosoftDefaults=(area,companyCode='')=>({company_code:companyCode,plan_code:'0050',record_types:area==='fiscal'?['incoming_notes','outgoing_notes']:['LC1','LC2'],...(area==='accounting'?{batch:'1',accounts:{},centers:{},participants:{}}:{species:{55:{code:'',confirmed:false},65:{code:'',confirmed:false}},cfop_accounts:{}})});
+export function accountingProfile(types){return types.includes('CTA')?(types.includes('TRC')?'journals_cta_trc':'journals_cta'):(types.includes('TRC')?'journals_trc':'journals');}
+export function accountingTypes(profile){return {journals:['LC1','LC2'],journals_cta:['LC1','LC2','CTA'],journals_trc:['LC1','LC2','TRC'],journals_cta_trc:['LC1','LC2','CTA','TRC']}[profile]?.slice()||['LC1','LC2'];}
 const contextKey=c=>JSON.stringify([c.cid,c.year,c.module,c.period,c.area]);
 
 // One owner for saved versions, local drafts and asynchronous responses. Injected

@@ -69,7 +69,7 @@ O fiscal informa os totais de entradas e saídas, notas/registros, não exportad
 
 O contábil filtra inicialmente as contas movimentadas no mês. A busca e a opção para mostrar outras contas permitem preparar mapeamentos adicionais, em páginas de 100 contas. Contas não movimentadas nem abertas para edição não são expandidas automaticamente em milhares de mapeamentos vazios. Aliases globais também podem ser configurados. Dados de centros/terceiros são obtidos pelos serviços já autorizados de cadastros/lançamentos; não há novo espelhamento do plano.
 
-CTA é cadastral: após criar a conta na importação de destino, desmarque a inclusão CTA dessa conta e salve. O aplicativo não sabe se a conta passou a existir na instalação Prosoft. TRC e SLD permanecem fora da saída, inclusive quando há terceiros nos lançamentos.
+CTA é cadastral: após criar a conta na importação de destino, desmarque a inclusão CTA dessa conta e salve. O aplicativo não sabe se a conta passou a existir na instalação Prosoft. TRC PJ mínimo tem seleção explícita e cadastro próprio dos terceiros movimentados declarados ausentes, conforme [contrato](PROSOFT_TRC_PJ.md). PF/livre e SLD permanecem fora da saída.
 
 ## Persistência, referências e permissões
 
@@ -136,7 +136,7 @@ Conferência estrutural dos dois PDFs e dos três modelos Excel do `Prosoft.zip`
 | Serviços — redução BC IBS/CBS | PDF fiscal, p. 120 | Pendente |
 | Chave de acesso complementar | PDF fiscal, p. 121 | Pendente |
 | CTA | PDF CTBLCTOS, p. 2, 208 posições | Disponível, como complemento opcional de contas movimentadas ausentes |
-| TRC | PDF CTBLCTOS, pp. 3–4 | Pendente; resolver ambiguidades de CPF e sobreposição 501–508 |
+| TRC PJ mínimo | PDF CTBLCTOS, pp. 3–4 | Opcional, 646 posições; PF/livre e campos opcionais pendentes, sem inferir as posições pessoais ambíguas |
 | LC1/LC2 | PDF CTBLCTOS, pp. 4–5, 448/342 posições | Disponíveis, perfil de lançamentos |
 | SLD | PDF CTBLCTOS, p. 6 | Pendente; definir exercício/saldo/movimentos e reaplicação para evitar dupla contagem |
 | Modelo Excel de plano de saúde R4010 | 13 cabeçalhos: operadora/CNPJ/ANS, beneficiário/dependente, valores e reembolsos | Pendente neste módulo; não equivale à emissão de evento oficial |
