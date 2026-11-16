@@ -55,6 +55,7 @@ def main():
                     page = browser.new_page(viewport={'width': 1440, 'height': 1000}, accept_downloads=True)
                     page.set_default_timeout(15000)
                     page.add_init_script("window.reportPolicyViolations=[];document.addEventListener('securitypolicyviolation',e=>window.reportPolicyViolations.push({directive:e.effectiveDirective,blocked:e.blockedURI}));")
+                    page.add_init_script("window.reportPdfBytes={};const originalFetch=window.fetch;window.fetch=async (...args)=>{const response=await originalFetch(...args);if(String(args[0]).includes('format=pdf')){const bytes=Array.from(new Uint8Array(await response.clone().arrayBuffer()));window.reportPdfBytes[String(args[0])]=bytes;}return response;};")
                     page.on('pageerror', lambda e: report['console_errors'].append(str(e)))
                     page.on('console', lambda m: report['console_errors'].append(m.text) if m.type == 'error' else None)
                     output = page.locator('.report-output')
@@ -80,14 +81,22 @@ def main():
                         if parent.count() and parent.get_attribute('open') is None:
                             parent.locator('summary').click()
                         button.click()
+                        expect(page.get_by_role('tab',name=name,exact=True)).to_have_attribute('aria-selected','true')
+                        if name in ["Livros e demonstrações", "Livros e relatórios fiscais", "Consultas e relatórios financeiros"]:
+                            expect(page.locator(".report-options")).to_be_visible()
+                        options = page.locator(".report-options")
+                        if options.count() and options.get_attribute("open") is None:
+                            options.locator("summary").click()
 
                     def run():
+                        started=time.perf_counter()
                         with page.expect_response(lambda r: '/business-reports/' in r.url and 'format=' not in r.url) as response:
                             controls.get_by_role('button', name='Gerar relatório', exact=True).click()
                         r = response.value
                         assert r.ok, r.text()
                         expect(output).to_be_visible()
                         expect(output.locator('table')).to_have_count(1)
+                        report.setdefault('timings',[]).append({'kind':r.json()['kind'],'query_to_table_ms':round((time.perf_counter()-started)*1000,2)})
                         return r.json(), r.url
 
                     def export(label, fmt):
@@ -179,15 +188,18 @@ def main():
                         shot(name + '.png')
 
                     def preview_cycle():
+                        started=time.perf_counter()
                         assert page.evaluate('navigator.pdfViewerEnabled'), 'Chromium has no real embedded PDF viewer'
                         with page.expect_response(lambda r: '/business-reports/' in r.url and 'format=pdf' in r.url) as response:
                             output.get_by_role('button', name='Visualizar PDF', exact=True).click()
                         assert response.value.ok and response.value.headers['content-type'].startswith('application/pdf')
-                        assert len(PdfReader(BytesIO(response.value.body())).pages) >= 1
                         section = page.get_by_role('region', name='Prévia do relatório')
                         expect(section.locator('iframe')).to_be_visible()
                         expect(section.locator('iframe')).to_have_attribute('src', re.compile(r'^blob:'))
+                        pdf_bytes = page.evaluate('Object.values(window.reportPdfBytes).at(-1)')
+                        assert len(PdfReader(BytesIO(bytes(pdf_bytes))).pages) >= 1
                         wait_pdf_pixels(section.locator('iframe'), 'preview-inline')
+                        report.setdefault('preview_timings_ms',[]).append(round((time.perf_counter()-started)*1000,2))
                         section.get_by_role('button', name='Maximizar prévia').click()
                         dialog = page.get_by_role('dialog')
                         expect(dialog).to_be_visible()
@@ -206,7 +218,8 @@ def main():
                         expect(section).to_have_count(0)
                         output.get_by_role('button', name='Visualizar PDF', exact=True).click()
                         wait_pdf_pixels(section.locator('iframe'), 'preview-second-opening')
-                        section.get_by_role('button', name='Fechar prévia', exact=True).click()
+                        page.keyboard.press('Escape')
+                        expect(section).to_have_count(0)
                         report['checks'].append('Real PDF response and observed paper/ink compositor pixels inline, maximized, restored and reopened; Escape and close controls')
 
                     try:
@@ -226,6 +239,10 @@ def main():
                             expect(page.get_by_role('tab', name=name, exact=True)).to_have_attribute('aria-selected', 'true')
                             expect(controls).to_have_count(1)
                             expect(controls).to_be_visible()
+                            page.get_by_role('button',name='Sobre os modelos',exact=True).click()
+                            expect(page.get_by_role('dialog')).to_contain_text('não exige uma etapa adicional')
+                            page.keyboard.press('Escape')
+                            expect(page.get_by_role('dialog')).to_have_count(0)
                             expect(kind).to_have_value({'accounting': 'trial-balance', 'fiscal': 'fiscal-documents', 'financial': 'financial'}[area])
                             expect(controls.get_by_role('button', name='Gerar relatório', exact=True)).to_be_enabled()
                             if area == 'accounting':
@@ -285,7 +302,7 @@ def main():
                             for label, fmt in [('Exportar CSV','csv'),('Excel','xlsx')]:
                                 export(label, fmt)
                             shot(f'{area}-report.png')
-                            if area == 'accounting':
+                            if area in ('accounting','fiscal'):
                                 preview_cycle()
                                 # Export and preview must keep the generated snapshot when filters change.
                                 old_href = output.get_by_role('link', name='PDF', exact=True).get_attribute('href')
@@ -390,7 +407,7 @@ def main():
                         report['checks'].append('Entry book fixes booked lifecycle/direction, offers only explicit cancelled documentary filter selecting a zero row; type changes clear filters and assessments omit document filters')
 
                         # Capture real responses and change context before fulfilling their delivery.
-                        for change in ('kind','company'):
+                        for change in ('kind','company','dates','cancel','period'):
                             kind.select_option('fiscal-documents')
                             captured = []
                             def delayed(route):
@@ -403,20 +420,31 @@ def main():
                             deadline = time.monotonic() + 15
                             while not captured and time.monotonic() < deadline:
                                 page.wait_for_timeout(50)
-                            assert len(captured) == 1, 'Real report request was not intercepted once'
+                            controls.evaluate('form=>{form.requestSubmit();form.requestSubmit();}')
+                            page.wait_for_timeout(50)
+                            assert len(captured) == 1, 'Repeated submit must not create more requests'
                             route, response = captured[0]
                             if change == 'kind':
                                 kind.select_option('fiscal-items')
                                 expect(kind).to_have_value('fiscal-items')
+                            elif change == 'dates':
+                                controls.locator('label').filter(has_text='Data inicial').locator('input[type=text]').fill('01/02/2026')
+                                controls.locator('label').filter(has_text='Data inicial').locator('input[type=text]').press('Tab')
+                            elif change == 'cancel':
+                                controls.get_by_role('button',name='Cancelar consulta',exact=True).click()
+                            elif change == 'period':
+                                page.keyboard.press('F8')
+                                dialog=page.get_by_role('dialog')
+                                dialog.get_by_label('Ano a fixar (opcional)').fill('2026')
+                                dialog.get_by_label('Competência a fixar (opcional)').select_option('09')
+                                dialog.get_by_role('button',name='Aplicar contexto').click()
                             else:
                                 page.locator('#active-company').select_option(str(other))
                                 expect(page.locator('#active-company')).to_have_value(str(other))
                                 expect(page.locator('#active-company')).to_be_enabled()
                             expect(output).to_have_count(0)
-                            with page.expect_response(lambda r: r.url == route.request.url) as delivered:
-                                route.fulfill(response=response)
-                            assert delivered.value.ok
-                            delivered.value.finished()
+                            route.fulfill(response=response)
+                            page.wait_for_timeout(100)
                             # Drain browser tasks after the response's fetch/JSON continuation.
                             page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
                             expect(output).to_have_count(0)
@@ -424,6 +452,32 @@ def main():
                             page.unroute('**/business-reports/fiscal-documents?*', delayed)
                             report['checks'].append(f'Late real response after {change} change cannot repopulate stale report')
                         page.locator('#active-company').select_option(str(cid))
+                        kind.select_option('fiscal-documents')
+                        run()
+                        for change in ('close','company'):
+                            captured=[]
+                            page.route('**/business-reports/**&format=pdf&purpose=print', delayed)
+                            output.get_by_role('button',name='Visualizar PDF',exact=True).click()
+                            deadline=time.monotonic()+15
+                            while not captured and time.monotonic()<deadline: page.wait_for_timeout(50)
+                            assert len(captured)==1
+                            if change=='close':
+                                page.keyboard.press('Escape')
+                            else:
+                                page.locator('#active-company').select_option(str(other))
+                            expect(page.locator('.report-pdf')).to_have_count(0)
+                            captured[0][0].fulfill(response=captured[0][1])
+                            page.wait_for_timeout(100)
+                            expect(page.locator('.report-pdf')).to_have_count(0)
+                            page.unroute('**/business-reports/**&format=pdf&purpose=print',delayed)
+                            report['checks'].append('Pending preview safely discarded after '+change)
+                        report['resources']=page.evaluate("performance.getEntriesByType('resource').filter(x=>x.name.includes('/business-reports/')).map(x=>({url:x.name.split('/api/')[1],duration_ms:x.duration,decoded_bytes:x.decodedBodySize}))")
+                        page.locator('#active-company').select_option(str(cid))
+                        page.goto('about:blank');page.go_back();expect(page.locator('.sidebar')).to_be_visible()
+                        expect(page.get_by_role('dialog')).to_have_count(0);expect(page.locator('.report-pdf')).to_have_count(0)
+                        page.go_forward();assert page.url=='about:blank';page.go_back()
+                        navigate('Livros e relatórios fiscais')
+                        report['checks'].append('Browser back/forward restores the app without stale preview or modal')
                         page.set_viewport_size({'width':390,'height':844})
                         expect(kind).to_be_visible()
                         shot('mobile-controls.png')
