@@ -1,0 +1,491 @@
+{
+  "cases": [
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        1,
+        2
+      ],
+      "model": "65",
+      "name": "numeric-padding-cross-period",
+      "number": "0007",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": true,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        1,
+        2,
+        9,
+        22
+      ],
+      "model": "65",
+      "name": "new-cancellation-includes-normal-and-untrusted-note",
+      "number": "7",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        3
+      ],
+      "model": "65",
+      "name": "other-series",
+      "number": "7",
+      "partner_tax_id": "111.111.111-11",
+      "series": "002"
+    },
+    {
+      "cancellation": false,
+      "company_id": 2,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        4
+      ],
+      "model": "65",
+      "name": "other-company",
+      "number": "7",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        7
+      ],
+      "model": "55",
+      "name": "other-model",
+      "number": "7",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "incoming",
+      "expected_guard_ids": [
+        5,
+        17
+      ],
+      "model": "65",
+      "name": "incoming-same-issuer",
+      "number": "7",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "incoming",
+      "expected_guard_ids": [
+        6,
+        17
+      ],
+      "model": "65",
+      "name": "incoming-other-issuer",
+      "number": "0007",
+      "partner_tax_id": "22222222222",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "incoming",
+      "expected_guard_ids": [
+        5,
+        6,
+        17
+      ],
+      "model": "65",
+      "name": "incoming-unknown-issuer",
+      "number": "7",
+      "partner_tax_id": "",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "incoming",
+      "expected_guard_ids": [
+        17
+      ],
+      "model": "65",
+      "name": "incoming-third-issuer",
+      "number": "7",
+      "partner_tax_id": "33333333333",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        10,
+        11
+      ],
+      "model": "65",
+      "name": "all-zero",
+      "number": "00000",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        13
+      ],
+      "model": "65",
+      "name": "alpha-distinct-A",
+      "number": "A",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        12
+      ],
+      "model": "65",
+      "name": "alpha-distinct-0A",
+      "number": "0A",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        14
+      ],
+      "model": "65",
+      "name": "unicode",
+      "number": "٠١",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        15
+      ],
+      "model": "65",
+      "name": "ascii-zero-unicode",
+      "number": "0٠١",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        16
+      ],
+      "model": "65",
+      "name": "legacy-long-padding",
+      "number": "0009",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        19
+      ],
+      "model": "65",
+      "name": "nonnumeric-series",
+      "number": "7",
+      "partner_tax_id": "111.111.111-11",
+      "series": "S0"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [],
+      "model": "65",
+      "name": "no-implicit-numeric-prefix-trim",
+      "number": "7A",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    },
+    {
+      "cancellation": false,
+      "company_id": 1,
+      "direction": "outgoing",
+      "expected_guard_ids": [
+        21
+      ],
+      "model": "65",
+      "name": "nonnumeric-number-preserved",
+      "number": "0007A",
+      "partner_tax_id": "111.111.111-11",
+      "series": "001"
+    }
+  ],
+  "rows": [
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 1,
+      "model": "65",
+      "number": "7",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 2,
+      "model": "65",
+      "number": "0007",
+      "partner_tax_id": "11111111111",
+      "period": "2026-10",
+      "series": "0001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 3,
+      "model": "65",
+      "number": "7",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "002"
+    },
+    {
+      "company_id": 2,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 4,
+      "model": "65",
+      "number": "7",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "incoming",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 5,
+      "model": "65",
+      "number": "7",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "incoming",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 6,
+      "model": "65",
+      "number": "0007",
+      "partner_tax_id": "22222222222",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 7,
+      "model": "55",
+      "number": "7",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 8,
+      "model": "65",
+      "number": "8",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{}",
+      "id": 9,
+      "model": "65",
+      "number": "7",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 10,
+      "model": "65",
+      "number": "0",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 11,
+      "model": "65",
+      "number": "000",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 12,
+      "model": "65",
+      "number": "0A",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 13,
+      "model": "65",
+      "number": "A",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 14,
+      "model": "65",
+      "number": "٠١",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 15,
+      "model": "65",
+      "number": "0٠١",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 16,
+      "model": "65",
+      "number": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "incoming",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 17,
+      "model": "65",
+      "number": "7",
+      "partner_tax_id": "",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 18,
+      "model": "65",
+      "number": "Z",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 19,
+      "model": "65",
+      "number": "7",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "S0"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 20,
+      "model": "65",
+      "number": " 7",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"book_cancellation\":{\"reason\":\"Controle identidade\",\"responsible\":\"Fixture\",\"source\":\"FIXTURE SINTETICA\"}}",
+      "id": 21,
+      "model": "65",
+      "number": "0007A",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    },
+    {
+      "company_id": 1,
+      "direction": "outgoing",
+      "extra_json": "{\"note\":\"book_cancellation\"}",
+      "id": 22,
+      "model": "65",
+      "number": "7",
+      "partner_tax_id": "11111111111",
+      "period": "2026-11",
+      "series": "001"
+    }
+  ],
+  "scope": "candidate guard equivalence, not fiscal validation or operational PostgreSQL integration",
+  "synthetic_only": true
+}
