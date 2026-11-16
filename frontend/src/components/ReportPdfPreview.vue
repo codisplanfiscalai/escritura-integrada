@@ -1,5 +1,5 @@
 <script setup>
-import {ref, watch, onBeforeUnmount} from 'vue';
+import {ref, watch, onBeforeUnmount, onMounted} from 'vue';
 import BaseModal from './BaseModal.vue';
 import {supportsEmbeddedPdf} from '../lib/pdf-preview';
 import {readFileResponse} from '../lib/files';
@@ -26,11 +26,14 @@ async function load() {
   finally { if(token===generation) busy.value=false; }
 }
 watch(()=>props.url,()=>{maximized.value=false;load();},{immediate:true});
+function escape(e){if(!e.defaultPrevented&&e.key==='Escape'&&!maximized.value&&!document.querySelector('.modal-dialog')){e.preventDefault();emit('close');}}
+onMounted(()=>document.addEventListener('keydown',escape));
 onBeforeUnmount(dispose);
+onBeforeUnmount(()=>document.removeEventListener('keydown',escape));
 </script>
 <template>
   <section class="report-pdf no-print" aria-label="Prévia do relatório">
-    <div class="actions">
+    <div class="actions"><strong>Prévia PDF</strong>
       <button v-if="embedded" type="button" class="button outline" :disabled="!source" @click="maximized=true">Maximizar prévia</button>
       <a class="button" :href="url" target="_blank" rel="noopener">Abrir PDF / imprimir</a>
       <button type="button" class="button outline" @click="emit('close')">Fechar prévia</button>
@@ -46,7 +49,7 @@ onBeforeUnmount(dispose);
   </section>
 </template>
 <style scoped>
-.report-pdf{margin:16px 0}.report-pdf-frame{width:100%;height:65vh;min-height:320px;border:1px solid #d7e0e5;background:#eee}.report-pdf .actions{margin-bottom:12px;flex-wrap:wrap}
+.report-pdf{margin:16px;padding:16px;border:1px solid var(--border,#dce2df);border-radius:10px;background:var(--surface,#fff)}.report-pdf .actions strong{margin-right:auto}.report-pdf>p{min-height:48px}.report-pdf-frame{width:100%;height:65vh;min-height:320px;border:1px solid #d7e0e5;background:#eee}.report-pdf .actions{margin-bottom:12px;flex-wrap:wrap}
 /* More specific than .modal-dialog.wide, regardless of production CSS order. */
 :global(.modal-overlay:has(.report-pdf-maximized)){padding:16px}
 :global(.modal-overlay .modal-dialog:has(.report-pdf-maximized)){width:calc(100vw - 32px);max-width:none;height:calc(100dvh - 32px);max-height:none}
