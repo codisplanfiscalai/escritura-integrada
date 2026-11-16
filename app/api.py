@@ -492,6 +492,9 @@ def create_app(data_dir=None, demo=False):
     def audit_entries(cid: int, limit: int = 100):
         return core.audit(cid, limit)
 
+    from .prosoft_balances import register_prosoft_balance_routes
+    register_prosoft_balance_routes(application, core, check_period)
+
     from .sped_generator.api import register_sped_generator_routes
     register_sped_generator_routes(application, core, check_period)
     from .sped_generator.ecf_references import register_ecf_reference_routes

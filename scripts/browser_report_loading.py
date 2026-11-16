@@ -42,6 +42,7 @@ def scenario(page,url,fixture,report,baseline):
         resources=page.evaluate("performance.getEntriesByType('resource').filter(x=>x.name.includes('/api/')).map(x=>({url:x.name.split('/api/')[1],duration_ms:x.duration,decoded_bytes:x.decodedBodySize}))")
         report['measurements'][key]={'samples_ms':samples,'resources':resources,'dom_rows':page.locator('main tbody tr').count(),'scope':'navigation through explicit account/movement responses and populated controls; includes networkidle heuristic'}
         print(key,samples,flush=True)
+    page.locator('.report-options summary').click()
     controls=page.locator('.report-controls');controls.get_by_role('combobox',name='Relatório',exact=True).select_option('ledger')
     controls.locator('label').filter(has_text='Data inicial').locator('input[type=text]').fill('01/09/2026')
     controls.locator('label').filter(has_text='Data final').locator('input[type=text]').fill('30/09/2026')

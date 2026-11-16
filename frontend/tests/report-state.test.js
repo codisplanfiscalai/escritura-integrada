@@ -41,7 +41,7 @@ test('componente: consultas interrompidas não substituem o contexto novo e expo
  const vueUrl=pathToFileURL(require.resolve('vue/dist/vue.runtime.esm-bundler.js')).href;
  const state=reactive({companyId:1,period:'2026-01',contextBusy:false});
  const pending=[];
- globalThis.__reportTest={state,api:url=>new Promise((resolve,reject)=>pending.push({url,resolve,reject})),scope:(url,cid=state.companyId)=>`/companies/${cid}${url}`,useResource:(_load,initial=[])=>({data:ref(initial)}),notify:()=>{},can:()=>true,allowedApi:()=>Promise.resolve([])};
+ globalThis.__reportTest={state,api:(url,options)=>new Promise((resolve,reject)=>pending.push({url,options,resolve,reject})),scope:(url,cid=state.companyId)=>`/companies/${cid}${url}`,useResource:(_load,initial=[])=>({data:ref(initial)}),notify:()=>{},can:()=>true,allowedApi:()=>Promise.resolve([])};
  const mock=`data:text/javascript;base64,${Buffer.from('export const {state,api,scope,useResource,notify,can,allowedApi}=globalThis.__reportTest;').toString('base64')}`;
  const source=await readFile(new URL('../src/views/ReportsView.vue',import.meta.url),'utf8');
  const {descriptor}=parse(source);
@@ -60,7 +60,7 @@ test('componente: consultas interrompidas não substituem o contexto novo e expo
  try {
   const first=view.run();assert.equal(pending.length,1);assert.equal(view.busy.value,true);
   await view.run();assert.equal(pending.length,1,'repeated submit is ignored');
-  state.companyId=2;await nextTick();assert.equal(view.busy.value,false);
+  state.companyId=2;await nextTick();assert.equal(view.busy.value,false);assert.equal(pending[0].options.signal.aborted,true);
   const second=view.run();assert.equal(pending.length,2);
   pending[0].resolve({rows:[],company_id:1,kind:'trial-balance'});await first;
   assert.equal(view.busy.value,true,'old finally must not clear new request');assert.equal(view.result.value,null);
@@ -115,6 +115,15 @@ test('componente: consultas interrompidas não substituem o contexto novo e expo
   assert.equal(view.page.value,1);assert.equal(view.result.value,null);
   view.result.value={rows};view.page.value=2;state.companyId=3;await nextTick();
   assert.equal(view.page.value,1);assert.equal(view.result.value,null);
+  for(const change of ['cancel','date']){
+   view.start.value='2026-01-01';view.end.value='2026-12-31';await nextTick();
+   const work=view.run(),old=pending.at(-1);
+   if(change==='cancel')view.cancelReport();else view.start.value='2026-02-01';
+   assert.equal(old.options.signal.aborted,true);assert.equal(view.busy.value,false);
+   const newer=view.run(),latest=pending.at(-1);
+   old.resolve({rows:[],title:'old'});await work;assert.equal(view.busy.value,true);
+   latest.resolve({rows:[],title:'new'});await newer;assert.equal(view.result.value.title,'new');
+  }
  }finally{app.unmount();delete globalThis.__reportTest;}
 });
 
