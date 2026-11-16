@@ -38,3 +38,6 @@ release-output/
 storage-plan*.json
 storage-plan*.images.yaml
 compose.named*.yaml
+
+# Generated local PDF.js codecs (npm prebuild/predev).
+frontend/public/pdfjs-codecs/

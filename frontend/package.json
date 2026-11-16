@@ -6,14 +6,17 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build && node scripts/collect-notices.mjs",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "prebuild": "node scripts/pdf-assets.mjs",
+    "predev": "node scripts/pdf-assets.mjs"
   },
   "dependencies": {
-    "vue": "3.5.45",
-    "lucide-vue-next": "0.577.0"
+    "lucide-vue-next": "0.577.0",
+    "pdfjs-dist": "6.5.438",
+    "vue": "3.5.45"
   },
   "devDependencies": {
-    "vite": "7.3.1",
-    "@vitejs/plugin-vue": "6.0.4"
+    "@vitejs/plugin-vue": "6.0.4",
+    "vite": "7.3.1"
   }
 }

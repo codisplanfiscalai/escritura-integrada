@@ -15,6 +15,7 @@ test('edição de documento com títulos envia somente alterações normalizadas
  const {descriptor}=parse(source),require=createRequire(import.meta.url),vueUrl=pathToFileURL(require.resolve('vue/dist/vue.runtime.esm-bundler.js')).href;
  let code=compileScript(descriptor,{id:'document-edit-test'}).content.replace(/from ['"]vue['"]/g,`from '${vueUrl}'`).replace(/import (\w+) from ['"][^'"]+\.vue['"];?/g,'const $1={};').replace(/from ['"]\.\.\/lib\/workspace['"]/g,`from '${mock}'`).replace(/from ['"]\.\.\/lib\/(format|entry-focus)['"]/g,(_,name)=>`from '${new URL(`../src/lib/${name}.js`,import.meta.url).href}'`);
  code=code.replace("from '../lib/context-preferences.js'",`from '${new URL('../src/lib/context-preferences.js',import.meta.url).href}'`);
+ code=code.replace("from '../lib/document-preview.js'",`from '${new URL('../src/lib/document-preview.js',import.meta.url).href}'`);
  const component=(await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default;
  let view;const setup=component.setup;component.setup=(props,ctx)=>{view=setup(props,ctx);return ()=>null;};
  const app=createRenderer({createComment:()=>({}),insert:()=>{},remove:()=>{},parentNode:()=>null,nextSibling:()=>null}).createApp(component);app.mount({});

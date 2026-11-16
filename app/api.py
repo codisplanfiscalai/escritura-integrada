@@ -54,6 +54,8 @@ def create_app(data_dir=None, demo=False):
     register_fiscal_library_routes(application, core, actor=lambda request: request.state.session['user']['username'])
     from .fiscal_api import register_fiscal_routes
     register_fiscal_routes(application, core, actor=lambda request: request.state.session['user']['username'])
+    from .document_preview import register as register_document_preview
+    register_document_preview(application, core)
     from .plan_manager import register as register_plan_manager
     register_plan_manager(application, core, actor=lambda request: request.state.session["user"]["username"])
     from .fiscal_sales_accounting import register as register_sales_accounting
