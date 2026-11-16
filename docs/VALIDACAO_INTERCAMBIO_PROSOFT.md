@@ -1,6 +1,6 @@
 # Validação independente do intercâmbio Prosoft
 
-Ensaio local sintético de 16/11/2026 sobre develop `67a5e2e0b3c65fe7948827d6d66da5361970bfb1`
+Ensaio original local sintético de 16/11/2026 sobre develop `67a5e2e0b3c65fe7948827d6d66da5361970bfb1`
 (dev.23), após os merges PR40 e PR44. Branch de trabalho
 `test/prosoft-independent-contract-20261116`. A única correção de produto é a validação pontual das espécies descrita abaixo.
 Interface, schema, workflow, Atlas, release estável e produção não foram alterados.
@@ -133,6 +133,31 @@ PostgreSQL real, importação Prosoft ou PVA. Não há mudança de interface, de
 Python. A execução não estabelece desempenho ou concorrência reais. O resultado
 do CI remoto deve ser conferido na PR para o head exato; os testes locais não
 substituem essa verificação.
+
+## Composição da PR51 com develop dev.24
+
+A sincronização usa o head anterior da PR51
+`a91bb1aa0801eeae5b1972ffeff26aa0fdd44056` e develop
+`b82a5dc7273ddfcb19484bb2d4049fd186f178eb`, que inclui o merge da PR55 e os
+manifests 0.9.0-dev.24. O merge de composição foi preparado sem conflito, rebase
+ou force push. Os três arquivos de produto e os dois arquivos de testes desta
+PR permanecem byte a byte iguais ao head anterior; somente esta documentação
+recebe a evidência atualizada.
+
+Todos os workflows, scripts e testes de contrato de CI foram conferidos como
+idênticos à base dev.24. A política existente mantém binários desktop pausados
+para develop, passa a branch-base ao planejamento de PR e condiciona Windows e
+macOS a `desktop_enabled`. A PR não altera essa política, nem os gates para main.
+Os cenários Chromium existentes continuam no workflow. Nada é desativado para
+aprovar este patch. YAML, sintaxe de todos os arquivos Python e paridade dos
+manifests dev.24 foram conferidos. Esta composição passou em **258 testes em 67,313 s**, sem falhas, erros ou
+skips: os nove módulos backend anteriores mais `test_ci_delivery_cache`,
+`test_ci_artifacts_cache`, `test_ci_release`, `test_develop_alias` e
+`test_infrastructure`. A sintaxe dos 292 arquivos Python (app/scripts/tests),
+YAML e manifests de versão também passou. Binários desktop, build de imagens,
+navegador e importação real Prosoft não foram executados localmente nesta
+sincronização. O CI do novo head é identificado na descrição da PR; nenhum
+resultado de head anterior substitui sua validação.
 
 ## O que ainda não está comprovado
 
