@@ -18,6 +18,12 @@ def classify(conn,cid,parsed,year):
         for index,row in enumerate(parsed.get(kind,[])):
             row['_selection']=f'{kind}:{index}'
             row['_eligibility']=eligibility(conn,cid,module,row.get(field),year)
+            if kind == 'documents' and parsed.get('reception') and row['_eligibility']['status'] == 'eligible':
+                from .reception import ensure_reception_open
+                try:
+                    ensure_reception_open(conn, cid, row.get(field))
+                except DomainError as exc:
+                    row['_eligibility'] = {'status': 'blocked', 'reason': exc.detail, 'code': exc.code, 'period': str(row.get(field) or '')[:7]}
     return parsed
 
 def selected_rows(parsed,payload):

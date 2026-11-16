@@ -8,7 +8,14 @@ from .core import DomainError
 def original_xmls(filename,raw,depth=0,state=None):
     state=state or {'members':0,'expanded':0}
     suffix=PurePosixPath(filename.lower()).suffix
-    if suffix=='.xml':return [(filename,raw)]
+    if suffix=='.xml':
+        from .reception import is_nfe_distribution, read_nfe_distribution
+        from .importers import _xml_tree
+        if is_nfe_distribution(_xml_tree(raw)):
+            reception = read_nfe_distribution(raw, state)
+            return [('nsu-' + entry['nsu'] + '.xml', entry['xml'])
+                    for entry in reception['entries'] if entry['kind'] == 'full_xml']
+        return [(filename,raw)]
     if suffix not in {'.zip','.7z','.rar'}:return []
     if depth>=2:raise DomainError('Origem excede dois níveis de compactação.')
     if suffix=='.zip':
