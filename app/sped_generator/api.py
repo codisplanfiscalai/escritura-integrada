@@ -73,10 +73,10 @@ def register_sped_generator_routes(app, core, check_period):
     @app.post('/api/companies/{cid}/sped-generator/bookkeeping-block-c')
     def bookkeeping_block_c(cid: int, request: Request, payload: dict = Body(...)):
         from .bookkeeping import generate_nfce_block_c
-        allowed = {'period', 'header_0000', 'profile', 'activity', 'purpose'}
+        allowed = {'period', 'header_0000', 'profile', 'activity', 'purpose', 'consolidate_nfce', 'segment_on_gap'}
         if set(payload) - allowed:
             raise DomainError('Opção não suportada neste incremento do Bloco C.')
-        if any(not isinstance(value, str) for key, value in payload.items() if key != 'period'):
+        if any(not isinstance(value, str) for key, value in payload.items() if key not in {'period', 'consolidate_nfce', 'segment_on_gap'}):
             raise DomainError('Opções do cabeçalho devem ser textos.')
         competence = check_period(request, payload.get('period'))
         session = request.state.session
@@ -91,7 +91,8 @@ def register_sped_generator_routes(app, core, check_period):
             result = generate_nfce_block_c((core._document_values(row) for row in rows),
                 company=company, competence=competence, options={key: value for key, value in payload.items() if key != 'period'})
             content = result.pop('payload')
-            return {**result, 'filename': f'efd-bloco-c-parcial-{competence}-empresa-{cid}.txt',
+            name = 'consolidacao-operacional-bloco-c' if result.get('consolidated') else 'efd-bloco-c-parcial'
+            return {**result, 'filename': f'{name}-{competence}-empresa-{cid}.txt',
                     'content_base64': base64.b64encode(content).decode()}
 
     register_ecd_snapshot_routes(app, core, check_period)

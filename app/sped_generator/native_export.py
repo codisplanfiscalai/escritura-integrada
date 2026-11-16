@@ -41,7 +41,7 @@ def _decimal(value):
 
 
 def _money(value):
-    return format(value.quantize(Decimal('.01'), rounding=ROUND_HALF_UP), '.2f').replace('.', ',')
+    return '' if value is None else format(value.quantize(Decimal('.01'), rounding=ROUND_HALF_UP), '.2f').replace('.', ',')
 
 
 def _date(value):
@@ -51,7 +51,8 @@ def _date(value):
         raise DomainError('NFC-e regular sem data válida para consolidação.') from None
 
 
-def _consolidate_native_sped(payload, *, company_tax_id, competence, enabled=False, segment_on_gap=True):
+def _consolidate_native_sped(payload, *, company_tax_id, competence, enabled=False, segment_on_gap=True,
+                             partial_block_c=False):
     """Return derived bytes and individual source-line trace; never writes state.
 
     Disabled means byte-for-byte original. Enabled uses the reference's native
@@ -62,10 +63,13 @@ def _consolidate_native_sped(payload, *, company_tax_id, competence, enabled=Fal
         raise DomainError('Opções de consolidação devem ser booleanas.')
     if not enabled:
         return {'payload': payload, 'consolidated': False, 'trace': [], 'warnings': []}
-    try:
-        text = payload.decode('utf-8-sig')
-    except UnicodeDecodeError:
-        text = payload.decode('cp1252')
+    if partial_block_c:
+        text = payload.decode('latin-1')
+    else:
+        try:
+            text = payload.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text = payload.decode('cp1252')
     lines = [line for line in text.splitlines() if line.strip()]
     records = [_fields(line) for line in lines]
     headers = [r for r in records if r[0] == '0000']
@@ -76,7 +80,13 @@ def _consolidate_native_sped(payload, *, company_tax_id, competence, enabled=Fal
         raise DomainError('Empresa do EFD difere da empresa selecionada.', 409, 'company_mismatch')
     if _date(header[3])[:7] != competence or _date(header[4])[:7] != competence:
         raise DomainError('Competência do EFD difere da consulta.', 409, 'period_mismatch')
-    if any(sum(r[0] == code for r in records) != 1 for code in ('0990', 'C990')):
+    if partial_block_c:
+        # Only the current bookkeeping projection can use this internal adapter.
+        if any(r[0] not in {'0000', 'C001', 'C100', 'C190', 'C990'} for r in records):
+            raise DomainError('Recorte de escrituração contém registro ainda não suportado pelo adaptador.')
+        if any(sum(r[0] == code for r in records) != 1 for code in ('C001', 'C990')):
+            raise DomainError('Recorte deve conter um C001 e um C990.')
+    elif any(sum(r[0] == code for r in records) != 1 for code in ('0990', 'C990')):
         raise DomainError('EFD deve conter um 0990 e um C990 para reconstrução dos contadores.')
     blocks, targets = {}, []
     index = 0
@@ -133,6 +143,9 @@ def _consolidate_native_sped(payload, *, company_tax_id, competence, enabled=Fal
                       if len(d['fields']) > position and d['fields'][position].strip()}
             fields[position] = next(iter(values)) if len(values) == 1 else fallback
         for position in SUM_FIELDS:
+            if partial_block_c and any(len(d['fields']) <= position or not d['fields'][position].strip() for d in group):
+                fields[position] = ''  # Unknown bookkeeping values never become zero.
+                continue
             fields[position] = _money(sum((_decimal(d['fields'][position]).quantize(Decimal('.01'), rounding=ROUND_HALF_UP) if len(d['fields']) > position
                                            else Decimal(0) for d in group), Decimal(0)))
         rebuilt.append(_record('C100', fields))
@@ -144,16 +157,19 @@ def _consolidate_native_sped(payload, *, company_tax_id, competence, enabled=Fal
                 if row[0] == 'C190':
                     if len(values) != 11:
                         raise DomainError('C190 incompleto para consolidação.')
-                    key = (values[0], values[1], _decimal(values[2]), values[10])
+                    key = (values[0], values[1], None if partial_block_c and not values[2].strip() else _decimal(values[2]), values[10])
                     current = analytics.setdefault(key, [Decimal(0)] * 10)
                     for i, value in enumerate(values[3:10]):
-                        current[i] += _decimal(value).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+                        if partial_block_c and (current[i] is None or not value.strip()):
+                            current[i] = None
+                        else:
+                            current[i] += _decimal(value).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
                 elif current is None or len(values) != 3:
                     raise DomainError('C191 sem C190 válido; original preservado.')
                 else:
                     for i, value in enumerate(values):
                         current[7 + i] += _decimal(value).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
-        for (cst, cfop, rate, cod_obs), values in sorted(analytics.items(), key=lambda p: (p[0][1], p[0][0], p[0][2], p[0][3])):
+        for (cst, cfop, rate, cod_obs), values in sorted(analytics.items(), key=lambda p: (p[0][1], p[0][0], p[0][2] if p[0][2] is not None else Decimal('-1'), p[0][3])):
             rebuilt.append(_record('C190', [cst, cfop, _money(rate), *map(_money, values[:7]), cod_obs]))
             if any(values[7:]):
                 rebuilt.append(_record('C191', map(_money, values[7:])))
@@ -176,19 +192,21 @@ def _consolidate_native_sped(payload, *, company_tax_id, competence, enabled=Fal
             output.append(lines[index])
         index += 1
     if obs not in existing:
-        at = next(i for i, line in enumerate(output) if _fields(line)[0] == '0990')
+        at = next(i for i, line in enumerate(output) if _fields(line)[0] == ('C001' if partial_block_c else '0990'))
         output.insert(at, _record('0460', [obs, OBS_DESCRIPTION]))
-    for prefix, closer in (('0', '0990'), ('C', 'C990')):
+    for prefix, closer in ((('C', 'C990'),) if partial_block_c else (('0', '0990'), ('C', 'C990'))):
         count = sum(_fields(line)[0].startswith(prefix) for line in output)
         at = next(i for i, line in enumerate(output) if _fields(line)[0] == closer)
         output[at] = _record(closer, [count])
-    counts = Counter(_fields(line)[0] for line in output)
-    codes = sorted(set(counts) | {'9001', '9900', '9990', '9999'})
-    counts.update({'9001': 1, '9900': len(codes), '9990': 1, '9999': 1})
-    block9 = [_record('9001', ['0']), *(_record('9900', [c, counts[c]]) for c in codes)]
-    block9.append(_record('9990', [len(block9) + 1]))
-    block9.append(_record('9999', [len(output) + len(block9) + 1]))
-    return {'payload': ('\r\n'.join(output + block9) + '\r\n').encode(),
+    block9 = []
+    if not partial_block_c:
+        counts = Counter(_fields(line)[0] for line in output)
+        codes = sorted(set(counts) | {'9001', '9900', '9990', '9999'})
+        counts.update({'9001': 1, '9900': len(codes), '9990': 1, '9999': 1})
+        block9 = [_record('9001', ['0']), *(_record('9900', [c, counts[c]]) for c in codes)]
+        block9.append(_record('9990', [len(block9) + 1]))
+        block9.append(_record('9999', [len(output) + len(block9) + 1]))
+    return {'payload': ('\r\n'.join(output + block9) + '\r\n').encode('latin-1' if partial_block_c else 'utf-8'),
             'consolidated': True, 'official_pva_replacement': False, 'trace': trace,
             'warnings': [
                 'Consolidação nativa opcional: cada C100 agregado reutiliza número/chave da primeira NFC-e; representa um grupo operacional.',
