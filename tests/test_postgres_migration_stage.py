@@ -157,6 +157,13 @@ class PostgresMigrationStageTests(CheckpointFixture):
             for row, kind in ((third, 'third-party'), (accountant, 'accountant')):
                 self.core.link_registration(cid, kind, row['id'],
                     {'company_id': cid, 'version': row['version']}, 'fixture')
+        self.core.save_master(1, 'product', {'code': 'LOCAL-STAGE', 'name': 'Produto exclusivo da empresa 1', 'data': {}}, 'fixture')
+        with self.core.db.read() as conn:
+            master = conn.execute('SELECT master_id FROM shared_registration_links WHERE registration_id=? AND company_id=1', (third['id'],)).fetchone()[0]
+        self.core.create_document(1, {'direction': 'incoming', 'number': 'REG-STAGE', 'series': '1', 'model': '55',
+            'issue_date': '2026-11-01', 'posting_date': '2026-11-01', 'partner_name': third['name'],
+            'partner_tax_id': third['tax_id'], 'participant_id': master, 'cfop': '1102',
+            'total': '10.00', 'items': [], 'taxes': {}, 'source': {}}, 'fixture')
         checkpoint = self.root / 'registry_checkpoint'
         create_checkpoint(self.source, checkpoint)
         return checkpoint
