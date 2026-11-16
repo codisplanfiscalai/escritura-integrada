@@ -42,16 +42,17 @@ acrescenta três:
 As fixtures usam XMLs fictícios, CNPJ numérico de teste, originais BLOB e bancos
 SQLite temporários. Nenhum arquivo privado é necessário para os testes.
 
-## Limite constatado, preservado
+## Limite encontrado e decisão posterior
 
-A geração de saídas do develop usa o identificador contábil `SAIDAS-FISCAIS`,
-com 13 caracteres. O campo documento do CTBLCTOS comporta 10. O exportador
-continua recusando esse lançamento com erro explícito `excede 10 posições`,
-sem truncar ou renomear dados. Esse limite já existia na composição dos serviços;
-a resolução de conflito não muda a rotina diária nem inventa uma conversão.
-Os ensaios verificam a rejeição e a seleção de lançamento representável, não
-alegam exportar o diário gerado por essa rotina. Suportar esse identificador
-exigirá definir uma conversão explícita/rastreável em incremento próprio.
+A composição inicial identificou o excesso da referência da rotina diária em
+relação às dez posições CTBLCTOS e manteve a rejeição até haver decisão. Em
+16/11/2026, o usuário autorizou referência curta rastreável apenas na saída.
+O encoder agora gera a forma determinística, conserva a original na aplicação
+e salva ambos os valores no manifesto imutável. Os testes de composição exigem
+exportar o lançamento diário e sua compensação sem renomear as fontes. O
+[contrato do exportador](EXPORTACAO_PROSOFT_INCREMENTO.md) descreve posições,
+rastreio, colisões e limites. A decisão também autoriza incluir as canceladas
+já identificadas/escrituradas, com o indicador próprio do layout.
 
 As demais lacunas de [exportação Prosoft](EXPORTACAO_PROSOFT_INCREMENTO.md)
 permanecem: perfil fiscal parcial, CTA opcional, sem TRC/SLD, sem EFD oficial ou

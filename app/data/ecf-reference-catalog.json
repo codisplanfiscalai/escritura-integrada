@@ -1,0 +1,473 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-11-15",
+  "publisher": "Receita Federal do Brasil",
+  "scope": "reference_artifacts_only",
+  "official_program_validated": false,
+  "publisher_signature_verified": false,
+  "manual": {
+    "id": "ecf12-manual-julho-2026",
+    "layout": "12",
+    "content_revision_label": "julho/2026",
+    "revision_date": null,
+    "download_url": "https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/ecf/manuais-e-documentos-tecnicos/manual_ecf_leiaute_12_20_05_2026_ac_2025_sit_esp_2026.docx/@@download/file",
+    "sha256": "942877bdd3d443444f35758e531b1ab30ce965a62ad148707ef2d68061b9f657",
+    "bytes": 1508830,
+    "verified_payload": true,
+    "archive_bundled": false,
+    "sections_reviewed": [
+      "Introdução do leiaute",
+      "0000.SIT_ESPECIAL",
+      "1.12",
+      "2.9"
+    ],
+    "referential_record_groups": [
+      "L100",
+      "L300",
+      "P100",
+      "P150",
+      "U100",
+      "U150"
+    ]
+  },
+  "scope_rules": [
+    {
+      "layout": "12",
+      "calendar_year": 2025,
+      "situation_codes": [
+        "0",
+        "7",
+        "8",
+        "9"
+      ]
+    },
+    {
+      "layout": "12",
+      "calendar_year": 2026,
+      "situation_codes": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6"
+      ]
+    }
+  ],
+  "notice_provenance": {
+    "catalogue_url": "https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/ecf/manuais-e-documentos-tecnicos/tabelas-dinamicas-e-planos-de-contas-referenciais-leiaute-12-atualizacao-28-05-2026",
+    "catalogue_html_sha256": "3a807957f26858f598411078d2ebf608f2a3afcdaae7f26c4c5ef1984bf79d26",
+    "changelog_url": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+    "changelog_html_sha256": "e8bbb96f8b571a776447ca49c0ff7b1d2c0abee8ef742cb7734d43f37744a1f5",
+    "html_hash_semantics": "observed_response_only_not_a_permanent_page_signature"
+  },
+  "revisions": [
+    {
+      "id": "ecf12-tables-2026-07-08",
+      "layout": "12",
+      "revision_date": "2026-07-08",
+      "kind": "dynamic_tables_and_reference_charts",
+      "notice_url": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "source_page": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "verified_payload": false,
+      "download_url": null,
+      "filename_from_resource": null,
+      "sha256": null,
+      "bytes": null,
+      "archive_bundled": false,
+      "sheets": null
+    },
+    {
+      "id": "ecf12-tables-2026-07-15",
+      "layout": "12",
+      "revision_date": "2026-07-15",
+      "kind": "dynamic_tables_and_reference_charts",
+      "notice_url": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "source_page": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "verified_payload": false,
+      "download_url": null,
+      "filename_from_resource": null,
+      "sha256": null,
+      "bytes": null,
+      "archive_bundled": false,
+      "sheets": null
+    },
+    {
+      "id": "ecf12-tables-2026-07-20",
+      "layout": "12",
+      "revision_date": "2026-07-20",
+      "kind": "dynamic_tables_and_reference_charts",
+      "notice_url": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "source_page": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "verified_payload": false,
+      "download_url": null,
+      "filename_from_resource": null,
+      "sha256": null,
+      "bytes": null,
+      "archive_bundled": false,
+      "sheets": null
+    },
+    {
+      "id": "ecf12-tables-2026-07-23",
+      "layout": "12",
+      "revision_date": "2026-07-23",
+      "kind": "dynamic_tables_and_reference_charts",
+      "notice_url": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "source_page": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "verified_payload": false,
+      "download_url": null,
+      "filename_from_resource": null,
+      "sha256": null,
+      "bytes": null,
+      "archive_bundled": false,
+      "sheets": null
+    },
+    {
+      "id": "ecf12-tables-2026-07-25",
+      "layout": "12",
+      "revision_date": "2026-07-25",
+      "kind": "dynamic_tables_and_reference_charts",
+      "notice_url": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "source_page": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "verified_payload": false,
+      "download_url": null,
+      "filename_from_resource": null,
+      "sha256": null,
+      "bytes": null,
+      "archive_bundled": false,
+      "sheets": null
+    },
+    {
+      "id": "ecf12-tables-2026-09-24",
+      "layout": "12",
+      "revision_date": "2026-09-24",
+      "kind": "dynamic_tables_and_reference_charts",
+      "notice_url": "https://www.gov.br/sped/pt-br/assuntos/comunicados/ecf/atualizacoes-do-arquivo-de-tabelas-dinamicas-leiaute-12",
+      "source_page": "https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/ecf/manuais-e-documentos-tecnicos/tabelas-dinamicas-e-planos-de-contas-referenciais-leiaute-12-atualizacao-28-05-2026/tabelas_dinamicas_ecf_leiaute_12_28_05_2026_ac_2025_sit_esp_2026.xlsx",
+      "verified_payload": true,
+      "download_url": "https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/ecf/manuais-e-documentos-tecnicos/tabelas-dinamicas-e-planos-de-contas-referenciais-leiaute-12-atualizacao-28-05-2026/tabelas_dinamicas_ecf_leiaute_12_28_05_2026_ac_2025_sit_esp_2026.xlsx/@@download/file",
+      "filename_from_resource": "Tabelas_Dinamicas_ECF_Leiaute_12_24_09_2026_AC_2025_SIT_ESP_2026.xlsx",
+      "sha256": "2a4c9688df7a86c1d9e4c179e8d0547c84b56746742ef7b6a73581fdff3b9ec7",
+      "bytes": 1750838,
+      "archive_bundled": false,
+      "sheets": {
+        "INDICE": {
+          "dimension_max_row": 79,
+          "has_validity_columns": false
+        },
+        "PARTEB_PADRAO": {
+          "dimension_max_row": 130,
+          "has_validity_columns": false
+        },
+        "PARTEB_PARTEA": {
+          "dimension_max_row": 1776,
+          "has_validity_columns": false
+        },
+        "L100A": {
+          "dimension_max_row": 733,
+          "has_validity_columns": true
+        },
+        "L100B": {
+          "dimension_max_row": 4081,
+          "has_validity_columns": true
+        },
+        "L100C": {
+          "dimension_max_row": 213,
+          "has_validity_columns": true
+        },
+        "L210": {
+          "dimension_max_row": 103,
+          "has_validity_columns": true
+        },
+        "L300A": {
+          "dimension_max_row": 393,
+          "has_validity_columns": true
+        },
+        "L300B": {
+          "dimension_max_row": 1347,
+          "has_validity_columns": true
+        },
+        "L300C": {
+          "dimension_max_row": 121,
+          "has_validity_columns": true
+        },
+        "M300A": {
+          "dimension_max_row": 387,
+          "has_validity_columns": true
+        },
+        "M300R": {
+          "dimension_max_row": 347,
+          "has_validity_columns": true
+        },
+        "M300B": {
+          "dimension_max_row": 431,
+          "has_validity_columns": true
+        },
+        "M300C": {
+          "dimension_max_row": 335,
+          "has_validity_columns": true
+        },
+        "M350A": {
+          "dimension_max_row": 353,
+          "has_validity_columns": true
+        },
+        "M350R": {
+          "dimension_max_row": 314,
+          "has_validity_columns": true
+        },
+        "M350B": {
+          "dimension_max_row": 413,
+          "has_validity_columns": true
+        },
+        "M350C": {
+          "dimension_max_row": 315,
+          "has_validity_columns": true
+        },
+        "N500": {
+          "dimension_max_row": 3,
+          "has_validity_columns": true
+        },
+        "N600": {
+          "dimension_max_row": 82,
+          "has_validity_columns": true
+        },
+        "N610": {
+          "dimension_max_row": 120,
+          "has_validity_columns": true
+        },
+        "N620": {
+          "dimension_max_row": 44,
+          "has_validity_columns": true
+        },
+        "N630A": {
+          "dimension_max_row": 46,
+          "has_validity_columns": true
+        },
+        "N630B": {
+          "dimension_max_row": 40,
+          "has_validity_columns": true
+        },
+        "N630C": {
+          "dimension_max_row": 40,
+          "has_validity_columns": true
+        },
+        "N650": {
+          "dimension_max_row": 3,
+          "has_validity_columns": true
+        },
+        "N660": {
+          "dimension_max_row": 35,
+          "has_validity_columns": true
+        },
+        "N670": {
+          "dimension_max_row": 40,
+          "has_validity_columns": true
+        },
+        "P100A": {
+          "dimension_max_row": 733,
+          "has_validity_columns": true
+        },
+        "P100B": {
+          "dimension_max_row": 4081,
+          "has_validity_columns": true
+        },
+        "P130": {
+          "dimension_max_row": 83,
+          "has_validity_columns": true
+        },
+        "P150A": {
+          "dimension_max_row": 391,
+          "has_validity_columns": true
+        },
+        "P150B": {
+          "dimension_max_row": 1347,
+          "has_validity_columns": true
+        },
+        "P200": {
+          "dimension_max_row": 48,
+          "has_validity_columns": true
+        },
+        "P230": {
+          "dimension_max_row": 39,
+          "has_validity_columns": true
+        },
+        "P300": {
+          "dimension_max_row": 25,
+          "has_validity_columns": true
+        },
+        "P400": {
+          "dimension_max_row": 41,
+          "has_validity_columns": true
+        },
+        "P500": {
+          "dimension_max_row": 24,
+          "has_validity_columns": true
+        },
+        "S100": {
+          "dimension_max_row": 233,
+          "has_validity_columns": true
+        },
+        "S150": {
+          "dimension_max_row": 62,
+          "has_validity_columns": true
+        },
+        "S200": {
+          "dimension_max_row": 11,
+          "has_validity_columns": true
+        },
+        "S300": {
+          "dimension_max_row": 5,
+          "has_validity_columns": true
+        },
+        "S500": {
+          "dimension_max_row": 5,
+          "has_validity_columns": true
+        },
+        "S700": {
+          "dimension_max_row": 8,
+          "has_validity_columns": true
+        },
+        "T120": {
+          "dimension_max_row": 24,
+          "has_validity_columns": true
+        },
+        "T150": {
+          "dimension_max_row": 20,
+          "has_validity_columns": true
+        },
+        "T170": {
+          "dimension_max_row": 22,
+          "has_validity_columns": true
+        },
+        "T181": {
+          "dimension_max_row": 19,
+          "has_validity_columns": true
+        },
+        "U100A": {
+          "dimension_max_row": 303,
+          "has_validity_columns": true
+        },
+        "U100B": {
+          "dimension_max_row": 4081,
+          "has_validity_columns": true
+        },
+        "U100C": {
+          "dimension_max_row": 213,
+          "has_validity_columns": true
+        },
+        "U100D": {
+          "dimension_max_row": 733,
+          "has_validity_columns": true
+        },
+        "U100E": {
+          "dimension_max_row": 800,
+          "has_validity_columns": true
+        },
+        "U150A": {
+          "dimension_max_row": 214,
+          "has_validity_columns": true
+        },
+        "U150B": {
+          "dimension_max_row": 1324,
+          "has_validity_columns": true
+        },
+        "U150C": {
+          "dimension_max_row": 119,
+          "has_validity_columns": true
+        },
+        "U150D": {
+          "dimension_max_row": 172,
+          "has_validity_columns": true
+        },
+        "U150E": {
+          "dimension_max_row": 791,
+          "has_validity_columns": true
+        },
+        "U180": {
+          "dimension_max_row": 13,
+          "has_validity_columns": true
+        },
+        "U182": {
+          "dimension_max_row": 12,
+          "has_validity_columns": true
+        },
+        "V100": {
+          "dimension_max_row": 22,
+          "has_validity_columns": true
+        },
+        "X292": {
+          "dimension_max_row": 15,
+          "has_validity_columns": true
+        },
+        "X360": {
+          "dimension_max_row": 39,
+          "has_validity_columns": true
+        },
+        "X366": {
+          "dimension_max_row": 7,
+          "has_validity_columns": true
+        },
+        "X375A": {
+          "dimension_max_row": 16,
+          "has_validity_columns": true
+        },
+        "X375B": {
+          "dimension_max_row": 16,
+          "has_validity_columns": true
+        },
+        "X375C": {
+          "dimension_max_row": 16,
+          "has_validity_columns": true
+        },
+        "X375D": {
+          "dimension_max_row": 6,
+          "has_validity_columns": true
+        },
+        "X375E": {
+          "dimension_max_row": 13,
+          "has_validity_columns": true
+        },
+        "X390": {
+          "dimension_max_row": 18,
+          "has_validity_columns": true
+        },
+        "X400": {
+          "dimension_max_row": 27,
+          "has_validity_columns": true
+        },
+        "X451": {
+          "dimension_max_row": 17,
+          "has_validity_columns": true
+        },
+        "X460": {
+          "dimension_max_row": 29,
+          "has_validity_columns": true
+        },
+        "X470": {
+          "dimension_max_row": 17,
+          "has_validity_columns": true
+        },
+        "X480": {
+          "dimension_max_row": 231,
+          "has_validity_columns": true
+        },
+        "X490": {
+          "dimension_max_row": 34,
+          "has_validity_columns": true
+        },
+        "X500": {
+          "dimension_max_row": 14,
+          "has_validity_columns": true
+        },
+        "X510": {
+          "dimension_max_row": 10,
+          "has_validity_columns": true
+        },
+        "Y681": {
+          "dimension_max_row": 18,
+          "has_validity_columns": true
+        }
+      }
+    }
+  ]
+}

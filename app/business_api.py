@@ -165,6 +165,14 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
     def export_confirm(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
         check_period(request,payload.get('period'));return core.export_prosoft(cid,payload,actor(request),True)
 
+    @app.get('/api/companies/{cid}/prosoft/exports/{item_id}/manifest')
+    def prosoft_manifest(cid:int,item_id:int):
+        # Same export permission as the other /prosoft routes; immutable saved trace.
+        from .prosoft import LAYOUT
+        with db.read() as conn:r=select_one(conn,'export_batches',cid,item_id)
+        if r['layout']!=LAYOUT:raise DomainError('Lote contábil não encontrado.',404)
+        return json.loads(r['manifest_json'])
+
     @app.post('/api/companies/{cid}/prosoft-fiscal/preview')
     def prosoft_fiscal_preview(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
         check_period(request,payload.get('period'));return core.export_prosoft_fiscal(cid,payload,actor(request))

@@ -17,11 +17,11 @@ POSITIONS = {
     'incoming': {'date': 19, 'issue': 25, 'number': 869, 'species': 858,
                  'series': 864, 'split': 43, 'account': 44, 'cfop': 624,
                  'total': 211, 'base': 66, 'icms': 80, 'other': 108,
-                 'ipi': 155, 'key': 973, 'party': 5, 'state': 517, 'ie': 499},
+                 'ipi': 155, 'cancelled': 809, 'key': 973, 'party': 5, 'state': 517, 'ie': 499},
     'outgoing': {'date': 20, 'issue': 728, 'number': 989, 'species': 978,
                  'series': 984, 'split': 19, 'account': 26, 'cfop': 734,
                  'total': 34, 'base': 62, 'icms': 76, 'other': 104,
-                 'ipi': 132, 'key': 1377, 'party': 254, 'state': 273, 'ie': 1037},
+                 'ipi': 132, 'cancelled': 930, 'key': 1377, 'party': 254, 'state': 273, 'ie': 1037},
 }
 LIMITATIONS = [
     'Intercâmbio parcial de notas modelos 55/65. Não é EFD oficial, apuração ou transmissão.',
@@ -60,15 +60,17 @@ def encode_fiscal(documents, payload):
     accounts = object_map(payload.get('cfop_accounts', {}), 'Contas por CFOP')
     records = {k: [] for k in WIDTHS}
     trace, skipped, warnings, changes = [], [], [], []
-    totals = {k: {'documents': 0, 'records': 0, 'total_cents': 0} for k in WIDTHS}
+    totals = {k: {'documents': 0, 'cancelled_documents': 0, 'records': 0, 'total_cents': 0} for k in WIDTHS}
     for doc in documents:
         did = doc['id']
         reason = ('not_booked' if doc['status'] != 'booked' else
-                  'cancellation_not_supported' if doc.get('book_cancellation') else
                   'model_not_supported' if doc['model'] not in {'55', '65'} else '')
         if reason:
             skipped.append({'document_id': did, 'reason': reason, 'total_cents': doc['total_cents']})
             continue
+        cancelled = bool(doc.get('book_cancellation'))
+        if doc.get('document_state') == 'cancelled' and not cancelled:
+            raise DomainError('Cancelamento sem evidência do livro validado; confira a origem.')
         direction = doc['direction']
         p = POSITIONS[direction]
         config = species.get(doc['model'], {})
@@ -101,6 +103,8 @@ def encode_fiscal(documents, payload):
             pending = list(line.get('pending', []))
             def field(name, width, value):
                 put(out, p[name], width, value)
+            # PDF fiscal pp. 3/13: 0 regular, 1 cancelled; no inferred electronic event.
+            field('cancelled', 1, '1' if cancelled else '0')
             field('date', 6, date_field(doc['posting_date']))
             field('issue', 6, date_field(doc['issue_date']))
             field('number', 10, number)
@@ -139,7 +143,8 @@ def encode_fiscal(documents, payload):
             records[direction].append(''.join(out))
             trace.append({'document_id': did, 'source_hash': doc.get('source_hash', ''),
                           'source': doc.get('source', {}), 'sources': doc.get('sources', []), 'source_snapshot_sha256': digest(doc),
-                          'number': doc['number'], 'series': series, 'model': doc['model'], 'direction': direction,
+                          'number': doc['number'], 'series': series, 'model': doc['model'], 'direction': direction, 'cancelled': cancelled,
+                          'cancellation_evidence': doc.get('cancellation_evidence', 'validated_fiscal_book' if cancelled else None),
                           'file': FILES[direction], 'record': len(records[direction]), 'line': index + 1,
                           'posting_date': doc['posting_date'], 'issue_date': doc['issue_date'],
                           'key': key, 'item_numbers': line.get('item_numbers', []),
@@ -153,6 +158,7 @@ def encode_fiscal(documents, payload):
                     totals[direction][total_key] = (totals[direction][total_key] or 0) + money(line[source], source)
                     totals[direction][count_key] += 1
             if pending: warnings.append({'document_id': did, 'line': index + 1, 'codes': list(dict.fromkeys(pending))})
+        totals[direction]['cancelled_documents'] += int(cancelled)
         totals[direction]['documents'] += 1
         totals[direction]['records'] += len(lines)
         totals[direction]['total_cents'] += doc['total_cents']

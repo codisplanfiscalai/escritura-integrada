@@ -231,8 +231,10 @@ class FiscalSalesCompositionTests(unittest.TestCase):
         self.assertEqual(200, response.status_code, response.text)
         with ZipFile(BytesIO(response.content)) as archive:
             self.assertEqual([2611] * 3, list(map(len, archive.read('SAIDAS.TXT').splitlines())))
-        rejected = self.post('/prosoft/preview', self.prosoft_accounting_payload(), status=400)
-        self.assertIn('excede 10 posições', rejected['detail'])
+        all_journals = self.post('/prosoft/preview', self.prosoft_accounting_payload())
+        shortened = [r['document_reference'] for r in all_journals['manifest']['trace'] if 'document_reference' in r]
+        self.assertEqual(['SAIDAS-FISCAIS'], [r['original'] for r in shortened])
+        self.assertEqual(10, len(shortened[0]['exported']))
         accounting_payload = self.prosoft_accounting_payload(cta=True, journal_ids=[manual['id']])
         accounting = self.post('/prosoft/preview', accounting_payload)
         self.assertEqual({'CTA': 1, 'LC1': 1, 'LC2': 3}, accounting['manifest']['record_counts'])
@@ -261,8 +263,10 @@ class FiscalSalesCompositionTests(unittest.TestCase):
         self.assertEqual(20000, fiscal['totals']['outgoing']['total_cents'])
         self.assertEqual([docs[0]['id']], [s['document_id'] for s in fiscal['skipped']])
         self.assertEqual('not_booked', fiscal['skipped'][0]['reason'])
-        rejected = self.post('/prosoft/preview', self.prosoft_accounting_payload(), status=400)
-        self.assertIn('excede 10 posições', rejected['detail'])
+        all_journals = self.post('/prosoft/preview', self.prosoft_accounting_payload())
+        shortened = [r['document_reference'] for r in all_journals['manifest']['trace'] if 'document_reference' in r]
+        self.assertEqual(['SAIDAS-FISCAIS'], [r['original'] for r in shortened])
+        self.assertEqual(10, len(shortened[0]['exported']))
         journals = self.core.journals(self.a['id'])
         self.assertEqual(40000, sum(j['total_cents'] for j in journals))
         self.assertTrue(all(sum(l['debit_cents'] for l in j['lines']) ==
