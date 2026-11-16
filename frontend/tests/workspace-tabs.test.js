@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
-import {createSSRApp} from 'vue';
+import {createSSRApp,reactive,ref,watch,nextTick} from 'vue';
 import {renderToString} from '@vue/server-renderer';
 import {parse, compileScript} from '@vue/compiler-sfc';
 import {OVERVIEW_TAB_ID, removeWorkspaceTab} from '../src/lib/workspace-tabs.js';
@@ -221,5 +221,46 @@ test('fechamento entre módulos restaura foco após o X desabilitado perder foco
     h.props.tabs = h.props.tabs.filter(tab => tab.id !== 'companies');
     await h.watchers[1][1](h.props.tabs.map(tab => tab.id));
     assert.equal(h.callbacks.focused, userMovedFocus ? undefined : 'documents');
+  }
+});
+
+
+test('Empresas em Cadastros abre sem empresa ativa, preserva contexto e respeita travas ao fechar',async()=>{
+  const source=await readFile(new URL('../src/App.vue',import.meta.url),'utf8');
+  const entry=source.match(/\{id:'companies'[^\n]+\}/)[0];
+  const menu=new Function('CompaniesView',`return (${entry});`)({});
+  assert.equal(menu.module,'registrations');
+  assert.equal(menu.admin,undefined,'a seleção de empresa continua acessível aos operadores');
+  assert.equal(menu.routine,undefined,'não depende de permissões de uma empresa já ativa');
+  const navigateCode=source.slice(source.indexOf('async function navigate(id){'),source.indexOf('\nstate.navigate=navigate;'));
+  const closeCode=source.slice(source.indexOf('async function closeTab(id){'),source.indexOf('\nasync function closeOtherTabs'));
+  const watchCode=source.slice(source.indexOf('watch(()=>state.tab,id=>'),source.indexOf('watch(()=>state.confirm'));
+  for(const companyId of [null,17]){
+    const state=reactive({tab:'dashboard',companyId,module:'financial',period:'2026-11',editor:null,confirm:null,contextBusy:false});
+    const openTabs=ref(['dashboard']),activations=[],alerts=[];
+    const h=new Function('state','permittedMenus','activate','openTabs','searchOpen','mobileMenu','notify','removeWorkspaceTab','watch',`
+      let navigationId=0;
+      ${navigateCode}
+      ${closeCode}
+      const stop=${watchCode}
+      return {navigate,closeTab,stop};
+    `)(state,{value:[{id:'dashboard',module:null},menu]},(...args)=>activations.push(args),openTabs,ref(false),ref(true),(...args)=>alerts.push(args),removeWorkspaceTab,watch);
+    try{
+      await h.navigate('companies');await nextTick();
+      assert.equal(state.tab,'companies');assert.deepEqual(openTabs.value,['dashboard','companies']);
+      await h.navigate('companies');await nextTick();assert.equal(openTabs.value.length,2);
+      for(const lock of ['editor','confirm','contextBusy']){
+        state[lock]=lock==='contextBusy'?true:{};
+        await h.closeTab('companies');assert.deepEqual(openTabs.value,['dashboard','companies']);
+        await h.navigate('dashboard');assert.equal(state.tab,'companies');
+        state[lock]=lock==='contextBusy'?false:null;
+      }
+      await h.closeTab('companies');await nextTick();
+      assert.equal(state.tab,'dashboard');assert.deepEqual(openTabs.value,['dashboard']);
+      await h.navigate('companies');await nextTick();assert.equal(state.tab,'companies');
+      assert.deepEqual([state.companyId,state.module,state.period],[companyId,'financial','2026-11']);
+      assert.deepEqual(activations,[],'abrir/fechar o cadastro não ativa empresa nem módulo');
+      assert.equal(alerts.length,1,'edição em andamento mantém a orientação existente');
+    }finally{h.stop();}
   }
 });

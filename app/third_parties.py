@@ -60,6 +60,8 @@ def sync_third_party(conn, cid, master_id, actor, reason):
     row = select_one(conn, 'masters', cid, master_id)
     if row['kind'] not in PARTY_KINDS:
         return
+    from .shared_registrations import register_local
+    register_local(conn,row)
     try:
         tax_id = tax_identity(row['tax_id'])
     except DomainError:

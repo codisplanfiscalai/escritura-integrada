@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "checked_on": "2026-11-16",
+  "scope": "classification_reference_for_preparation_only",
+  "unknown_revision_policy": "no_latest_fallback",
+  "publisher_signature_verified": false,
+  "sources": [
+    {
+      "id": "guide-1.35",
+      "url": "https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-contribuicoes/manuais/guia_pratico_efd_contribuicoes_versao_1_35-18_06_2021.pdf/@@display-file/file",
+      "bytes": 4105830,
+      "sha256": "60eace459169238808e3e745e952fcbbbd2af6b7f933b043e8c9692b68f4d08b",
+      "revision_label": "1.35",
+      "content_revision_date": "2021-06-18",
+      "observed_on": "2026-11-16",
+      "verified_payload": true
+    },
+    {
+      "id": "nt12-2026",
+      "url": "https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-contribuicoes/documentos-tecnicos/nota-tecnica-12-2026-reducao-linear-de-incentivos-e-beneficios-lc-224/@@display-file/file",
+      "bytes": 224526,
+      "sha256": "9ff91fc533ae9a7c5865dde4939dbcda717287fec2f7bf5b24af0a931b35b91b",
+      "revision_label": "12/2026",
+      "content_revision_date": null,
+      "observed_on": "2026-11-16",
+      "verified_payload": true
+    },
+    {
+      "id": "nt13-2026",
+      "url": "https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-contribuicoes/documentos-tecnicos/nota-tecnica-013_2026-alteracoes-efd-contribuicoes-para-rtc-2027.pdf/@@display-file/file",
+      "bytes": 346724,
+      "sha256": "5b588eb7a49581a4073eaaad1e1ad2c73f18781fa90fb5e46439eaaab6c1c5b1",
+      "revision_label": "13/2026",
+      "content_revision_date": null,
+      "observed_on": "2026-11-16",
+      "verified_payload": true
+    },
+    {
+      "id": "nt11-2026",
+      "url": "https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-contribuicoes/documentos-tecnicos/nota-tecnica-11-2026-descontinuidade-da-efd-contribuicoes-orientacoes-para-os-contribuintes/@@display-file/file",
+      "bytes": 86320,
+      "sha256": "1eca9b37057ba71989e0813dc112df0b578e3ce74d44099f81b2c4f554202130",
+      "revision_label": "11/2026",
+      "content_revision_date": null,
+      "observed_on": "2026-11-16",
+      "verified_payload": true
+    },
+    {
+      "id": "cst-pis-1.0.0",
+      "url": "https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-contribuicoes/tabelas-de-codigos/tabelas-utilizadas-na-apuracao-das-contribuicoes-para-o-pis-pasep-e-da-cofins/tabela-4-3-3%20/@@download/file",
+      "bytes": 44544,
+      "sha256": "9fc93da5feca352592b4829ef1a586ae23baad4f441f7d3d1be711de7712a61b",
+      "revision_label": "1.0.0",
+      "content_revision_date": null,
+      "official_valid_from": null,
+      "official_valid_to": null,
+      "observed_on": "2026-11-16",
+      "verified_payload": true,
+      "codes": [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "49",
+        "50",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55",
+        "56",
+        "60",
+        "61",
+        "62",
+        "63",
+        "64",
+        "65",
+        "66",
+        "67",
+        "70",
+        "71",
+        "72",
+        "73",
+        "74",
+        "75",
+        "98",
+        "99"
+      ]
+    },
+    {
+      "id": "cst-cofins-1.0.0",
+      "url": "https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-contribuicoes/tabelas-de-codigos/tabelas-utilizadas-na-apuracao-das-contribuicoes-para-o-pis-pasep-e-da-cofins/tabela-4-3-4%20/@@download/file",
+      "bytes": 44544,
+      "sha256": "e360d38bec4f985447563cb02fd3f96ce86a8fa03a428c0d57f94b17f7f790f8",
+      "revision_label": "1.0.0",
+      "content_revision_date": null,
+      "official_valid_from": null,
+      "official_valid_to": null,
+      "observed_on": "2026-11-16",
+      "verified_payload": true,
+      "codes": [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "49",
+        "50",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55",
+        "56",
+        "60",
+        "61",
+        "62",
+        "63",
+        "64",
+        "65",
+        "66",
+        "67",
+        "70",
+        "71",
+        "72",
+        "73",
+        "74",
+        "75",
+        "98",
+        "99"
+      ]
+    }
+  ],
+  "revisions": [
+    {
+      "id": "contributions-2026-11-review-20261116",
+      "reviewed_period_start": "2026-11",
+      "reviewed_period_end": "2026-11",
+      "source_ids": [
+        "guide-1.35",
+        "nt12-2026",
+        "nt13-2026",
+        "nt11-2026",
+        "cst-pis-1.0.0",
+        "cst-cofins-1.0.0"
+      ],
+      "layout_code_in_guide": "006",
+      "layout_version_in_guide": "3.2.0",
+      "layout_official_start_in_guide": "2020-01",
+      "layout_official_end_in_guide": null,
+      "regime_0110_codes": {
+        "COD_INC_TRIB": [
+          "1",
+          "2",
+          "3"
+        ],
+        "IND_APRO_CRED": [
+          "1",
+          "2"
+        ],
+        "COD_TIPO_CONT": [
+          "1",
+          "2"
+        ],
+        "IND_REG_CUM": [
+          "1",
+          "2",
+          "9"
+        ]
+      },
+      "cst_source_ids": {
+        "CST_PIS": "cst-pis-1.0.0",
+        "CST_COFINS": "cst-cofins-1.0.0"
+      },
+      "conditional_requiredness_evaluated": false,
+      "operation_applicability_validated": false
+    }
+  ],
+  "transition_notice": {
+    "source_ids": [
+      "nt11-2026",
+      "nt13-2026"
+    ],
+    "period_from": "2027-01",
+    "period_end": null,
+    "classification_coverage_verified": false,
+    "implementation_available": false
+  },
+  "historical_artifacts_complete": false
+}

@@ -15,6 +15,7 @@ import AuditorView from './views/AuditorView.vue';
 import ModuleImportView from './views/ModuleImportView.vue';
 import GroupsView from './views/GroupsView.vue';
 import MastersView from './views/MastersView.vue';
+import SharedRegistrationsView from './views/SharedRegistrationsView.vue';
 import DashboardView from './views/DashboardView.vue';import CompaniesView from './views/CompaniesView.vue';import JournalView from './views/JournalView.vue';
 import FiscalSalesAccountingView from './views/FiscalSalesAccountingView.vue';
 import DocumentsView from './views/DocumentsView.vue';import FinanceView from './views/FinanceView.vue';import ImportView from './views/ImportView.vue';import ReconcileView from './views/ReconcileView.vue';import ReportsView from './views/ReportsView.vue';import SettingsView from './views/SettingsView.vue';import PeriodsView from './views/PeriodsView.vue';
@@ -22,9 +23,13 @@ import {state,company,api,refreshSession,activate,notify,answer,ask,can,moduleNa
 const menus=[
 {id:'dashboard',label:'Visão geral',icon:'dashboard',component:DashboardView,module:null},
 {id:'documents',label:'Escrituração e documentos',icon:'documents',component:DocumentsView,module:'fiscal',routine:'fiscal.documents'},
-{id:'sales-accounting',label:'Integração contábil de saídas',icon:'journal',component:FiscalSalesAccountingView,module:'fiscal',routine:'fiscal.documents'},
+{id:'sales-accounting',label:'Integração Contábil',icon:'journal',component:FiscalSalesAccountingView,module:'fiscal',routine:'fiscal.documents'},
 {id:'imports',label:'Importações fiscais',icon:'import',component:ImportView,module:'fiscal',routine:'fiscal.imports'},
-{id:'masters',label:'Participantes, produtos e serviços',icon:'building',component:MastersView,module:'fiscal',routine:'fiscal.masters',props:{area:'fiscal'}},
+{id:'companies',label:'Empresas',icon:'building',component:CompaniesView,module:'registrations'},
+{id:'third-parties',label:'Terceiros',icon:'building',component:SharedRegistrationsView,module:'registrations',routine:'fiscal.shared_parties',props:{kind:'third-party'}},
+{id:'accountants',label:'Contadores',icon:'building',component:SharedRegistrationsView,module:'registrations',routine:'accounting.accountants',props:{kind:'accountant'}},
+{id:'local-parties',label:'Vínculos locais de terceiros',icon:'building',component:MastersView,module:'registrations',routine:'fiscal.masters',props:{area:'parties'}},
+{id:'masters',label:'Produtos e serviços',icon:'building',component:MastersView,module:'fiscal',routine:'fiscal.masters',props:{area:'fiscal'}},
 {id:'catalogs',label:'Classificações fiscais',icon:'book',component:SettingsView,module:'fiscal',routine:'fiscal.masters',props:{initialSection:'catalogs'}},
 {id:'cfop',label:'CFOP e associações',icon:'book',component:CfopView,module:'fiscal',routine:'fiscal.masters'},
 {id:'settings',label:'Parametrizações fiscais',icon:'settings',component:SettingsView,module:'fiscal',routine:'fiscal.parameters',props:{initialSection:'rules'}},
@@ -32,6 +37,7 @@ const menus=[
 {id:'fiscal-reports',label:'Livros e relatórios fiscais',icon:'reports',component:ReportsView,module:'fiscal',routine:'fiscal.reports',props:{area:'fiscal'}},
 {id:'periods',label:'Competências fiscais',icon:'periods',component:PeriodsView,module:'fiscal',routine:'fiscal.periods',props:{module:'fiscal'}},
 {id:'journal',label:'Lançamentos contábeis',icon:'journal',component:JournalView,module:'accounting',routine:'accounting.journals',props:{initialSection:'journals'}},
+{id:'fiscal-accounting',label:'Integração Fiscal',icon:'documents',component:FiscalSalesAccountingView,module:'accounting',routine:'accounting.journals'},
 {id:'accounts',label:'Plano de contas',icon:'book',component:JournalView,module:'accounting',routine:'accounting.accounts',props:{initialSection:'accounts'}},
 {id:'global-plans',label:'Gerenciar planos globais',icon:'book',component:GlobalPlansView,module:'accounting',routine:'accounting.accounts',admin:true},
 {id:'histories',label:'Históricos e modelos',icon:'layers',component:MastersView,module:'accounting',routine:'accounting.histories',props:{area:'accounting'}},
@@ -54,7 +60,6 @@ const menus=[
 {id:'financial-reports',label:'Consultas e relatórios financeiros',icon:'reports',component:ReportsView,module:'financial',routine:'financial.reports',props:{area:'financial'}},
 {id:'financial-periods',label:'Competências financeiras',icon:'periods',component:PeriodsView,module:'financial',routine:'financial.periods',props:{module:'financial'}},
 {id:'social-periods',label:'Competências sociais',icon:'periods',component:PeriodsView,module:'social',routine:'social.periods',props:{module:'social'}},
-{id:'companies',label:'Empresas',icon:'building',component:CompaniesView,module:'system'},
 {id:'users',label:'Usuários e acessos',icon:'shield',component:UsersView,module:'system',admin:true},
 {id:'backups',label:'Backups remotos',icon:'folder',component:BackupsView,module:'system',admin:true},
 {id:'docker-updates',label:'Atualização Docker',icon:'refresh',component:DockerUpdatesView,module:'system',admin:true},
@@ -62,7 +67,7 @@ const menus=[
 {id:'storage',label:'Arquivos e backup',icon:'folder',component:StorageView,module:'system',routine:'system.storage'},
 {id:'audit',label:'Auditoria',icon:'shield',component:SettingsView,module:'system',routine:'system.audit',props:{initialSection:'audit'}}];
 const permittedMenus=computed(()=>menus.filter(m=>(!m.admin||state.session?.user?.role==='admin')&&(!m.routine||can(m.routine))));
-const navGroups=computed(()=>Object.entries(moduleNames).map(([id,name])=>({id,name,items:permittedMenus.value.filter(m=>m.module===id)})).filter(g=>g.items.length));
+const navGroups=computed(()=>Object.entries({registrations:'Cadastros',...moduleNames}).map(([id,name])=>({id,name,items:permittedMenus.value.filter(m=>m.module===id)})).filter(g=>g.items.length));
 
 const workspaceKey=ref(0);let navigationId=0;
 const openTabs=ref([OVERVIEW_TAB_ID]),mobileMenu=ref(false),search=ref(''),searchOpen=ref(false),confirmInput=ref('');
@@ -73,7 +78,7 @@ const login=ref({username:'',password:''}),loginError=ref(''),loginBusy=ref(fals
 watch(()=>state.tab,id=>{if(!openTabs.value.includes(id))openTabs.value.push(id);mobileMenu.value=false;});watch(()=>state.confirm,()=>{confirmInput.value='';});
 async function initialize(){try{await refreshSession();if(!state.companyId&&state.session?.authenticated)state.tab='companies';}catch(e){loginError.value=e.message;state.loading=false;}}
 onMounted(initialize);
-async function navigate(id){if(state.confirm||state.contextBusy)return;if(state.editor){notify('Feche a janela em edição para navegar para outra guia.','warning');return;}const target=permittedMenus.value.find(m=>m.id===id);if(!target)return;const request=++navigationId;try{if(target.module&&target.module!=='system'&&target.module!==state.module&&state.companyId){const activated=await activate(state.companyId,undefined,target.module);if(activated===false)return;}if(request!==navigationId)return;state.tab=id;searchOpen.value=false;}catch(e){notify(e.message,'error');}}
+async function navigate(id){if(state.confirm||state.contextBusy)return;if(state.editor){notify('Feche a janela em edição para navegar para outra guia.','warning');return;}const target=permittedMenus.value.find(m=>m.id===id);if(!target)return;const request=++navigationId;try{if(target.module&&!['system','registrations'].includes(target.module)&&target.module!==state.module&&state.companyId){const activated=await activate(state.companyId,undefined,target.module);if(activated===false)return;}if(request!==navigationId)return;state.tab=id;searchOpen.value=false;}catch(e){notify(e.message,'error');}}
 state.navigate=navigate;
 async function closeTab(id){if(state.editor||state.confirm||state.contextBusy)return;const remaining=removeWorkspaceTab(openTabs.value,id);if(remaining===openTabs.value)return;const ix=openTabs.value.indexOf(id);if(state.tab===id){await navigate(remaining[Math.max(0,ix-1)]);if(state.tab===id)return;}openTabs.value=removeWorkspaceTab(openTabs.value,id);}
 async function closeOtherTabs(){

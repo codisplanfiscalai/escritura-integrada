@@ -8,7 +8,7 @@ from zipfile import ZIP_STORED, ZipFile, ZipInfo
 from .core import DomainError, audit, company_row, digest, money, now, pack, period
 from .fiscal_analytics import fiscal_posting_lines
 from .prosoft import ascii_field, numeric, put
-from .prosoft_profiles import selected_types
+from .prosoft_profiles import selected_types, valid_fiscal_species
 
 LAYOUT = 'PROSOFT-FISCAL-NOTAS-20261029-v1'
 WIDTHS = {'incoming': 2340, 'outgoing': 2611}
@@ -78,7 +78,7 @@ def encode_fiscal(documents, payload):
         p = POSITIONS[direction]
         config = species.get(doc['model'], {})
         code = config.get('code', '')
-        if not isinstance(code, str) or not re.fullmatch('[A-Z0-9]{1,5}', code) or config.get('confirmed') is not True:
+        if not valid_fiscal_species(code) or config.get('confirmed') is not True:
             skipped.append({'document_id': did, 'reason': 'species_mapping_required', 'total_cents': doc['total_cents']})
             continue
         try:

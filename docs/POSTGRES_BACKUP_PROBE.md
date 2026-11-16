@@ -1,6 +1,6 @@
-# Ensaio isolado de backup lógico PostgreSQL — não integrado ao aplicativo
+# Backup PostgreSQL sintético na fila — sem suporte operacional
 
-## Inventário e conclusão
+## Histórico inicial: inventário e conclusão
 
 A PR52 (0f4218806b2f46b52b79787b3f012c206a18d923) implementa backup operacional **SQLite**, não PostgreSQL. app/db.py fixa escritura.sqlite3; backup_archive.build usa sqlite3.Connection.backup; o ZIP e a recuperação aceitam somente esse SQLite e manifesto. BackupService.run chama esse caminho e confere uma cópia SQLite. Nada disso captura o PostgreSQL do Docker.
 
@@ -8,9 +8,9 @@ postgres_backend.py prepara conexões/transações; postgres_migration_stage.py 
 
 Antes deste incremento foram consultadas branches locais/worktrees, arquivos de backup PostgreSQL no workspace e branches/PRs remotas de backup. Havia somente a branch da PR52; as PRs31/33 tratam de fundação/migração e explicitam backup PostgreSQL pendente. Não se encontrou implementação concorrente nas referências consultadas. Não há AGENTS.md nem .agents/skills no checkout. A PR52 e sua branch permanecem intactas; o incremento está em branch local dependente dela.
 
-## Decisão arquitetural e escopo implementado
+## Histórico inicial: componente isolado
 
-É prematuro adicionar um seletor PostgreSQL à UI: ainda não há schema operacional PostgreSQL e contrato de sanitização/reconciliação fiscal. Em vez disso, app/postgres_backup_probe.py fornece um componente experimental **somente para fixtures**, sem importação pela aplicação, rotas, agendador ou provedores:
+É prematuro adicionar um seletor PostgreSQL à UI: ainda não há schema operacional PostgreSQL e contrato de sanitização/reconciliação fiscal. Em vez disso, app/postgres_backup_probe.py fornece um componente experimental **somente para fixtures**, inicialmente sem importação pela aplicação, rotas, agendador ou provedores. A integração incremental atual está descrita ao final:
 
 - Endpoint explícito em 127.0.0.1/::1, banco e usuário com prefixo backup_fixture_; PostgreSQL 17 e clientes 17, sem promessa entre majors. POSIX apenas. O usuário precisa provisionar um cluster inteiramente descartável e uma role restrita com CREATEDB, sem superuser, CREATEROLE, REPLICATION, BYPASSRLS ou memberships.
 - Seleção explícita de até 20 tabelas public.backup_probe_*. Sem wildcards, schema arbitrário, stored_files, migration_rows ou tabelas de credenciais/certificados. Esses guards não classificam segredos escondidos no conteúdo; **somente dados sintéticos** são admitidos neste ensaio.
@@ -105,3 +105,14 @@ O adaptador PostgreSQL verifica restaurando em banco novo e retém esse banco: s
 O limite PostgreSQL continua 64 MiB de dump, com metadados/envelope limitados; a prova real usa poucos KiB, não homologa esse teto nem o schema operacional. PostgreSQL 17/POSIX, tabelas sintéticas permitidas, sem objetos MinIO, roles/globais, PITR ou migração do runtime. A UI mostra backend e limites informativos definidos no servidor.
 
 Evidência atual: docs/evidence/postgres-backup-application-native.json comprova quatro testes reais no PostgreSQL 17.12 nativo descartável: fila/verificação/upload simulado/recuperação/recibo e repetição; snapshot com escrita pendente; hashes/constraints/sessões vazias; autenticação recusando chave incorreta e corrupção antes de criar banco. Não foi usado Docker nem conta cloud.
+
+
+## Composição atual após integração da PR52 (dev.32)
+
+A PR52 foi integrada em 82217bcb57210a8d921ed366afe1f3198e53cc42. Esta composição incorpora develop d8ec384528c0dc39953d72760ee3568a472ed371, sem alterar workflows ou o runtime operacional SQLite. As seções iniciais registram etapas históricas, não o estado atual da fila. PostgreSQL operacional continua recusado; PostgresFixtureSource permanece exclusivo de configuração Python sintética, sem seletor HTTP.
+
+No ambiente atual, pacotes oficiais 17.12 com os SHA-256 documentados acima foram novamente obtidos e extraídos sem instalação de serviço. O harness existente criou um cluster inteiramente novo, executou os quatro testes reais e removeu seus bancos, credenciais e cluster. Evidência desta composição: docs/evidence/postgres-backup-dev32-native.json. Dump de 4471 bytes, envelope de 5468 bytes; isto não é aprovação do teto de 64 MiB nem de schema operacional. TCP loopback é o contrato original do harness; nenhuma restrição de socket foi alterada.
+
+Regressões locais: 51 testes de backup/adaptadores executados (50 passaram, um skip Windows); 17 testes simulados/subprocessos PostgreSQL passaram e quatro nativos foram ignorados na descoberta comum, depois executados e aprovados separadamente pelo harness. Frontend: 192 testes e build aprovados. Navegador local permanece bloqueado pelo EPERM já observado no Chromium deste ambiente; não foi contornado. Gate completo e CI do novo head precisam ser avaliados separadamente: estes resultados focados não representam aprovação de pipeline.
+
+O workflow PostgreSQL preparatório existente não equivale ao ensaio de backup: os quatro testes nativos exigem opt-in explícito e são comprovados aqui pelo harness local. Permanecem os limites de POSIX/major17/tabelas permitidas, ausência de cobertura de stack, MinIO, roles/globais, PITR, schema fiscal e homologação cloud/Windows. Não houve ativação de restauração, migração, merge da PR58 ou implantação.

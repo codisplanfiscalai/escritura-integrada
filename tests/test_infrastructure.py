@@ -130,7 +130,7 @@ class InfrastructureTests(unittest.TestCase):
 
     def test_existing_tag_with_different_content_or_commit_is_rejected(self):
         wanted = image_plan("0.4.0-test.1", "develop", "a" * 40)["images"]["app"]
-        actual = {"labels": {"io.escritura.content-id": wanted["content_id"], "org.opencontainers.image.revision": "a" * 40}}
+        actual = {"platform": "linux/amd64", "labels": {"io.escritura.content-id": wanted["content_id"], "org.opencontainers.image.revision": "a" * 40, "org.opencontainers.image.version": wanted["tag"]}}
         assert_identity("app", wanted, actual, "a" * 40)
         with self.assertRaisesRegex(RuntimeError, "outro commit"):
             assert_identity("app", wanted, actual, "b" * 40)
@@ -164,7 +164,7 @@ class InfrastructureTests(unittest.TestCase):
                     self.assertEqual(mount["type"], "bind")
                     expected = "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name
                     if name == "app":
-                        expected = "${ESCRITURA_APP_DATA_BIND:-" + expected + "}"
+                        expected = "${ESCRITURA_APP_DATA_BIND:?Execute deploy_storage.py prepare-app antes de atualizar; init prepara instalacao nova}"
                     self.assertEqual(mount["source"], expected)
                     self.assertEqual(mount["target"], TARGETS[name])
                     self.assertEqual(mount["bind"], {"create_host_path": False})
@@ -185,7 +185,7 @@ class InfrastructureTests(unittest.TestCase):
         self.assertNotEqual(prod["services"]["app"]["ports"], dev["services"]["app"]["ports"])
         for data in (prod, dev):
             self.assertNotIn("volumes", data)
-        self.assertNotEqual(prod["services"]["app"]["volumes"], dev["services"]["app"]["volumes"])
+        self.assertNotEqual(prod["services"]["redis"]["volumes"], dev["services"]["redis"]["volumes"])
         self.assertEqual((ROOT / "compose.yaml").read_bytes(), (ROOT / "deploy/production/compose.yaml").read_bytes())
 
     def test_dockge_ports_use_short_syntax_with_the_same_loopback_and_tcp_mapping(self):
@@ -207,7 +207,7 @@ class InfrastructureTests(unittest.TestCase):
         for environment in ("production", "develop"):
             text = (ROOT / "deploy" / environment / "compose.yaml").read_text()
             required = re.findall(r"\$\{([A-Z_]+):?\?", text)
-            self.assertEqual(required, ["ESCRITURA_IMAGE"])
+            self.assertEqual(required, ["ESCRITURA_IMAGE", "ESCRITURA_APP_DATA_BIND"])
             for name in ("REDIS_PASSWORD", "POSTGRES_PASSWORD", "MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD", "MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD"):
                 self.assertIn("${" + name + ":-}", text)
 
