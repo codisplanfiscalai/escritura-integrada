@@ -136,3 +136,28 @@ test('alias de conta global continua válido após materialização e não permi
  h.view.creditAccount.value=41;assert.match(h.view.selectionIssue.value,/diferentes/);assert.equal(h.view.canSubmit.value,false);
  }finally{h.close();}
 });
+
+test('subguias preservam seleção, contas, histórico, filtros e prévia sem novas consultas',async()=>{
+ const h=await harness();try{await ready(h);h.view.selectFiltered();h.view.debitAccount.value=31;h.view.creditAccount.value=32;h.view.reason.value='Histórico sintético';
+ h.view.selectSection('accounting');const p=h.view.showPreview();h.requests.at(-1).resolve(result({preview:true}));await p;
+ const requests=h.requests.length,lookups=h.lookups.length,body=JSON.stringify(h.view.accountingEntries());
+ for(const section of ['notes','settings','accounting','notes','accounting','settings','notes','accounting']){h.view.selectSection(section);await flush();}
+ assert.equal(h.requests.length,requests);assert.equal(h.lookups.length,lookups);assert.equal(JSON.stringify(h.view.accountingEntries()),body);
+ assert.equal(h.view.reason.value,'Histórico sintético');assert.equal(h.view.month.value,'11');assert.equal(h.view.status.value,'all');assert.equal(h.view.preview.value.preview,true);assert.equal(h.updates.length,0);
+ }finally{h.close();}
+});
+
+test('cabeçalho acompanha o módulo e contexto novo retorna à consulta sem reutilizar seleção',async()=>{
+ const h=await harness();try{await ready(h);assert.equal(h.view.accessTitle.value,'Integração Contábil');select(h);h.view.selectSection('settings');
+ h.state.module='accounting';await flush();assert.equal(h.view.accessTitle.value,'Integração Fiscal');assert.equal(h.view.section.value,'notes');assert.equal(h.view.selectedIds.value.length,0);
+ await ready(h);h.view.selectFiltered();h.view.debitAccount.value=31;h.view.creditAccount.value=32;h.view.selectSection('accounting');
+ h.state.companyId=2;h.state.period='2027-01';await flush();assert.equal(h.view.section.value,'notes');assert.equal(h.view.debitAccount.value,'');assert.equal(h.view.config.value,null);assert.equal(h.view.preview.value,null);
+ }finally{h.close();}
+});
+
+test('cancelar prévia mantém seleção e subguia atual e ignora conclusão tardia',async()=>{
+ const h=await harness();try{await ready(h);select(h);h.view.selectSection('accounting');const p=h.view.showPreview(),request=h.requests.at(-1);
+ h.view.selectSection('notes');h.view.clearPreview();assert.ok(request.options.signal.aborted);request.resolve(result({preview:true}));await p;
+ assert.equal(h.view.preview.value,null);assert.equal(h.view.previewLoading.value,false);assert.equal(h.view.selectedIds.value.length,2);assert.equal(h.view.section.value,'notes');assert.equal(h.updates.length,0);
+ }finally{h.close();}
+});
