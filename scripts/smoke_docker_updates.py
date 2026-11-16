@@ -52,12 +52,17 @@ def main():
             target = Docker(name, data).resolve('develop')
             reference = REPOSITORY + '@' + target['digest']
             run('pull', '--platform', 'linux/amd64', reference)
+            # The fixture is explicitly configured to the existing mobile alias.
+            # Verify it did not move after the immutable manifest was resolved.
+            configured_reference=REPOSITORY+':develop'
+            run('pull','--platform','linux/amd64',configured_reference)
             run('run', '-d', '--name', name,
                 '--label', 'com.docker.compose.project=' + name,
                 '--label', 'com.docker.compose.service=app', '-p', '127.0.0.1::8000',
-                '--mount', f'type=bind,source={data},target=/data', reference)
+                '--mount', f'type=bind,source={data},target=/data', configured_reference)
             created = True
             installed = Docker(name, data).installed()
+            assert installed['image_id']==target['image_id'], 'Fixture alias moved; do not guess another target'
             container_url = 'http://' + run('port', name, '8000/tcp')
             for _ in range(100):
                 health = run('inspect', '--format', '{{.State.Health.Status}}', name)
@@ -101,20 +106,22 @@ def main():
                 page.locator('input[type=password]').fill('Synthetic-only-fixture-12345!')
                 page.get_by_role('button', name='Criar acesso e continuar').click()
                 navigation = page.get_by_role('navigation', name='Navegação principal')
-                button = navigation.get_by_role('button', name='Atualização Docker', exact=True, include_hidden=True)
+                button = navigation.get_by_role('button', name='Atualização da aplicação', exact=True, include_hidden=True)
                 expect(button).to_be_attached(timeout=20000)
                 parent = button.locator('xpath=ancestor::details')
                 if parent.count() and parent.get_attribute('open') is None: parent.locator('summary').click()
                 button.click()
-                expect(page.get_by_role('heading', name='Atualização Docker', exact=True)).to_be_visible()
-                expect(page.get_by_text('UID/GID 10001:10001', exact=False)).to_be_visible(timeout=60000)
-                page.get_by_role('button', name='Consultar alvo', exact=True).click()
-                expect(page.get_by_role('button', name='Baixar imagem por digest', exact=True)).to_be_enabled(timeout=120000)
-                expect(page.get_by_text(target['digest'], exact=True).first).to_be_visible()
-                page.get_by_role('button', name='Baixar imagem por digest', exact=True).click()
+                expect(page.get_by_role('heading', name='Atualização da aplicação', exact=True)).to_be_visible()
+                expect(page.get_by_role('button', name='Buscar versão disponível', exact=True)).to_be_enabled(timeout=60000)
+                with page.expect_response(lambda response: response.url.endswith('/api/docker-updates/check') and response.request.method=='POST', timeout=120000) as checked:
+                    page.get_by_role('button', name='Buscar versão disponível', exact=True).click()
+                assert checked.value.status==200, checked.value.text()
+                expect(page.get_by_role('button', name='Baixar versão', exact=True)).to_be_enabled(timeout=120000)
+                assert page.locator('.update-diagnostics').get_attribute('open') is None
+                page.get_by_role('button', name='Baixar versão', exact=True).click()
                 expect(page.get_by_role('dialog')).to_be_visible()
-                page.get_by_role('dialog').get_by_role('button', name='Baixar imagem', exact=True).click()
-                expect(page.get_by_text('Imagem preparada · aplicação ainda não atualizada', exact=True).first).to_be_visible(timeout=180000)
+                page.get_by_role('dialog').get_by_role('button', name='Confirmar download', exact=True).click()
+                expect(page.get_by_text('Download concluído. A versão em uso ainda não foi alterada.', exact=True).first).to_be_visible(timeout=180000)
                 page.screenshot(path=str(OUT/'prepared-1440.png'), full_page=True)
                 page.set_viewport_size({'width': 390, 'height': 844})
                 for _ in range(60):
@@ -133,11 +140,11 @@ def main():
                 page.reload()
                 page.get_by_role('button', name='Abrir navegação', exact=True).click()
                 expect(navigation).to_be_visible()
-                button = navigation.get_by_role('button', name='Atualização Docker', exact=True, include_hidden=True)
+                button = navigation.get_by_role('button', name='Atualização da aplicação', exact=True, include_hidden=True)
                 parent = button.locator('xpath=ancestor::details')
                 if parent.count() and parent.get_attribute('open') is None: parent.locator('summary').click()
                 button.click()
-                expect(page.get_by_text('Imagem preparada · aplicação ainda não atualizada', exact=True).first).to_be_visible(timeout=60000)
+                expect(page.get_by_text('Download concluído. A versão em uso ainda não foi alterada.', exact=True).first).to_be_visible(timeout=60000)
                 assert not errors, errors
                 report['browser_version'] = browser.version
                 browser.close()

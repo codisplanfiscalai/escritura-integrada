@@ -55,7 +55,7 @@ const menus=[
 {id:'social-periods',label:'Competências sociais',icon:'periods',component:PeriodsView,module:'social',routine:'social.periods',props:{module:'social'}},
 {id:'companies',label:'Empresas',icon:'building',component:CompaniesView,module:'system'},
 {id:'users',label:'Usuários e acessos',icon:'shield',component:UsersView,module:'system',admin:true},
-{id:'docker-updates',label:'Atualização Docker',icon:'refresh',component:DockerUpdatesView,module:'system',admin:true},
+{id:'docker-updates',label:'Atualização da aplicação',icon:'refresh',component:DockerUpdatesView,module:'system',admin:true},
 {id:'groups',label:'Grupos de usuários',icon:'layers',component:GroupsView,module:'system',admin:true},
 {id:'storage',label:'Arquivos e backup',icon:'folder',component:StorageView,module:'system',routine:'system.storage'},
 {id:'audit',label:'Auditoria',icon:'shield',component:SettingsView,module:'system',routine:'system.audit',props:{initialSection:'audit'}}];
