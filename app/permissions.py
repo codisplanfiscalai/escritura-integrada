@@ -124,6 +124,9 @@ def route_policy(path, method, query, payload, session):
     """Toda rota de dados recebe rotina/ação explícitas; novas rotas falham fechadas."""
     write = method not in {'GET', 'HEAD', 'OPTIONS'}
     action = {'POST': 'create', 'PUT': 'edit', 'PATCH': 'edit', 'DELETE': 'delete'}.get(method, 'read')
+    if path == '/api/sped/obligations' and method == 'GET':
+        # Global metadata only; authentication remains enforced by middleware.
+        return None, None, False
     if path in {'/api/context', '/api/logout', '/api/permissions/me', '/api/permissions/catalog'}:
         return None, None, False
     if re.match(r'^/api/(users|groups|access-audit|storage|docker-updates)(/|$)', path):
