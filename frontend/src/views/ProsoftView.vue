@@ -1,5 +1,6 @@
 <script setup>
-import {ref,watch,computed,onActivated,onDeactivated,onUnmounted} from 'vue';
+import {ref,watch,computed,onActivated,onDeactivated,onUnmounted,nextTick} from 'vue';
+import SectionTabs from '../components/SectionTabs.vue';
 import {state,company,api,scope,can,allowedApi} from '../lib/workspace';
 import {useSuggestedCompetence} from '../lib/context-preferences.js';
 import {money,normalized} from '../lib/format';
@@ -18,6 +19,11 @@ const controller=createProsoftExport({
  }
 });
 const {s,dirty}=controller;
+const section=ref('export'),tabs=ref(null);
+const sections=[{id:'export',label:'Exportação e prévia'},{id:'settings',label:'Configuração e mapeamentos'},{id:'coverage',label:'Cobertura e limites'}];
+function selectSection(value){section.value=value;nextTick(()=>tabs.value?.focusTab(value));}
+function reloadSaved(){if(!dirty.value||window.confirm('Descartar as edições de mapeamentos desta empresa e recarregar os valores salvos?'))controller.load(true);}
+async function preview(){await controller.run(false);if(s.preview)selectSection('export');}
 const query=ref(''),page=ref(1),onlyUsed=ref(true),newCfop=ref('');
 let active=true,timer=null,lastCompany='';
 function schedule(){clearTimeout(timer);if(!active||state.contextBusy||state.module!==props.area||!can(routine.value))return;timer=setTimeout(()=>controller.load(),0);}
@@ -52,26 +58,34 @@ const warningLabel=code=>({FISCAL_TREATMENT_REQUIRED:'Tratamento do livro ainda 
 <div class="view prosoft-view">
  <header class="view-heading"><div><div class="eyebrow">{{fiscal?'INTEGRAÇÃO FISCAL':'INTEGRAÇÃO CONTÁBIL'}}</div><h1>Exportação Prosoft {{fiscal?'fiscal':'contábil'}}</h1><p>{{fiscal?'Notas de entrada e saída já escrituradas, modelos 55/65.':'Lançamentos LC1/LC2 e cadastro opcional CTA das contas movimentadas.'}}</p></div></header>
  <p class="message warning">Arquivo para conferir e importar no destino. Não homologado na instalação Prosoft. {{fiscal?'Perfil fiscal parcial; não gera EFD oficial nem transmite obrigações.':'TRC e SLD não são gerados.'}}</p>
- <p v-if="s.error" class="message error" role="alert">{{s.error}}</p>
+ <p v-if="s.error" class="message error" role="alert">{{s.error}} <button class="button small" @click="selectSection('settings')">Revisar configuração e mapeamentos</button></p>
  <p v-if="s.message" class="message success" role="status">{{s.message}}</p>
  <p v-if="s.loading" role="status">Carregando mapeamentos da empresa…</p>
- <section class="panel report-controls" aria-label="Mapeamentos da exportação Prosoft">
-  <div class="actions"><strong>{{company?.name}}</strong><span>Versão salva {{s.version}}{{dirty?' · edição ainda não salva':''}}</span>
+ <section class="panel report-controls" aria-label="Contexto da exportação Prosoft">
+  <div class="prosoft-context"><strong>{{company?.name}}</strong><span>Destino {{s.config.company_code||'não informado'}} · plano {{s.config.plan_code||'não informado'}}</span><span>Versão {{s.version}}{{dirty?' · edição ainda não salva':' · mapeamentos salvos'}}</span></div>
+  <fieldset :disabled="disabled" class="prosoft-fields">
+   <div class="form-grid">
+    <label>Tipo de exportação Prosoft<select aria-label="Tipo de exportação Prosoft" v-model="profile"><template v-if="fiscal"><option value="both">Notas de entrada e saída</option><option value="incoming_notes">Somente notas de entrada</option><option value="outgoing_notes">Somente notas de saída</option></template><template v-else><option value="journals">Lançamentos contábeis (LC1/LC2)</option><option value="journals_cta">Lançamentos e contas ausentes (LC1/LC2 + CTA)</option></template></select></label>
+    <label>Competência da exportação<select v-model="competence" aria-label="Competência da exportação"><option value="">Selecione</option><option v-for="m in 12" :key="m" :value="`${state.period.slice(0,4)}-${String(m).padStart(2,'0')}`">{{String(m).padStart(2,'0')}}/{{state.period.slice(0,4)}}</option></select></label>
+   </div>
+   <p class="prosoft-scope">Serão considerados todos os {{fiscal?'documentos':'lançamentos'}} da competência de escrituração selecionada. A emissão pode ser de outro mês.</p>
+  </fieldset>
+ </section>
+ <SectionTabs ref="tabs" v-model="section" :id="`prosoft-${area}`" label="Seções da exportação Prosoft" :tabs="sections"/>
+ <section v-show="section==='settings'" :id="`prosoft-${area}-panel-settings`" role="tabpanel" :aria-labelledby="`prosoft-${area}-tab-settings`" tabindex="0" class="panel report-controls">
+  <h2>Configuração reutilizável da empresa</h2>
+  <div class="actions"><span>Versão salva {{s.version}}{{dirty?' · edição ainda não salva':''}}</span>
    <button v-if="can(routine,'edit')" class="button outline" :disabled="disabled||!dirty" @click="controller.save">Salvar mapeamentos nesta empresa</button>
-   <button class="button small" :disabled="s.loading||s.busy||state.contextBusy" @click="controller.load(true)">Recarregar salvos{{dirty?' e descartar edição':''}}</button>
+   <button class="button small" :disabled="s.loading||s.busy||state.contextBusy" @click="reloadSaved">Recarregar salvos{{dirty?' e descartar edição':''}}</button>
   </div>
   <p class="report-note">Os mapeamentos pertencem a esta empresa e podem ser reutilizados em outras competências. Salvar configurações não altera documentos, contas ou lançamentos. A prévia usa os campos exibidos, inclusive edições ainda não salvas.</p>
   <p v-if="Object.keys(s.unavailable).length" class="message warning">{{Object.keys(s.unavailable).length}} mapeamentos de contas indisponíveis no plano atual foram preservados. Eles não são transferidos para contas com acesso igual.</p>
   <fieldset :disabled="disabled" class="prosoft-fields">
    <div class="form-grid">
-    <label>Tipo de exportação Prosoft<select aria-label="Tipo de exportação Prosoft" v-model="profile"><template v-if="fiscal"><option value="both">Notas de entrada e saída</option><option value="incoming_notes">Somente notas de entrada</option><option value="outgoing_notes">Somente notas de saída</option></template><template v-else><option value="journals">Lançamentos contábeis (LC1/LC2)</option><option value="journals_cta">Lançamentos e contas ausentes (LC1/LC2 + CTA)</option></template></select></label>
-    <label>Competência da exportação<select v-model="competence" aria-label="Competência da exportação"><option value="">Selecione</option><option v-for="m in 12" :key="m" :value="`${state.period.slice(0,4)}-${String(m).padStart(2,'0')}`">{{String(m).padStart(2,'0')}}/{{state.period.slice(0,4)}}</option></select></label>
     <label>Código da empresa na Prosoft<input v-model="s.config.company_code" maxlength="4" inputmode="numeric"/></label>
     <label>Plano escolhido no destino<input v-model="s.config.plan_code" maxlength="4" inputmode="numeric"/><small>050 é o padrão de conferência. Selecione o mesmo plano ao importar.</small></label>
     <label v-if="!fiscal">Lote<input v-model="s.config.batch" maxlength="5" inputmode="numeric"/></label>
    </div>
-   <details><summary>Outros layouts recebidos e limites de cobertura</summary><p v-if="fiscal">Ainda não disponíveis: mapa resumo ECF, itens de notas/cupons, inventário, RCPE, produtos, faturas e seus itens, meios de pagamento, serviços municipais, valores avulsos, redução de base IBS/CBS e chaves complementares. As notas disponíveis têm cobertura parcial de campos. SPED é uma ferramenta interna separada e não substitui estes layouts de importação Prosoft.</p><p v-else>TRC (cadastro de terceiros) e SLD (saldos) ainda não são gerados. Referências a terceiros nos lançamentos continuam disponíveis. O intercâmbio de plano completo CTBPLANO permanece em Plano de contas.</p></details>
-   <p class="report-note">Serão considerados todos os {{fiscal?'documentos':'lançamentos'}} da competência de escrituração selecionada. A emissão do documento pode ser de outro mês. A prévia permite conferir a cobertura antes de preparar o download.</p>
    <template v-if="fiscal">
     <h2>Espécies cadastradas no destino</h2><p>Informe os códigos da instalação Prosoft; eles não são deduzidos do modelo fiscal.</p>
     <div v-for="model in ['55','65']" :key="model" class="form-grid">
@@ -85,7 +99,7 @@ const warningLabel=code=>({FISCAL_TREATMENT_REQUIRED:'Tratamento do livro ainda 
      <label class="inline-choice"><input v-model="mapping.confirmed" type="checkbox"/>Conta do CFOP {{cfop}} conferida</label>
      <button class="button small" @click="delete s.config.cfop_accounts[cfop]">Remover CFOP {{cfop}}</button>
     </div>
-    <p class="message subtle">Itens, faturas, cadastros, ST/FCP/DIFAL, PIS/COFINS, IBS/CBS e ajustes não são exportados. Canceladas identificadas pelo livro validado e escrituradas são incluídas com valor zero e indicador próprio. Campos sem origem conhecida ficam em branco; confira como o importador de destino trata esses brancos.</p>
+
    </template>
    <template v-else>
     <h2>Mapeamento das contas</h2>
@@ -119,7 +133,19 @@ const warningLabel=code=>({FISCAL_TREATMENT_REQUIRED:'Tratamento do livro ainda 
     <div v-for="p in s.records.parties" :key="p.id" class="form-grid"><template v-if="s.config.participants[p.id]"><label>Código Prosoft do terceiro {{p.name}}<input v-model="s.config.participants[p.id].code" maxlength="14"/></label><label>Tipo do terceiro {{p.name}}<select :aria-label="`Tipo do terceiro ${p.name}`" v-model="s.config.participants[p.id].third_type"><option value="normal">Normal</option><option value="free">Livre (sufixo L)</option></select></label><label class="inline-choice"><input v-model="s.config.participants[p.id].confirmed" type="checkbox"/>Terceiro {{p.name}} conferido no destino</label></template></div>
    </template>
   </fieldset>
-  <button class="button primary" v-if="can(routine,'export')" :disabled="disabled" @click="controller.run(false)">Gerar prévia</button>
+  <button class="button outline" @click="selectSection('export')">Voltar à exportação</button>
+ </section>
+ <section v-show="section==='coverage'" :id="`prosoft-${area}-panel-coverage`" role="tabpanel" :aria-labelledby="`prosoft-${area}-tab-coverage`" tabindex="0" class="panel report-controls">
+  <h2>Cobertura dos layouts</h2>
+   <details open><summary>Outros layouts recebidos e limites de cobertura</summary><p v-if="fiscal">Ainda não disponíveis: mapa resumo ECF, itens de notas/cupons, inventário, RCPE, produtos, faturas e seus itens, meios de pagamento, serviços municipais, valores avulsos, redução de base IBS/CBS e chaves complementares. As notas disponíveis têm cobertura parcial de campos. SPED é uma ferramenta interna separada e não substitui estes layouts de importação Prosoft.</p><p v-else>TRC (cadastro de terceiros) e SLD (saldos) ainda não são gerados. Referências a terceiros nos lançamentos continuam disponíveis. O intercâmbio de plano completo CTBPLANO permanece em Plano de contas.</p></details>
+    <p v-if="fiscal" class="message subtle">Itens, faturas, cadastros, ST/FCP/DIFAL, PIS/COFINS, IBS/CBS e ajustes não são exportados. Canceladas identificadas pelo livro validado e escrituradas são incluídas com valor zero e indicador próprio. Campos sem origem conhecida ficam em branco; confira como o importador de destino trata esses brancos.</p>
+  <p>Os avisos, documentos não exportados, origens e conversões de texto aparecem na prévia do lote. Confira-os antes de confirmar a exportação.</p>
+  <button class="button outline" @click="selectSection('export')">Voltar à exportação</button>
+ </section>
+ <div v-show="section==='export'" :id="`prosoft-${area}-panel-export`" role="tabpanel" :aria-labelledby="`prosoft-${area}-tab-export`" tabindex="0">
+ <section class="panel report-controls">
+  <div class="actions"><button class="button primary" v-if="can(routine,'export')" :disabled="disabled" @click="preview">{{s.busy?'Processando…':'Gerar prévia'}}</button><button class="button outline" @click="selectSection('settings')">Revisar mapeamentos</button><button class="button small" @click="selectSection('coverage')">Consultar cobertura</button></div>
+  <p v-if="!s.preview" class="report-note">Gere a prévia para conferir totais, avisos e registros antes do download. Os mapeamentos desta empresa são reutilizados; não é necessário configurá-los novamente.</p>
  </section>
  <section v-if="s.preview" class="panel report-controls" aria-label="Prévia da exportação Prosoft">
   <h2>Conferência do lote</h2><p>{{s.preview.filename}} · competência {{competence}} · plano {{s.config.plan_code}}</p>
@@ -140,10 +166,11 @@ const warningLabel=code=>({FISCAL_TREATMENT_REQUIRED:'Tratamento do livro ainda 
   <small class="wrap-anywhere">SHA-256: {{s.preview.sha256}}</small>
   <p class="report-note">Repetir o download não cria outro lote no aplicativo. Reimportar o mesmo TXT no Prosoft pode duplicar movimentos; confira o histórico no destino.</p>
  </section>
+ </div>
 </div>
 </template>
 <style scoped>
-.prosoft-fields{border:0;margin:0;padding:0;min-width:0;display:flex;flex-direction:column;gap:1rem}.prosoft-view td input:not([type=checkbox]),.prosoft-view td select{min-width:7rem;max-width:100%}.prosoft-view small{display:block}.prosoft-view details{margin:.5rem 0}.prosoft-view .actions{flex-wrap:wrap}.prosoft-view .actions label{min-width:12rem}.prosoft-view h2{font-size:1rem}
+.prosoft-scope{font-size:.85rem;color:var(--muted)}.prosoft-context{margin-bottom:.75rem;display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center}.prosoft-context span{color:var(--muted);font-size:.85rem}.prosoft-view [role=tabpanel]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.prosoft-fields{border:0;margin:0;padding:0;min-width:0;display:flex;flex-direction:column;gap:1rem}.prosoft-view td input:not([type=checkbox]),.prosoft-view td select{min-width:7rem;max-width:100%}.prosoft-view small{display:block}.prosoft-view details{margin:.5rem 0}.prosoft-view .actions{flex-wrap:wrap}.prosoft-view .actions label{min-width:12rem}.prosoft-view h2{font-size:1rem}
 .prosoft-view{min-width:0;max-width:100%;overflow-wrap:anywhere}.prosoft-view .view-heading>div,.prosoft-view .panel{min-width:0;max-width:100%}.prosoft-view .button{white-space:normal}.prosoft-view .actions>*{min-width:0;max-width:100%}.prosoft-view .table-scroll{min-width:0;max-width:100%}
 @media(max-width:600px){.prosoft-view .form-grid{grid-template-columns:minmax(0,1fr)}.prosoft-view .view-heading h1{white-space:normal;overflow-wrap:anywhere}.prosoft-view .actions{justify-content:flex-start}.prosoft-view .actions .button{flex-basis:100%}}
 </style>
