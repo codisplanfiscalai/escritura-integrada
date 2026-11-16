@@ -24,7 +24,7 @@ def sync(root=ROOT, check=False):
         for name, target in TARGETS.items():
             source = "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name
             if name == "app":
-                source = "${ESCRITURA_APP_DATA_BIND:-" + source + "}"
+                source = "${ESCRITURA_APP_DATA_BIND:?Execute deploy_storage.py prepare-app antes de atualizar; init prepara instalacao nova}"
             data["services"][name]["volumes"] = [{
                 "type": "bind",
                 "source": source,
