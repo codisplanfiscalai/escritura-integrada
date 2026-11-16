@@ -126,7 +126,7 @@ def route_policy(path, method, query, payload, session):
     action = {'POST': 'create', 'PUT': 'edit', 'PATCH': 'edit', 'DELETE': 'delete'}.get(method, 'read')
     if path in {'/api/context', '/api/logout', '/api/permissions/me', '/api/permissions/catalog'}:
         return None, None, False
-    if re.match(r'^/api/(users|groups|access-audit|storage)(/|$)', path):
+    if re.match(r'^/api/(users|groups|access-audit|storage|docker-updates)(/|$)', path):
         return None, None, True
     if path == '/api/companies':
         return None, None, write
@@ -134,10 +134,17 @@ def route_policy(path, method, query, payload, session):
         return 'lookup', 'read', False
     if path == '/api/templates':
         return 'fiscal.parameters', action, False
+    if path == '/api/sped/ecf-references' and method == 'GET':
+        # Global public-source metadata; session authentication still applies.
+        return None, None, False
     tail = re.sub(r'^/api/companies/\d+', '', path)
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
+    if root == 'fiscal-sales-accounting':
+        if tail.endswith('/settings'):
+            return 'accounting.accounts', 'edit' if write else 'read', False
+        return 'accounting.journals', 'create' if write else 'read', False
     if root == 'accounting-entry-defaults':
         return 'accounting.journals', 'read', False
     if root == 'accounting-settings' and '/plan-manager' in tail:
@@ -180,7 +187,9 @@ def route_policy(path, method, query, payload, session):
     if root == 'cfop-source-loads':
         return 'fiscal.masters', 'read' if tail.endswith('/preview') or not write else 'create', False
     if root == 'sped-generator':
-        return 'fiscal.documents', ('export' if method == 'POST' and tail.endswith('/consolidation-export') else 'read' if not write else 'invalid'), False
+        if tail == '/sped-generator/accounting-snapshot' and method == 'GET':
+            return 'accounting.journals', 'export', False
+        return 'fiscal.documents', ('export' if method == 'POST' and tail.endswith(('/consolidation-export', '/bookkeeping-block-c')) else 'read' if not write else 'invalid'), False
     if root == 'fiscal-series':
         if tail.endswith('/settings'):return 'fiscal.parameters','edit' if write else 'read',False
         return 'fiscal.documents','read',False

@@ -176,7 +176,16 @@ def scenario(page, url, fixture, report, baseline=False):
     expect(page.get_by_role('dialog')).to_have_count(0)
     main.get_by_label('Pesquisar títulos', exact=True).fill('')
     offset = len(requests)
-    main.get_by_role('button', name='Novo título', exact=True).click()
+    if not baseline:
+        # networkidle may already belong to the earlier SPA navigation. Wait
+        # for both complete lazy reads before inspecting requestfinished metrics.
+        with page.expect_response(lambda response: urlparse(response.url).path.endswith('/documents') and response.status == 200) as documents_read, \
+             page.expect_response(lambda response: urlparse(response.url).path.endswith('/masters/participant') and response.status == 200) as participants_read:
+            main.get_by_role('button', name='Novo título', exact=True).click()
+        documents_read.value.finished()
+        participants_read.value.finished()
+    else:
+        main.get_by_role('button', name='Novo título', exact=True).click()
     dialog = page.get_by_role('dialog')
     expect(dialog).to_be_visible()
     expect(dialog.get_by_role('button', name='Salvar título', exact=True)).to_be_enabled()

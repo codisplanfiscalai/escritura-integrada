@@ -7,6 +7,7 @@ from fastapi import Body, Request
 from ..core import DomainError, company_row, integer, select_one, period as validate_period
 from ..import_package_cleanup import require_original
 from .native_export import consolidate_native_sped
+from .ecd_snapshot import register_ecd_snapshot_routes
 from ..permissions import effect
 from .consolidation import preview_nfce_groups
 
@@ -65,3 +66,29 @@ def register_sped_generator_routes(app, core, check_period):
                     'source_sha256': hashlib.sha256(original).hexdigest(),
                     'result_sha256': hashlib.sha256(content).hexdigest(),
                     'content_base64': base64.b64encode(content).decode()}
+
+    @app.post('/api/companies/{cid}/sped-generator/bookkeeping-block-c')
+    def bookkeeping_block_c(cid: int, request: Request, payload: dict = Body(...)):
+        from .bookkeeping import generate_nfce_block_c
+        allowed = {'period', 'header_0000', 'profile', 'activity', 'purpose'}
+        if set(payload) - allowed:
+            raise DomainError('Opção não suportada neste incremento do Bloco C.')
+        if any(not isinstance(value, str) for key, value in payload.items() if key != 'period'):
+            raise DomainError('Opções do cabeçalho devem ser textos.')
+        competence = check_period(request, payload.get('period'))
+        session = request.state.session
+        if session['active_company_id'] != cid or session.get('module', 'fiscal') != 'fiscal':
+            raise DomainError('Ative a empresa e o módulo Fiscal da consulta.', 409, 'stale_context')
+        with core.db.read(snapshot=True) as conn:
+            effect(conn, cid, 'fiscal.documents', 'read')
+            effect(conn, cid, 'fiscal.documents', 'export')
+            company = company_row(conn, cid)
+            rows = conn.execute('SELECT * FROM documents WHERE company_id=? AND period=? ORDER BY id',
+                                (cid, competence))
+            result = generate_nfce_block_c((core._document_values(row) for row in rows),
+                company=company, competence=competence, options={key: value for key, value in payload.items() if key != 'period'})
+            content = result.pop('payload')
+            return {**result, 'filename': f'efd-bloco-c-parcial-{competence}-empresa-{cid}.txt',
+                    'content_base64': base64.b64encode(content).decode()}
+
+    register_ecd_snapshot_routes(app, core, check_period)

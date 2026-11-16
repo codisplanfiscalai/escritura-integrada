@@ -79,7 +79,7 @@ class ReportsMixin:
                     x=groups.setdefault(key,{k:r[k] for k in ['date','account_id','access_code','account_name','cost_center_name']}|{'debit_cents':0,'credit_cents':0,'journal_ids':[]})
                     x['debit_cents']+=r['debit_cents'];x['credit_cents']+=r['credit_cents']
                     if r['journal_id'] not in x['journal_ids']:x['journal_ids'].append(r['journal_id'])
-                rows=list(groups.values());note='Consolidação diária por conta e centro dentro da empresa selecionada. Não consolida pessoas jurídicas nem elimina operações intercompanhias.'
+                rows=list(groups.values());note='Relatório sintético diário somente leitura: agrupa lançamentos existentes por conta e centro, sem criar ou alterar lançamentos. Não consolida pessoas jurídicas nem elimina operações intercompanhias.'
             elif kind=='fiscal-book':
                 from .fiscal_series import normalize_series,settings
                 digits=settings(conn,cid)['digits']

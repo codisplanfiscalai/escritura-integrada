@@ -33,6 +33,7 @@ release-output/
 *.pem
 *.key
 
+.docker-updater/
 # Private Docker storage migration plans and pre-migration Compose backups.
 storage-plan*.json
 storage-plan*.images.yaml
