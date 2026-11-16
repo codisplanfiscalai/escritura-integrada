@@ -1,6 +1,7 @@
 # Dados do Docker junto à stack
 
-Os templates novos usam bind mounts explícitos, sem volumes nomeados novos:
+Os templates novos usam bind mounts explícitos, sem volumes nomeados novos.
+Esta tabela descreve uma instalação nova preparada por `init`:
 
 | Serviço | Diretório relativo à stack | Destino no container |
 |---|---|---|
@@ -23,13 +24,64 @@ produção para homologação. Preserve o nome atual de uma stack já instalada.
 
 ## Stack já usando `./data/app:/data`
 
+### Resolver o bind antes de atualizar
+
+No host Docker, com a imagem local já instalada, execute a preparação do pacote:
+
+```sh
+python3 deploy_storage.py prepare-app --project escritura-develop --helper-image <imagem-local-do-app>
+docker compose up -d
+```
+
+No checkout use `scripts/deploy_storage.py`. Use o projeto real da stack e seu
+Compose atual (opcional `--compose-file` no mesmo diretório); não extraia o `.env`
+de exemplo sobre credenciais existentes. `prepare-app` não executa o segundo
+comando, pull, stop/start, migração ou corte: prepara somente a configuração.
+
+Com `ESCRITURA_APP_DATA_BIND` vazio, o helper seleciona automaticamente o único
+diretório existente entre `./data/app` e `./data/<projeto>/app`, exigindo SQLite
+regular já presente. Um override explícito válido tem prioridade, sem fallback
+se ele estiver errado. Dois diretórios, inclusive um vazio, são ambíguos; nenhum
+deles é escolhido por tamanho/data/versão. Ausência de diretórios/banco, links,
+namespace de outro projeto, projeto divergente ou bind usado por outra stack
+recusam a preparação. O mount efetivo de um app existente precisa corresponder;
+não se escolhe um backup ao lado dos dados atuais.
+
+A seleção de metadados usa um helper local com mount **somente leitura**, sem
+rede ou socket Docker dentro do container. Depois o acesso à raiz, SQLite,
+WAL/SHM e backups é testado com o **USER real da imagem instalada**. Falhas de
+permissão deixam `.env` intacto, indicando UID/GID; não há chown/chmod automático.
+Somente sondas temporárias de acesso são criadas/removidas, como em `check-app`.
+Não é um teste de integridade ou de health.
+
+Após validar, o helper grava atomicamente `ESCRITURA_APP_DATA_BIND` no `.env`,
+preservando outros campos, credenciais, dono/grupo e modo privado existentes.
+Recusa `.env` com links, chave duplicada, valores multilinha ou alteração durante
+a preparação. Um override vazio **exportado no processo** também é recusado,
+pois continuaria mascarando o arquivo. Não cria pastas, copia arquivos, altera
+donos/modos dos dados, muda imagens ou inicia a aplicação.
+
+**Limite do Compose puro/Dockge:** interpolação não consegue testar esses dois
+diretórios com segurança. O fallback por projeto foi removido. Campo vazio
+agora bloqueia antes de criar container, com indicação de preparação, em vez
+de apontar para outro banco. Copiar arquivos/clicar em implantar não executa
+Python automaticamente: o fluxo suportado de atualização exige `prepare-app`
+no host antes da ação pull/up. Não há automação oculta no painel ou no
+executor opcional de atualização, que continua somente inspect/pull.
+
+`init` é o fluxo novo: recusa caminhos existentes e registra automaticamente
+`./data/<projeto>/app` no `.env`, preparando permissões sem criar SQLite. Não use
+`init` para corrigir uma atualização. Mantenha diretórios de stack separados;
+um bind plano `./data/app` não identifica historicamente um projeto se todos os
+containers e a configuração anterior tiverem sido removidos.
+
 Esse bind já mantém os dados junto à stack. **Não execute `init`, `plan` ou
 `migrate` para ele e não recopie o volume antigo por cima da pasta atual.** O
 volume guardado pode estar desatualizado em relação ao bind que está em uso.
 O helper de cópia fria continua limitado aos volumes nomeados e recusa esse
 caso sem copiar ou alterar dados; ele não converte binds silenciosamente.
 
-Os templates novos usam `./data/<COMPOSE_PROJECT_NAME>/app` por padrão, um caminho
+Instalações novas usam `./data/<COMPOSE_PROJECT_NAME>/app`, um caminho
 diferente de `./data/app`. Não substitua o Compose instalado pelo do ZIP para
 "atualizar" essa stack: mudar somente o nome do projeto ou o mount não transfere
 dados. Mantenha o **Compose atual**, `.env`, projeto, imagens, permissões e mounts
@@ -37,10 +89,9 @@ dos demais serviços. A existência de uma pasta vazia no novo caminho não prov
 que os dados foram migrados.
 
 Nos templates/pacotes atualizados, o mount do app lê `ESCRITURA_APP_DATA_BIND`.
-No `.env` existente, acrescente **`ESCRITURA_APP_DATA_BIND=./data/app`** somente
-após conferir que esse é o Source atual, e incorpore a expressão correspondente
-do mount no Compose. A variável vazia mantém o padrão isolado por projeto de uma
-instalação nova; ela não move arquivos. Ela configura o caminho **no host**:
+`prepare-app` grava **`ESCRITURA_APP_DATA_BIND=./data/app`** automaticamente
+quando esse é o bind único validado. A variável vazia bloqueia o Compose;
+ela não seleciona mais um diretório por projeto. Ela configura o caminho **no host**:
 `ESCRITURA_DATA_DIR` dentro do container continua `/data`. Não substitua o `.env`
 privado pelo exemplo do ZIP. Um Compose antigo com `./data/app:/data` literal já
 preserva esse caminho; adicionar a variável sozinha não altera esse Compose.
@@ -160,7 +211,7 @@ fica ao lado do Compose. Os exemplos abaixo usam o ZIP e uma stack develop.
 Para produção, use o nome exato de seu `.env` e a imagem versionada escolhida.
 
 ```sh
-docker compose pull app
+docker pull ghcr.io/codisplanfiscalai/escritura-integrada:develop
 python3 deploy_storage.py init --project escritura-develop --helper-image ghcr.io/codisplanfiscalai/escritura-integrada:develop
 docker compose up -d
 python3 deploy_storage.py check-app --compose-file compose.yaml --project escritura-develop --require-health --wait-health-seconds 120
@@ -248,6 +299,7 @@ Ele é uma cópia fria de arquivos, não uma migração de SQLite para PostgreSQ
    docker compose -f compose.named.yaml --profile '*' stop
    python3 deploy_storage.py migrate --plan storage-plan.json
    python3 deploy_storage.py verify --plan storage-plan.json
+   python3 deploy_storage.py prepare-app --project escritura-develop --helper-image ghcr.io/codisplanfiscalai/escritura-integrada:<versão-local>
    ```
 
    A ferramenta não para serviços automaticamente. Recusa containers ativos,
@@ -261,6 +313,9 @@ Ele é uma cópia fria de arquivos, não uma migração de SQLite para PostgreSQ
    comprova cópia de arquivos/metadados, não homologação funcional dos bancos.
    Escritores devem permanecer parados; as checagens não são uma trava global
    contra um operador iniciar containers simultaneamente.
+   A preparação do bind de uma cópia nomeada exige o manifesto desse plano,
+   containers antigos parados e nova verificação da cópia/origens com os mesmos
+   IDs. Somente então registra o caminho no `.env`; não troca mounts nem imagens.
    Antes de publicar, também valida as permissões da cópia do app com o USER da
    sua imagem instalada. Uma cópia root-owned incompatível é recusada e somente
    seu staging é descartado; o relatório identifica UID/GID e itens bloqueados.

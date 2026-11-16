@@ -1,8 +1,16 @@
 """Supported Prosoft record selections; deliberately independent of SPED tooling."""
+import re
 from .core import DomainError
 
 FISCAL_TYPES = ('incoming_notes', 'outgoing_notes')
 ACCOUNTING_TYPES = ('LC1', 'LC2', 'CTA')
+
+
+def valid_fiscal_species(value):
+    # Windows species fields are five positions (fiscal PDF pp.3/13).
+    # Accept the two explicitly requested spellings without allowing arbitrary punctuation.
+    # This validates representation only; destination registration still needs confirmation.
+    return isinstance(value, str) and (value in ('NF-E', 'NFC-E') or re.fullmatch('[A-Z0-9]{1,5}', value) is not None)
 
 
 def selected_types(mode, value=None):

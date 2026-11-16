@@ -39,6 +39,9 @@ def smoke_existing_bind(manifest):
         (root / "compose.existing-bind.yaml").write_bytes((ROOT / "deploy/compose.existing-bind.yaml").read_bytes())
         environment = {**os.environ, "ESCRITURA_IMAGE": image, "COMPOSE_PROJECT_NAME": project,
                        "ESCRITURA_APP_DATA_BIND": ""}
+        environment.pop('ESCRITURA_APP_DATA_BIND')
+        (root / '.env').write_text('COMPOSE_PROJECT_NAME=' + project + '\nESCRITURA_APP_DATA_BIND=\n')
+        (root / '.env').chmod(0o600)
 
         def run(command, expected=0):
             result = subprocess.run([str(x) for x in command], cwd=root, env=environment, capture_output=True, text=True, timeout=300)
@@ -136,10 +139,17 @@ p=Path('/data/documents'); p.mkdir(); (p/'current.xml').write_bytes(b'<NFe>synth
             assert helper(tree_snapshot) == original_bind
             assert helper(backup_snapshot, "ro") == original_backup
             record("init/named-volume plan refuse existing bind without changing either copy or producing a migration plan")
-            # The new default differs; only explicit compatibility keeps the old location.
+            # Reproduce an upgraded Compose + blank delivered .env. Plain Compose refuses to guess.
+            run(['docker','compose','-p',project,'-f',root/'compose.yaml','config','--format','json'],expected=1)
+            prepare = [sys.executable, ROOT/'scripts/deploy_storage.py','prepare-app','--directory',root,
+                       '--project',project,'--helper-image',installed_image]
+            selected = json.loads(run(prepare))
+            assert selected['source']=='./data/app' and selected['configuration_recorded']
+            assert not selected['data_moved'] and not selected['containers_started']
             default = json.loads(run(["docker", "compose", "-p", project, "-f", root / "compose.yaml", "config", "--format", "json"]))
             compat = json.loads(run([*compose(), "config", "--format", "json"]))
-            assert default['services']['app']['volumes'][0]['source'] == str(root / "data" / project / "app")
+            assert default['services']['app']['volumes'][0]['source'] == before_mount['Source']
+            record('blank delivered dotenv is resolved automatically to existing ./data/app, with no new namespace, copy, image pull or start')
             assert compat['services']['app']['volumes'][0]['source'] == before_mount['Source']
             assert not compat['services']['app']['volumes'][0].get('bind',{}).get('create_host_path',False)
             assert compat['services']['app']['pull_policy'] == 'always'
@@ -166,6 +176,17 @@ p=Path('/data/documents'); p.mkdir(); (p/'current.xml').write_bytes(b'<NFe>synth
             record("explicit override preserves source, UID, user/company/audit counts and XML through two recreations; no namespace folder or fallback to backup")
             # Reproduce the confirmed permissions incident ONLY in this synthetic bind.
             run(["docker", "stop", container])
+            environment.pop('ESCRITURA_APP_DATA_BIND', None)
+            (root/'.env').write_text('COMPOSE_PROJECT_NAME='+project+'\nESCRITURA_APP_DATA_BIND=\n')
+            helper("from pathlib import Path; p=Path('/test/data/"+project+"/app'); p.mkdir(parents=True); (p/'escritura.sqlite3').write_bytes(b'synthetic ambiguity sentinel')")
+            env_ambiguous=(root/'.env').read_bytes()
+            run(prepare, expected=1)
+            assert (root/'.env').read_bytes()==env_ambiguous
+            assert json.loads(run([*compose(True),'config','--format','json']))['services']['app']['volumes'][0]['source']==before_mount['Source']
+            environment['ESCRITURA_APP_DATA_BIND']='./data/app'
+            assert json.loads(run(prepare))['source']=='./data/app'
+            helper("from pathlib import Path; import shutil; p=Path('/test/data/"+project+"'); assert (p/'app/escritura.sqlite3').read_bytes()==b'synthetic ambiguity sentinel'; shutil.rmtree(p)")
+            record('two paths refuse without changing dotenv or either database; explicit ./data/app wins without merging or copying data')
             helper("""import os; from pathlib import Path
 p=Path('/test/data/app'); os.chown(p,0,0); p.chmod(0o775)
 db=p/'escritura.sqlite3'; os.chown(db,0,0); db.chmod(0o600)
@@ -179,6 +200,9 @@ for service in ('redis','postgres','mysql','minio'):
             incident_tree = helper(tree_snapshot)
             blocked = json.loads(run([*preflight, "--output", root / "preflight-blocked.json"], expected=1))
             assert helper(tree_snapshot) == incident_tree
+            env_before=(root/'.env').read_bytes()
+            run(prepare, expected=1)
+            assert (root/'.env').read_bytes()==env_before
             assert blocked['status'] == 'blocked' and blocked['identity']['uid'] == 10001 and blocked['identity']['gid'] == 10001
             assert blocked['checks']['root']['metadata'] == {'uid':0,'gid':0,'mode':'0o775'}
             assert not blocked['checks']['root']['write']
