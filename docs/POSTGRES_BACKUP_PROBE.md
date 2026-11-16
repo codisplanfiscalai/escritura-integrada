@@ -125,3 +125,12 @@ Base atual desta rodada: develop 4f53d1a0b52fc7c0edffd744bc259128863259e2, com a
 O harness PostgreSQL 17.12 repetiu os quatro testes reais em cluster novo descartável, com hashes, snapshot concorrente, autenticação e proteção contra repetição; bancos, credenciais e cluster removidos. Evidência: docs/evidence/postgres-backup-dev33-native.json. Mesmo escopo pequeno sintético; não homologa limites de capacidade nem schema fiscal.
 
 Regressões: 50 testes backup/adaptadores passaram, um skip Windows; 17 PostgreSQL simulados passaram, quatro nativos ignorados na descoberta comum mas aprovados separadamente; oito testes do Razão passaram; 192 testes frontend e build aprovados. Sintaxe, versões e diff-check aprovados. Navegador local permanece bloqueado pelo EPERM conhecido, sem nova tentativa ou contorno. Gate agregado não repetido nesta rodada. O CI anterior de dev.32 passou, mas não aprova o novo head/base: exigir novo CI e conclusão da publicação anterior antes de integrar. Sem merge, deploy, contas cloud ou dados reais.
+
+
+## Composição após PR62 (dev.34)
+
+Base desta rodada: develop 6b53da59a6a8223f59192b0dadbfe16471e95aac, incluindo as subguias acessíveis Prosoft. Composição automática; os cinco arquivos da PR62, seu roteiro ampliado e os workflows foram preservados integralmente. PostgreSQL permanece experimental: runtime operacional SQLite, nenhum seletor PostgreSQL de produção.
+
+O ciclo nativo PostgreSQL 17.12 passou novamente nos quatro testes em cluster sintético novo, removido ao final; evidência em docs/evidence/postgres-backup-dev34-native.json. Regressões: 50 backup/adaptadores passaram e um skip Windows; 17 PostgreSQL simulados passaram, quatro nativos ignorados na descoberta comum mas aprovados separadamente; 64 Prosoft backend e 193 frontend passaram. Build, sintaxe, versões e diff-check aprovados.
+
+O navegador local continua bloqueado pelo EPERM conhecido, sem nova tentativa ou contorno; a execução do roteiro Prosoft ampliado depende do CI deste head. Gate agregado não repetido nesta rodada. O CI anterior passou, mas não aprova esta composição. Nenhum merge, deploy, banco real ou conta cloud; os limites de tamanho, versões, escopo sintético e ausência de suporte operacional permanecem.
