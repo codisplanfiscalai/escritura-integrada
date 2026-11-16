@@ -132,7 +132,7 @@ def route_policy(path, method, query, payload, session):
         return None, None, False
     if path in {'/api/context', '/api/logout', '/api/permissions/me', '/api/permissions/catalog'}:
         return None, None, False
-    if re.match(r'^/api/(users|groups|access-audit|storage|docker-updates)(/|$)', path):
+    if re.match(r'^/api/(users|groups|access-audit|storage|docker-updates|backups)(/|$)', path):
         return None, None, True
     if path == '/api/companies':
         return None, None, write
