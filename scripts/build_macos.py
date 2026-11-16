@@ -23,6 +23,8 @@ def main():
                 name=f'icon_{size}x{size}'+('@2x' if multiplier==2 else '')+'.png'
                 run(['sips','-z',size*multiplier,size*multiplier,ROOT/'app/assets/app.png','--out',iconset/name])
         run(['iconutil','-c','icns',iconset,'-o',build/'app.icns'])
+        from build_native_a1 import build as build_a1, manifest as a1_manifest
+        native_binary,native_info=build_a1()
         run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--distpath',build/'macos-dist','--workpath',build/'macos-work',ROOT/'escritura-integrada-macos.spec'])
         app=build/'macos-dist/Escritura Integrada.app';executable=app/'Contents/MacOS/EscrituraIntegrada'
         architectures=subprocess.check_output(['lipo','-archs',executable],text=True).split()
@@ -37,7 +39,14 @@ def main():
         shutil.copytree(notice/'licenses',resources/'licenses',dirs_exist_ok=True)
         shutil.copy2(notice/'THIRD_PARTY_NOTICES.txt',resources/'THIRD_PARTY_NOTICES.txt')
         shutil.copy2(ROOT/'docs/DISTRIBUICAO_DESKTOP.md',resources/'LEIA-ME.md')
+        native_directory=resources/'native';native_directory.mkdir(exist_ok=True)
+        packaged_native=app/'Contents/MacOS/EscrituraA1'
+        shutil.copy2(native_binary,packaged_native)
         run(['codesign','--force','--deep','--sign','-',app])
+        # Deep signing may change nested Mach-O bytes. Hash the final helper,
+        # then reseal ONLY the outer bundle to include the manifest unchanged.
+        report['native_a1']=a1_manifest(packaged_native, native_directory/'manifest.json')
+        run(['codesign','--force','--sign','-',app])
         run(['codesign','--verify','--deep','--strict','--verbose=2',app])
         payload=build/'macos-payload';shutil.rmtree(payload,ignore_errors=True);payload.mkdir()
         shutil.copytree(app,payload/app.name,symlinks=True)

@@ -1,0 +1,2 @@
+# Preserve exact official XSD bytes and provenance hashes on every platform.
+*.xsd -text -eol whitespace=cr-at-eol

@@ -34,6 +34,7 @@ MAX_ISSUES = 250
 
 IMPORTER_SCOPE = {
     "xml": "NF-e/NFC-e 4.00 (55/65) e CT-e 4.00 (57); extração para conferência, sem validação XSD, assinatura, consulta SEFAZ ou motor fiscal.",
+    "nfe_distribution": "Retorno NF-e retDistDFeInt 1.01, isolado ou SOAP 1.2: GZip/base64 limitado, XML modelo 55 ao leitor existente; resumos/eventos pendentes e originais preservados. Sem consulta remota ou avanço de NSU.",
     "sped": "EFD ICMS/IPI leiaute 020/2026: 0000, 0150, 0200, C100, C170, C190, C140 e C141. Outros registros ficam identificados como não processados. Não importa ECD, ECF ou EFD-Contribuições.",
     "csv_txt": "Cabeçalho canônico data;valor;historico;documento ou bank_columns explícito. Separador decimal e formato de data configuráveis. TXT posicional exige bank_layout=fixed e posições explícitas.",
     "ofx": "Extratos bancários/cartão OFX XML e SGML: STMTTRN, DTPOSTED, TRNAMT, FITID, CHECKNUM, NAME/MEMO. Investimentos, pendentes e correções não são tratados como novos movimentos.",
@@ -452,8 +453,27 @@ def _party(element):
     return party
 
 
-def _xml_document(filename, data, company, result, digest):
+def _xml_document(filename, data, company, result, digest, state=None):
     root = _xml_tree(data)
+    from .reception import is_nfe_distribution, read_nfe_distribution
+    if is_nfe_distribution(root):
+        distribution = read_nfe_distribution(data, state)
+        metadata = {key: value for key, value in distribution.items() if key != 'entries'}
+        metadata['source'] = _source(filename)
+        metadata['entries'] = [{key: value for key, value in entry.items() if key != 'xml'} for entry in distribution['entries']]
+        result.setdefault('reception', []).append(metadata)
+        pending = [entry for entry in distribution['entries'] if entry['kind'] != 'full_xml']
+        if pending:
+            result['partial'] = True
+            _issue(result, 'RECEPTION_PENDING', f"{len(pending)} resumo(s), evento(s) ou leiaute(s) sem XML completo importável. Permanecem pendentes na recepção e no original; nenhuma manifestação ou alteração fiscal foi executada.", _source(filename), 'warning')
+        if distribution['status_code'] != '138':
+            _issue(result, 'RECEPTION_STATUS', 'Distribuição sem novos XMLs importáveis. Código ' + distribution['status_code'] + '; cursor não alterado. Consulte a recepção e respeite o intervalo indicado.', _source(filename), 'warning')
+        for entry in distribution['entries']:
+            if entry['kind'] == 'full_xml':
+                child_name = filename + '!/nsu-' + entry['nsu'] + '.xml'
+                result['sources'].append({'file': child_name, 'sha256': entry['sha256'], 'size': len(entry['xml']), 'format': 'xml', 'reception_nsu': entry['nsu']})
+                _xml_document(child_name, entry['xml'], company, result, entry['sha256'], state)
+        return 'nfe_distribution'
     kind = _local(root.tag)
     nfe = kind in ("NFe", "nfeProc")
     cte = kind in ("CTe", "cteProc")
@@ -1080,7 +1100,7 @@ def _parse(filename, data, company, result, state, depth):
         elif suffix == ".qif":
             fmt = _qif(filename, data, company, result, digest)
         elif suffix == ".xml":
-            fmt = _xml_document(filename, data, company, result, digest)
+            fmt = _xml_document(filename, data, company, result, digest, state)
         elif suffix in (".txt", ".sped", ".csv", ".efd"):
             preview = _decode(data, _options(company))
             if preview.lstrip().startswith("|0000|"):

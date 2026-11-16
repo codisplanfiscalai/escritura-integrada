@@ -194,6 +194,9 @@ def create_app(data_dir=None, demo=False):
             raise DomainError("A data de escrituração pertence a outro exercício. Selecione o ano correto e reabra a operação.", 409, "stale_context")
         return competence
 
+    from .reception_api import register as register_reception
+    register_reception(application,core,actor,check_period)
+
     def check_date(request, value, label="Data"):
         check_period(request, iso_date(value, label)[:7])
 
