@@ -27,7 +27,7 @@ class ExecutorClient:
             raise DomainError('Executor externo não configurado. Instalação e permissões no host dependem do administrador.', 503, 'executor_unavailable')
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-                client.settimeout(120 if action in ('check', 'status') else 4)
+                client.settimeout(120 if action in ('check', 'check-current', 'status') else 4)
                 client.connect(self.path)
                 client.sendall(json.dumps({'action': action, **payload}).encode() + b'\n')
                 with client.makefile('rb') as stream:
@@ -67,16 +67,14 @@ def register(application, core):
         if not application.state.docker_executor.path:
             # This is application metadata, not an assertion about a Docker image.
             return {'configured': False, 'application_version': __version__, 'installed': None,
-                    'jobs': [], 'cutover_supported': False,
+                    'jobs': [], 'cutover_supported': False, 'preparation_supported': False,
                     'limitation': 'Executor externo não configurado. Imagem/digest não verificados; atualização da aplicação ainda indisponível.'}
-        return invoke(request, 'status')
+        return {**invoke(request, 'status'), 'application_version': __version__}
 
     @application.post('/api/docker-updates/check')
     def check(request: Request, payload: dict = Body(...)):
-        fields(payload, ['channel'])
-        if payload['channel'] not in ('develop', 'latest'):
-            raise DomainError('Escolha develop ou latest.', 422, 'invalid_channel')
-        return invoke(request, 'check', channel=payload['channel'])
+        fields(payload, [])
+        return invoke(request, 'check-current')
 
     @application.post('/api/docker-updates/prepare')
     def prepare(request: Request, payload: dict = Body(...)):
