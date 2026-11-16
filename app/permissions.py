@@ -199,6 +199,8 @@ def route_policy(path, method, query, payload, session):
     if root == 'cfop-source-loads':
         return 'fiscal.masters', 'read' if tail.endswith('/preview') or not write else 'create', False
     if root == 'sped-generator':
+        if tail == '/sped-generator/contributions-snapshot' and method == 'GET':
+            return 'fiscal.documents', 'export', False
         if tail == '/sped-generator/accounting-snapshot' and method == 'GET':
             return 'accounting.journals', 'export', False
         return 'fiscal.documents', ('export' if method == 'POST' and tail.endswith(('/consolidation-export', '/bookkeeping-block-c')) else 'read' if not write else 'invalid'), False

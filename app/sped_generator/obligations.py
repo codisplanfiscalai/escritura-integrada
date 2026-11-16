@@ -16,6 +16,14 @@ _EFD_ROUTES = (
      'Bloco C parcial de NFC-e próprias de saída já escrituradas'),
 )
 
+# Preparation evidence is separate from exports of an obligation file.
+_PREPARATION_ROUTES = {
+    'ecd': [('accounting_snapshot', '/api/companies/{cid}/sped-generator/accounting-snapshot',
+             'Snapshot preparatório contábil; não gera ECD.')],
+    'efd_contribuicoes': [('stored_document_evidence', '/api/companies/{cid}/sped-generator/contributions-snapshot',
+                          'Evidências documentais e declarações explícitas para revisão; não gera EFD-Contribuições.')],
+}
+
 # Manual revision, file layout and period scope are intentionally distinct.
 _OBLIGATIONS = (
     {
@@ -98,6 +106,13 @@ def obligation_catalog(registered_routes=()):
     obligations = deepcopy(list(_OBLIGATIONS))
     for obligation in obligations:
         obligation.update(complete_file_generator=False, validated_in_official_program=False, exports=[])
+        obligation['preparations'] = [
+            {'id': name, 'method': 'GET', 'path': path, 'description': description,
+             'registered': ('GET', path) in registered, 'format': 'json',
+             'requires_authorized_company_context': True, 'generates_obligation_file': False,
+             'mutates_domain': False, 'validated_in_official_program': False}
+            for name, path, description in _PREPARATION_ROUTES.get(obligation['id'], ())
+        ]
     obligations[0]['exports'] = [
         {'id': name, 'method': 'POST', 'path': path, 'description': description,
          'registered': ('POST', path) in registered, 'format': 'txt',
