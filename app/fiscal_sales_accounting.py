@@ -109,18 +109,21 @@ class FiscalSalesAccountingMixin:
             raise DomainError('Campos desconhecidos na integração contábil.')
         entries = payload.get('entries')
         if not isinstance(entries, list) or not 1 <= len(entries) <= 1000:
-            raise DomainError('Selecione de 1 a 1000 notas com seus modelos contábeis.')
+            raise DomainError('Selecione de 1 a 1000 notas com as contas ou modelos contábeis opcionais.')
         ids = []
         for entry in entries:
-            if not isinstance(entry, dict) or set(entry) - {'document_id', 'version', 'model_id'}:
+            if not isinstance(entry, dict) or set(entry) - {'document_id', 'version', 'model_id', 'debit_account_id', 'credit_account_id', 'cost_center_id'}:
                 raise DomainError('Seleção de nota inválida.')
+            if entry.get('model_id') is not None and {'debit_account_id', 'credit_account_id', 'cost_center_id'} & set(entry):
+                raise DomainError('Escolha contas diretas ou modelo para cada nota, sem misturar as duas formas.')
             ids.append(integer(entry.get('document_id'), 'Documento'))
         if len(set(ids)) != len(ids):
             raise DomainError('Selecione cada documento uma única vez.')
         with (self.db.read(snapshot=True) if preview else self.db.transaction()) as conn:
             effect(conn, cid, 'fiscal.documents', 'read')
             effect(conn, cid, 'accounting.journals', 'read' if preview else 'create')
-            effect(conn, cid, 'accounting.histories', 'read')
+            if any(entry.get('model_id') is not None for entry in entries):
+                effect(conn, cid, 'accounting.histories', 'read')
             if not preview:
                 key, hashed, previous = self._operation(conn, cid, operation_scope, payload)
                 if previous:
@@ -148,10 +151,21 @@ class FiscalSalesAccountingMixin:
                 ensure_sales_open(conn, cid, doc['period'], 'fiscal')
                 ensure_sales_open(conn, cid, doc['period'], 'accounting')
                 self._validate_document_links(conn, cid, doc, _existing_document_id=item_id)
-                model_id = integer(entry.get('model_id'), 'Modelo contábil configurado')
-                model = self._master(conn, cid, model_id, 'accounting_model', True)
-                lines = self._document_accounting_lines(conn, cid, doc, self._model_lines(conn, cid, model_id, doc))
+                model = None
+                if entry.get('model_id') is not None:
+                    model_id = integer(entry['model_id'], 'Modelo contábil configurado')
+                    model = self._master(conn, cid, model_id, 'accounting_model', True)
+                    lines = self._model_lines(conn, cid, model_id, doc)
+                else:
+                    # Values come from the booked note, never from a client total.
+                    value = decimal_text(doc['total_cents'])
+                    center = entry.get('cost_center_id')
+                    lines = [{'account_id': entry.get('debit_account_id'), 'debit': value, 'credit': '0.00', 'cost_center_id': center},
+                             {'account_id': entry.get('credit_account_id'), 'debit': '0.00', 'credit': value, 'cost_center_id': center}]
+                lines = self._document_accounting_lines(conn, cid, doc, lines)
                 normalized, total = self._normalize_lines(conn, cid, lines, materialize=not preview, actor=actor)
+                if model is None and normalized[0]['account_id'] == normalized[1]['account_id']:
+                    raise DomainError('Selecione contas diferentes para débito e crédito.')
                 if total != doc['total_cents']:
                     raise DomainError('O valor contabilizado deve corresponder ao total do documento.')
                 dimensions = [(x['account_id'], bool(x['debit_cents']), x['cost_center_id'], x.get('participant_id')) for x in normalized]
@@ -162,7 +176,7 @@ class FiscalSalesAccountingMixin:
                 group['sources'].append({'document_id': item_id, 'document_number': doc['number'], 'document_key': doc['key'],
                     'document_series': doc['series'], 'participant_id': doc.get('participant_id'),
                     'document_version': doc['version'], 'posting_date': doc['posting_date'], 'issue_date': doc['issue_date'],
-                    'direction': direction, 'source_hash': doc['source_hash'], 'total_cents': total, 'lines': normalized, 'model_snapshot': model})
+                    'direction': direction, 'source_hash': doc['source_hash'], 'total_cents': total, 'lines': normalized, 'model_snapshot': model, 'entry_method': 'model' if model else 'direct'})
             journals, sources = [], []
             for group_key, group in groups.items():
                 combined = {}

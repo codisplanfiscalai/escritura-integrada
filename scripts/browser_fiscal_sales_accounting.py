@@ -78,6 +78,8 @@ def main():
                             page.get_by_role('button', name='Salvar modo da empresa').click()
                             expect(page.get_by_text('Modo salvo: ' + ('diário' if value == 'daily' else 'individual'), exact=True)).to_be_visible()
                         def apply_model(mid):
+                            details=page.locator('.sales-optional-model')
+                            if details.get_attribute('open') is None:details.locator('summary').click()
                             page.get_by_label('Modelo comum para as selecionadas').select_option(str(mid))
                             page.get_by_role('button', name='Aplicar modelo às selecionadas').click()
                         def documents(cid): return get(f'/companies/{cid}/documents?year={year}')
@@ -124,7 +126,20 @@ def main():
                         assert report['read_only_hashes']['before']==report['read_only_hashes']['after'], 'Filters/navigation changed business tables'
                         report['checks'].append('Pagination, empty/combined/rapid filters and KeepAlive navigation are read-only')
                         for number in ('A-01','A-02'): page.get_by_label('Contabilizar nota '+number,exact=True).check()
-                        apply_model(ma)
+                        direct_accounts={x['access_code']:x['id'] for x in get(f'/companies/{a}/accounts')}
+                        page.get_by_label('Conta a debitar na integração',exact=True).select_option(str(direct_accounts['3']))
+                        page.get_by_label('Conta a creditar na integração',exact=True).select_option(str(direct_accounts['5']))
+                        page.get_by_label('Histórico do lançamento (opcional)',exact=True).fill('Venda sintética com contas diretas')
+                        before_direct_preview=snapshot(folder,a)
+                        page.get_by_role('button',name='Consultar prévia contábil',exact=True).click()
+                        direct_preview=page.get_by_role('region',name='Prévia contábil',exact=True)
+                        expect(direct_preview.get_by_text('1 lançamento(s) previsto(s)',exact=False)).to_be_visible()
+                        assert before_direct_preview==snapshot(folder,a)
+                        page.get_by_role('button',name='Fechar prévia',exact=True).click()
+                        page.get_by_role('heading',name='Integração Contábil',exact=True).scroll_into_view_if_needed()
+                        page.screenshot(path=str(OUT/'direct-accounts.png'),full_page=True)
+                        page.locator('.sales-generation').scroll_into_view_if_needed()
+                        page.screenshot(path=str(OUT/'direct-accounts-controls.png'),full_page=True)
                         mutations=[]
                         page.on('request',lambda r: mutations.append(r.post_data_json) if r.method=='POST' and r.url.endswith('/fiscal-sales-accounting/generate') else None)
                         def commit_then_drop(route):
@@ -133,9 +148,11 @@ def main():
                         page.get_by_role('button',name='Gerar lançamentos da seleção',exact=True).click()
                         expect(page.get_by_role('button',name='Repetir a mesma solicitação')).to_be_visible()
                         assert len(journals(a))==2, 'First request must have committed exactly one aggregate'
+                        assert any(j['history']=='Venda sintética com contas diretas' for j in journals(a))
                         after_commit=snapshot(folder,a)
                         page.get_by_role('button',name='Repetir a mesma solicitação').click()
                         expect(page.get_by_role('heading',name='Solicitação já processada')).to_be_visible()
+                        assert all('model_id' not in e for e in mutations[0]['entries'])
                         assert len(mutations)==2 and mutations[0]==mutations[1], 'Retry changed the frozen intent/key'
                         report['replay_hashes']={'before':after_commit,'after':snapshot(folder,a)}
                         assert report['replay_hashes']['before']==report['replay_hashes']['after'], 'Idempotent replay changed business tables'
@@ -143,11 +160,12 @@ def main():
                         result.get_by_role('button',name='Notas do lançamento',exact=False).click()
                         modal=page.get_by_role('dialog',name='Rastreabilidade contábil fiscal')
                         expect(modal.locator('.sales-source')).to_have_count(2)
+                        expect(modal.get_by_text('Contas informadas diretamente nesta integração.',exact=True)).to_have_count(2)
                         modal.get_by_role('button',name='Consultar nota A-01',exact=True).click();expect(modal.locator('.sales-source')).to_have_count(1)
                         modal.get_by_role('button',name='Fechar rastreabilidade').click()
                         assert after_commit==snapshot(folder,a), 'Tracing changed business tables'
                         page.screenshot(path=str(OUT/'daily-replayed.png'),full_page=True)
-                        report['checks'].append('Daily: 0.01 + 10.02 => one balanced 10.03 journal; lost response after commit and exact-key retry do not duplicate; both sources traced')
+                        report['checks'].append('Daily direct accounts, optional model regression preserved: 0.01 + 10.02 => one balanced 10.03 journal; lost response after commit and exact-key retry do not duplicate; both sources traced')
                         save_mode('individual')
                         page.get_by_role('button',name='Selecionar aptas da consulta').click();apply_model(ma)
                         page.get_by_label('Modelo contábil da nota A-05',exact=True).select_option(str(other))
@@ -197,10 +215,6 @@ def main():
                         # Both approved menus reuse the same engine. Purchases stay individual
                         # even when this company's saved sales mode is daily.
                         incoming_accounts = {x['access_code']:x['id'] for x in get(f'/companies/{a}/accounts')}
-                        incoming_model = post(f'/companies/{a}/masters/accounting_model', {'code':'SYN-BUY','name':'Entrada sintética','data':{
-                            'debit_account_id':incoming_accounts['6'],'credit_account_id':incoming_accounts['4'],
-                            'direction':'incoming','valid_from':year+'-01-01','status':'validated','history':'Compra sintética',
-                            'source':'Fixture sintética','responsible':'Teste'}})['id']
                         for number,amount in (('E-01','0.01'),('E-02','10.02')):
                             d=post(f'/companies/{a}/documents',{'direction':'incoming','number':number,'series':'1','model':'55',
                                 'issue_date':year+'-10-30','posting_date':year+'-11-06','partner_name':'Fornecedor sintético','cfop':'1102','total':amount})
@@ -211,7 +225,9 @@ def main():
                         expect(page.get_by_text('Entradas geram um lançamento por nota.',exact=False)).to_be_visible()
                         page.get_by_label('Situação contábil').select_option('eligible')
                         expect(page.locator('.sales-accounting-view tbody tr')).to_have_count(2)
-                        page.get_by_role('button',name='Selecionar aptas da consulta').click();apply_model(incoming_model)
+                        page.get_by_role('button',name='Selecionar aptas da consulta').click()
+                        page.get_by_label('Conta a debitar na integração',exact=True).select_option(str(incoming_accounts['6']))
+                        page.get_by_label('Conta a creditar na integração',exact=True).select_option(str(incoming_accounts['4']))
                         before_preview=snapshot(folder,a)
                         page.get_by_role('button',name='Consultar prévia contábil',exact=True).click()
                         preview=page.get_by_role('region',name='Prévia contábil',exact=True)
@@ -232,6 +248,7 @@ def main():
                         page.get_by_role('button',name='Repetir a mesma solicitação').click()
                         expect(page.get_by_role('heading',name='Solicitação já processada')).to_be_visible()
                         assert len(incoming_mutations)==2 and incoming_mutations[0]==incoming_mutations[1]
+                        assert all('model_id' not in e for e in incoming_mutations[0]['entries'])
                         assert incoming_committed==snapshot(folder,a),'Incoming retry wrote business data'
                         result=page.get_by_role('region',name='Resultado da contabilização')
                         result.get_by_role('button',name='Notas do lançamento',exact=False).first.click()
@@ -250,14 +267,46 @@ def main():
                             assert not conn.execute('SELECT j.id FROM journals j JOIN journal_lines l ON l.journal_id=j.id GROUP BY j.id HAVING SUM(l.debit_cents)<>SUM(l.credit_cents)').fetchall()
                         report['incoming_preview_hashes']={'before':before_preview,'after':after_preview}
                         report['incoming_replay_hashes']={'before':incoming_committed,'after':snapshot(folder,a)}
-                        report['checks'].append('Both menus share integration: incoming preview/close read-only; daily sales setting preserved; two purchases remain individual; lost-response exact retry and alternate menu do not duplicate; origins/FK/balance preserved')
+                        report['checks'].append('Both menus share direct-account integration without required models: incoming preview/close read-only; daily sales setting preserved; two purchases remain individual; lost-response exact retry and alternate menu do not duplicate; origins/FK/balance preserved')
+                        # A fresh company has no accounting models: both directions work directly.
+                        c=post('/companies',{'code':'SYN-DIRECT-C','name':'Empresa sintética sem modelos','tax_id':'TEST0003000110','regime':'outros','state':'SP','create_default_accounts':True})['id']
+                        post('/context',{'company_id':c,'module':'fiscal','period':year+'-11'})
+                        for number,flow,total in [('C-S1','outgoing','0.01'),('C-S2','outgoing','10.02'),('C-E1','incoming','0.01'),('C-E2','incoming','10.02')]:
+                            d=post(f'/companies/{c}/documents',{'direction':flow,'number':number,'series':'1','model':'55','issue_date':year+'-10-30','posting_date':year+'-11-06','partner_name':'Contraparte sintética','cfop':'5102' if flow=='outgoing' else '1102','total':total})
+                            post(f'/companies/{c}/documents/{d["id"]}/book',{'version':d['version'],'reason':'Fixture sintética'})
+                        assert get(f'/companies/{c}/masters/accounting_model')==[]
+                        refs={x['access_code']:x['id'] for x in get(f'/companies/{c}/accounts')}
+                        page.reload();enter();save_mode('daily')
+                        page.get_by_label('Situação contábil').select_option('eligible')
+                        page.get_by_role('button',name='Selecionar aptas da consulta').click()
+                        page.get_by_label('Conta a debitar na integração',exact=True).select_option(str(refs['3']))
+                        page.get_by_label('Conta a creditar na integração',exact=True).select_option(str(refs['5']))
+                        page.get_by_role('button',name='Gerar lançamentos da seleção',exact=True).click()
+                        expect(page.get_by_role('heading',name='Resultado da contabilização',exact=True)).to_be_visible()
+                        assert len(journals(c))==1 and journals(c)[0]['total_cents']==1003
+                        page.get_by_label('Sentido da integração').select_option('incoming')
+                        expect(page.locator('.sales-accounting-view tbody tr')).to_have_count(2)
+                        page.get_by_role('button',name='Selecionar aptas da consulta').click()
+                        page.get_by_label('Conta a debitar na integração',exact=True).select_option(str(refs['6']))
+                        page.get_by_label('Conta a creditar na integração',exact=True).select_option(str(refs['4']))
+                        page.get_by_role('button',name='Gerar lançamentos da seleção',exact=True).click()
+                        expect(page.get_by_role('heading',name='Resultado da contabilização',exact=True)).to_be_visible()
+                        assert len(journals(c))==3 and get(f'/companies/{c}/masters/accounting_model')==[]
+                        for j in journals(c):
+                            origin=get(f'/companies/{c}/fiscal-sales-accounting/journals/{j["id"]}/sources')
+                            assert all(s['entry_method']=='direct' and s['model_snapshot'] is None for s in origin['sources'])
+                            assert sum(l['debit_cents'] for l in j['lines'])==sum(l['credit_cents'] for l in j['lines'])
+                        with sqlite3.connect(Path(folder)/'escritura.sqlite3') as conn:
+                            assert not conn.execute('PRAGMA foreign_key_check').fetchall()
+                        report['no_models_company_journals']=len(journals(c))
+                        report['checks'].append('Fresh company C has no accounting models: two direct sales consolidate at 10.03; two direct purchases stay individual; all origins and balances preserved without creating models')
                         page.set_viewport_size({'width':1100,'height':900})
                         page.get_by_role('heading',name='Integração Contábil',exact=True).scroll_into_view_if_needed()
                         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
                         page.screenshot(path=str(OUT/'narrow-configuration.png'),full_page=True)
                         report['checks'].append('Configuration and controls remain within the 1100px viewport; wide table scroll is contained')
                         assert not report['console_errors'],report['console_errors']
-                        report['final_journals']={'A':len(journals(a)),'B':len(journals(b))}
+                        report['final_journals']={'A':len(journals(a)),'B':len(journals(b)),'C':len(journals(c))}
                         report['ok']=True
                     except Exception:
                         page.screenshot(path=str(OUT/'failure.png'),full_page=True)

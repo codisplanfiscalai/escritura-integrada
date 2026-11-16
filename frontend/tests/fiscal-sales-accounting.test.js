@@ -12,27 +12,27 @@ const doc=(id,extra={})=>({id,version:3,direction:'outgoing',number:`S${id}`,par
 const model=(id=7,extra={})=>({id,active:true,name:'Modelo sintético',code:'VENDA',data:{status:'validated',direction:'outgoing',valid_from:'2026-01-01',valid_to:'',...extra}});
 const cfg=(mode='individual',version=0)=>({mode,version,notice:'Histórico preservado.'});
 const result=(extra={})=>({created_count:1,accounted_count:2,skipped:[],journals:[{id:10,number:1,date:'2026-11-06',total_cents:2002}],sources:[],notice:'Complementos preservam histórico.',...extra});
-async function harness({denied=[]}={}){
- const key=`__salesAccounting${++counter}`,requests=[],visible=ref(true),updates=[];
+async function harness({denied=[],accountRows=[{id:31,access_code:'6',name:'Despesa sintética',active:true,analytical:true},{id:32,access_code:'4',name:'Fornecedor sintético',active:true,analytical:true}],centerRows=[]}={}){
+ const key=`__salesAccounting${++counter}`,requests=[],lookups=[],visible=ref(true),updates=[];
  const state=reactive({companyId:1,module:'fiscal',period:'2026-11',contextBusy:false,refresh:0,editor:null,yearLocks:{},contextPreferences:{},session:{user:{role:'operator'},permissions:{}}});
  const can=(r,a='read')=>{void state.session.permissions;return !denied.includes(`${r}:${a}`)},captureContext=()=>({companyId:state.companyId,year:state.period.slice(0,4),module:state.module}),contextMatches=c=>c.companyId===state.companyId&&c.year===state.period.slice(0,4)&&c.module===state.module;
- globalThis[key]={state,company:computed(()=>({code:`SYN${state.companyId}`,name:'Empresa fictícia'})),can,captureContext,contextMatches,scope:(p,cid=state.companyId)=>`/companies/${cid}${p}`,changed:()=>updates.push(true),api:(path,options={})=>new Promise((resolve,reject)=>requests.push({path,options,resolve,reject}))};
+ globalThis[key]={state,company:computed(()=>({code:`SYN${state.companyId}`,name:'Empresa fictícia'})),can,captureContext,contextMatches,scope:(p,cid=state.companyId)=>`/companies/${cid}${p}`,changed:()=>updates.push(true),api:(path,options={})=>{if(path.endsWith('/accounts')||path.endsWith('/cost-centers')){lookups.push({path,options});return Promise.resolve(path.endsWith('/accounts')?accountRows:centerRows);}return new Promise((resolve,reject)=>requests.push({path,options,resolve,reject}));}};
  const mock=url(`export const {state,company,can,captureContext,contextMatches,scope,changed,api}=globalThis.${key};`);
  const source=await readFile(new URL('../src/views/FiscalSalesAccountingView.vue',import.meta.url),'utf8');
  const code=compileScript(parse(source).descriptor,{id:key}).content.replace(/from ['"]vue['"]/g,`from '${vue}'`).replace(/import (\w+) from ['"][^'"]+\.vue['"];?/g,'const $1={};').replace("from '../lib/workspace'",`from '${mock}'`).replace("from '../lib/format'",`from '${new URL('../src/lib/format.js',import.meta.url).href}'`).replace("from '../lib/context-preferences.js'",`from '${new URL('../src/lib/context-preferences.js',import.meta.url).href}'`);
  const component=(await import(url(code))).default;let view;const setup=component.setup;component.setup=(p,c)=>{view=setup(p,c);return()=>null;};
  const renderer=createRenderer({createElement:()=>({}),createText:()=>({}),setText:()=>{},setElementText:()=>{},createComment:()=>({}),insert:()=>{},remove:()=>{},parentNode:()=>null,nextSibling:()=>null,patchProp:()=>{}});
  const app=renderer.createApp({setup:()=>()=>h(KeepAlive,null,()=>visible.value?h(component):null)});app.mount({});await flush();
- return {view,state,requests,updates,visible,denied,close:()=>{app.unmount();delete globalThis[key];}};
+ return {view,state,requests,lookups,updates,visible,denied,close:()=>{app.unmount();delete globalThis[key];}};
 }
 async function ready(h,docs=[doc(1),doc(2)],mode='individual',version=0,mods=[model()]){const start=h.requests.length-3;h.requests[start].resolve(cfg(mode,version));h.requests[start+1].resolve(docs);h.requests[start+2].resolve(mods);await flush();}
 function select(h){h.view.selectFiltered();h.view.commonModel.value=7;h.view.applyModel();}
 
 test('consulta captura empresa/exercício e nunca cria movimentos ao carregar',async()=>{
- const h=await harness();try{assert.deepEqual(h.requests.map(r=>r.path),['/companies/1/fiscal-sales-accounting/settings','/companies/1/documents?year=2026','/companies/1/masters/accounting_model']);await ready(h,[doc(1),doc(3,{direction:'incoming'})]);assert.equal(h.view.documents.value.length,1);assert.equal(h.view.config.value.mode,'individual');assert.ok(h.requests.every(r=>!r.options.method));assert.equal(h.view.selectedIds.value.length,0);assert.equal(h.view.canSubmit.value,false);}finally{h.close();}
+ const h=await harness();try{assert.deepEqual(h.requests.map(r=>r.path),['/companies/1/fiscal-sales-accounting/settings','/companies/1/documents?year=2026','/companies/1/masters/accounting_model']);await ready(h,[doc(1),doc(3,{direction:'incoming'})]);assert.equal(h.view.documents.value.length,1);assert.equal(h.view.config.value.mode,'individual');assert.ok([...h.requests,...h.lookups].every(r=>!r.options.method));assert.equal(h.lookups.length,2);assert.equal(h.view.selectedIds.value.length,0);assert.equal(h.view.canSubmit.value,false);}finally{h.close();}
 });
-test('seleção inclui páginas, exige modelo explícito e filtros limpam sem confundir emissão',async()=>{
- const h=await harness();try{await ready(h,Array.from({length:53},(_,i)=>doc(i+1)).concat([doc(80,{period:'2026-12',posting_date:'2026-12-02'}),doc(81,{journal_id:9}),doc(82,{status:'pending'}),doc(83,{book_cancellation:{}})]));h.view.selectFiltered();assert.equal(h.view.selection.value.length,53);assert.equal(h.view.visible.value.length,50);assert.match(h.view.selectionIssue.value,/modelo/);h.view.commonModel.value=7;h.view.applyModel();assert.equal(h.view.canSubmit.value,true);assert.equal(h.view.selectedTotal.value,53053n);h.view.page.value=2;await flush();assert.equal(h.view.selection.value.length,53);h.view.query.value='S80';await flush();assert.equal(h.view.selection.value.length,0);assert.equal(h.view.filtered.value.length,0);h.view.month.value='12';assert.equal(h.view.filtered.value.length,1);assert.equal(h.state.period,'2026-11');}finally{h.close();}
+test('seleção inclui páginas, exige contas explícitas ou modelo opcional e filtros limpam sem confundir emissão',async()=>{
+ const h=await harness();try{await ready(h,Array.from({length:53},(_,i)=>doc(i+1)).concat([doc(80,{period:'2026-12',posting_date:'2026-12-02'}),doc(81,{journal_id:9}),doc(82,{status:'pending'}),doc(83,{book_cancellation:{}})]));h.view.selectFiltered();assert.equal(h.view.selection.value.length,53);assert.equal(h.view.visible.value.length,50);assert.match(h.view.selectionIssue.value,/contas/);h.view.commonModel.value=7;h.view.applyModel();assert.equal(h.view.canSubmit.value,true);assert.equal(h.view.selectedTotal.value,53053n);h.view.page.value=2;await flush();assert.equal(h.view.selection.value.length,53);h.view.query.value='S80';await flush();assert.equal(h.view.selection.value.length,0);assert.equal(h.view.filtered.value.length,0);h.view.month.value='12';assert.equal(h.view.filtered.value.length,1);assert.equal(h.state.period,'2026-11');}finally{h.close();}
 });
 test('modelos vencidos, não revisados ou de entrada não são escolhidos automaticamente',async()=>{
  const h=await harness();try{await ready(h,[doc(1)],'individual',0,[model(),model(8,{direction:'incoming'}),model(9,{status:'draft'}),model(10,{valid_to:'2026-10-31'})]);assert.deepEqual(h.view.availableModels.value.map(m=>m.id),[7,10]);h.view.selectFiltered();h.view.commonModel.value=10;h.view.applyModel();assert.match(h.view.error.value,/vigente/);assert.equal(h.view.canSubmit.value,false);h.view.commonModel.value=7;h.view.applyModel();assert.equal(h.view.canSubmit.value,true);}finally{h.close();}
@@ -59,7 +59,7 @@ test('competência fechada impede geração mesmo sob configuração legada perm
  const h=await harness();try{await ready(h);select(h);h.state.yearLocks={accounting:{'2026-11':{closed:true}}};await flush();assert.equal(h.view.canSubmit.value,false);assert.match(h.view.selectionIssue.value,/fechada/);await h.view.generate();assert.equal(h.requests.length,3);h.state.yearLocks.accounting['2026-11'].closed=false;await flush();assert.equal(h.view.canSubmit.value,true);}finally{h.close();}
 });
 test('consulta negada não busca dados; revogação apaga dados e rastreabilidade já carregados',async()=>{
- const h=await harness({denied:['accounting.histories:read']});try{assert.equal(h.requests.length,0);h.denied.length=0;h.state.session.permissions={changed:['read']};await flush();await ready(h);const p=h.view.showTrace('journal',10);h.requests[3].resolve({journal:result().journals[0],sources:[]});await p;assert.ok(h.view.trace.value.data);h.denied.push('accounting.histories:read');h.state.session.permissions={changed:[]};await flush();assert.equal(h.view.trace.value,null);assert.equal(h.view.config.value,null);assert.equal(h.view.documents.value.length,0);}finally{h.close();}
+ const h=await harness({denied:['accounting.accounts:read']});try{assert.equal(h.requests.length,0);h.denied.length=0;h.state.session.permissions={changed:['read']};await flush();await ready(h);const p=h.view.showTrace('journal',10);h.requests[3].resolve({journal:result().journals[0],sources:[]});await p;assert.ok(h.view.trace.value.data);h.denied.push('accounting.accounts:read');h.state.session.permissions={changed:[]};await flush();assert.equal(h.view.trace.value,null);assert.equal(h.view.config.value,null);assert.equal(h.view.documents.value.length,0);}finally{h.close();}
 });
 test('rastros fechados, substituídos e de outro contexto ignoram respostas e erros tardios',async()=>{
  const h=await harness();try{await ready(h);let p=h.view.showTrace('journal',10);h.view.closeTrace();h.requests[3].resolve({sources:[{document_id:1}]});await p;assert.equal(h.view.trace.value,null);p=h.view.showTrace('document',1);const latest=h.view.showTrace('journal',20);h.requests[5].resolve({journal:{id:20},sources:[]});await latest;h.requests[4].reject(new Error('antigo'));await p;assert.equal(h.view.trace.value.data.journal.id,20);assert.equal(h.view.traceError.value,'');p=h.view.showTrace('document',2);h.state.companyId=2;await flush();h.requests[6].resolve({document:doc(2)});await p;assert.equal(h.view.trace.value,null);}finally{h.close();}
@@ -88,4 +88,51 @@ test('os dois menus aprovados abrem o mesmo componente com permissões de cada �
  const app=await readFile(new URL('../src/App.vue',import.meta.url),'utf8');
  assert.match(app,/id:'sales-accounting',label:'Integração Contábil',icon:'journal',component:FiscalSalesAccountingView,module:'fiscal',routine:'fiscal.documents'/);
  assert.match(app,/id:'fiscal-accounting',label:'Integração Fiscal',icon:'documents',component:FiscalSalesAccountingView,module:'accounting',routine:'accounting.journals'/);
+});
+
+test('contas diretas são o caminho padrão sem modelos nem permissão de modelos',async()=>{
+ const h=await harness({denied:['accounting.histories:read']});try{
+ assert.equal(h.requests.length,2);assert.ok(!h.requests.some(r=>r.path.includes('accounting_model')));
+ h.requests[0].resolve(cfg('daily',2));h.requests[1].resolve([doc(1),doc(2)]);await flush();
+ h.view.selectFiltered();assert.equal(h.view.models.value.length,0);assert.equal(h.view.canSubmit.value,false);
+ h.view.debitAccount.value=31;h.view.creditAccount.value=32;assert.equal(h.view.canSubmit.value,true);
+ const p=h.view.showPreview();const r=h.requests.at(-1);assert.equal(r.path,'/companies/1/fiscal-sales-accounting/preview');
+ assert.deepEqual(r.options.body.entries,[1,2].map(id=>({document_id:id,version:3,debit_account_id:31,credit_account_id:32,cost_center_id:null})));
+ assert.equal(h.state.editor,null);r.resolve(result({preview:true}));await p;assert.ok(h.view.preview.value);
+ const q=h.view.generate();const call=h.requests.at(-1);assert.ok(!('model_id' in call.options.body.entries[0]));call.resolve(result());await q;assert.equal(h.updates.length,1);
+ }finally{h.close();}
+});
+
+test('centro exigido, contas iguais e histórico alterado invalidam prévia direta',async()=>{
+ const h=await harness({accountRows:[{id:31,active:true,analytical:true,requires_cost_center:true},{id:32,active:true,analytical:true}],centerRows:[{id:9,code:'C9',active:true}]});try{
+ await ready(h);h.view.selectFiltered();h.view.debitAccount.value=31;h.view.creditAccount.value=31;assert.match(h.view.selectionIssue.value,/diferentes/);
+ h.view.creditAccount.value=32;assert.match(h.view.selectionIssue.value,/centro/);h.view.costCenter.value=9;assert.equal(h.view.canSubmit.value,true);
+ const p=h.view.showPreview();assert.equal(h.requests.at(-1).options.body.entries[0].cost_center_id,9);h.requests.at(-1).resolve(result({preview:true}));await p;
+ h.view.reason.value='Histórico escolhido';assert.equal(h.view.preview.value,null);assert.equal(h.view.canSubmit.value,true);
+ }finally{h.close();}
+});
+
+test('modelo é opcional por nota e pode voltar a contas diretas sem nova geração',async()=>{
+ const h=await harness();try{await ready(h);select(h);h.view.debitAccount.value=31;h.view.creditAccount.value=32;
+ h.view.modelIds.value[2]='';assert.deepEqual(h.view.accountingEntries(),[{document_id:1,version:3,model_id:7},{document_id:2,version:3,debit_account_id:31,credit_account_id:32,cost_center_id:null}]);
+ h.view.useDirectAccounts();assert.ok(h.view.accountingEntries().every(e=>!('model_id' in e)));assert.equal(h.requests.length,3);assert.equal(h.updates.length,0);
+ h.state.companyId=2;await flush();assert.equal(h.view.debitAccount.value,'');assert.equal(h.view.creditAccount.value,'');assert.equal(h.view.selectedIds.value.length,0);
+ }finally{h.close();}
+});
+
+test('intenção direta perdida conserva contas e histórico exatos na repetição',async()=>{
+ const h=await harness();try{await ready(h);h.view.selectFiltered();h.view.debitAccount.value=31;h.view.creditAccount.value=32;h.view.reason.value='Escolha sintética';
+ let p=h.view.generate();const first=h.requests.at(-1);first.reject(new TypeError('Resposta perdida'));await p;assert.ok(h.view.intent.value);
+ h.view.debitAccount.value=32;h.view.reason.value='Edição não enviada';p=h.view.generate(true);assert.deepEqual(h.requests.at(-1).options.body,first.options.body);
+ h.requests.at(-1).resolve(result({duplicate:true}));await p;assert.equal(h.view.result.value.duplicate,true);
+ }finally{h.close();}
+});
+
+test('alias de conta global continua válido após materialização e não permite débito/crédito equivalentes',async()=>{
+ const h=await harness({accountRows:[{id:-81,shared_entry_id:81,active:true,analytical:true},{id:-82,shared_entry_id:82,active:true,analytical:true}]});try{
+ await ready(h);h.view.selectFiltered();h.view.debitAccount.value=-81;h.view.creditAccount.value=-82;assert.equal(h.view.canSubmit.value,true);
+ h.view.accounts.value=[{id:41,shared_entry_id:81,active:true,analytical:true},{id:42,shared_entry_id:82,active:true,analytical:true}];
+ assert.equal(h.view.canSubmit.value,true);assert.equal(h.view.accountingEntries()[0].debit_account_id,-81);
+ h.view.creditAccount.value=41;assert.match(h.view.selectionIssue.value,/diferentes/);assert.equal(h.view.canSubmit.value,false);
+ }finally{h.close();}
 });
