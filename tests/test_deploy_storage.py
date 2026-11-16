@@ -413,8 +413,34 @@ class BindSelectionTests(unittest.TestCase):
     @staticmethod
     def database(path):
         import sqlite3
-        with sqlite3.connect(path) as connection:
-            connection.execute('CREATE TABLE synthetic_fixture(value INTEGER)')
+        connection = sqlite3.connect(path)
+        try:
+            with connection:
+                connection.execute('CREATE TABLE synthetic_fixture(value INTEGER)')
+        finally:
+            # The transaction context manager commits/rolls back; it does not close.
+            connection.close()
+
+    def test_database_fixture_closes_connection_before_cleanup(self):
+        import sqlite3
+        connect = sqlite3.connect
+        opened = []
+        def tracked(*args, **kwargs):
+            connection = connect(*args, **kwargs)
+            opened.append(connection)
+            return connection
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / 'fixture.sqlite3'
+            with mock.patch('sqlite3.connect', side_effect=tracked):
+                self.database(database)
+            try:
+                self.assertEqual(len(opened), 1)
+                with self.assertRaises(sqlite3.ProgrammingError):
+                    opened[0].execute('SELECT 1')
+                database.unlink()
+            finally:
+                for connection in opened:
+                    connection.close()
 
     def test_only_existing_database_layout_is_selected_without_writes(self):
         for source in ('./data/app', './data/develop/app'):
@@ -505,18 +531,32 @@ class BindSelectionTests(unittest.TestCase):
                 self.assertFalse((root/'private-target').exists())
 
     def test_another_project_using_flat_bind_is_refused(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary); (root/'compose.yaml').write_text('{}'); env=root/'.env'; env.write_text('ESCRITURA_APP_DATA_BIND=\n')
-            def docker(*args,**kwargs):
-                if args[0]=='ps': return 'other'
-                return json.dumps({'project':'production','mounts':[{'Type':'bind','Source':str(root/'data/app')}]})
-            with mock.patch.dict(os.environ,{},clear=True), \
-                    mock.patch.object(storage,'bind_configuration',return_value=('develop','')), \
-                    mock.patch.object(storage,'image_id',return_value='sha256:'+'a'*64), \
-                    mock.patch.object(storage,'bind_scan',return_value={'source':'./data/app','identity':{},'reason':'detected'}), \
-                    mock.patch.object(storage,'docker',side_effect=docker), self.assertRaisesRegex(storage.StorageError,'outro projeto'):
-                storage.prepare_app(root,'develop','local')
-            self.assertEqual(env.read_text(),'ESCRITURA_APP_DATA_BIND=\n')
+        for alias in (False, True):
+            with self.subTest(alias=alias), tempfile.TemporaryDirectory() as temporary:
+                # Match prepare_app's canonical host path, including Windows short-name resolution.
+                root=Path(temporary).resolve(); (root/'compose.yaml').write_text('{}')
+                env=root/'.env'; env.write_text('ESCRITURA_APP_DATA_BIND=\n')
+                incoming=root
+                if alias:
+                    (root/'alias').mkdir()
+                    incoming=root/'alias/..'
+                def docker(*args,**kwargs):
+                    if args[0]=='ps':
+                        return '' if 'label=com.docker.compose.project=develop' in args else 'other'
+                    if args[0]=='inspect' and '--format' in args:
+                        return json.dumps({'project':'production','mounts':[{'Type':'bind','Source':str(root/'data/app')}]})
+                    self.fail('Unexpected Docker call after cross-project detection')
+                with mock.patch.dict(os.environ,{},clear=True), \
+                        mock.patch.object(storage,'bind_configuration',return_value=('develop','')), \
+                        mock.patch.object(storage,'image_id',return_value='sha256:'+'a'*64), \
+                        mock.patch.object(storage,'bind_scan',return_value={'source':'./data/app','identity':{},'reason':'detected'}), \
+                        mock.patch.object(storage,'probe_app_image') as probe, \
+                        mock.patch.object(storage,'record_app_bind') as record, \
+                        mock.patch.object(storage,'docker',side_effect=docker), self.assertRaisesRegex(storage.StorageError,'outro projeto'):
+                    storage.prepare_app(incoming,'develop','local')
+                probe.assert_not_called()
+                record.assert_not_called()
+                self.assertEqual(env.read_text(),'ESCRITURA_APP_DATA_BIND=\n')
 
     def test_permission_refusal_does_not_write_env_or_start_a_container(self):
         with tempfile.TemporaryDirectory() as temporary:
