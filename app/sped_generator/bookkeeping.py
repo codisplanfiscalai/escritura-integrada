@@ -268,6 +268,9 @@ def generate_nfce_block_c(documents, *, company, competence, options=None):
     """Return a partial block and trace from current booked values, without writes."""
     competence = period(competence)
     options = options or {}
+    for key in ('consolidate_nfce', 'segment_on_gap'):
+        if key in options and type(options[key]) is not bool:
+            raise DomainError('Opções de consolidação devem ser booleanas.')
     writer = _Writer()
     writer.warn('PARTIAL_EFD_NOT_PVA_VALIDATED')
     writer.warn('PVA_BLOCK_IMPORT_REPLACES_EXISTING_BLOCK')
@@ -305,7 +308,7 @@ def generate_nfce_block_c(documents, *, company, competence, options=None):
     for warning in writer.warnings:
         warning['document_ids'].sort()
     writer.warnings.sort(key=lambda x: (x['code'], x['record'], x['field']))
-    return dict(payload=payload, kind='EFD_ICMS_IPI_PARTIAL_BLOCK_C', complete_efd=False,
+    result = dict(payload=payload, kind='EFD_ICMS_IPI_PARTIAL_BLOCK_C', complete_efd=False,
         pva_validated=False, transmitted=False, can_export=True, representation='individual_nfce',
         company_id=company['id'], period=competence, encoding='ISO-8859-1',
         result_sha256=sha256(payload).hexdigest(), trace=trace, skipped=skipped, warnings=writer.warnings,
@@ -313,3 +316,8 @@ def generate_nfce_block_c(documents, *, company, competence, options=None):
             skipped_documents=len(skipped), c190_records=sum(len(r) - 1 for _, r, _ in entries),
             total_cents=sum(d['total_cents'] for d, _, _ in entries)),
         rules=dict(guide='3.2.4', layout='020', supported_year=2026, guide_url=GUIDE_URL))
+    if options.get('consolidate_nfce', False):
+        from .bookkeeping_native import consolidate_generated_block_c
+        return consolidate_generated_block_c(result, company_tax_id=company['tax_id'],
+            competence=competence, segment_on_gap=options.get('segment_on_gap', True))
+    return result

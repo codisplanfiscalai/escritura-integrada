@@ -214,3 +214,19 @@ blocos por presunção. Contrato, fontes oficiais, cobertura e lacunas em
 [GERADOR_SPED_BLOCO_C_ESCRITURACAO.md](GERADOR_SPED_BLOCO_C_ESCRITURACAO.md).
 O objetivo segue sendo a EFD integral para conferência no PVA e posterior
 transmissão pelo responsável; esta etapa não caracteriza sua conclusão.
+
+
+## Atualização 16/11/2026: opção na geração da escrituração
+
+A rota bookkeeping-block-c passa a aceitar consolidate_nfce e segment_on_gap,
+desligando a consolidação por padrão. A opção gera representação operacional
+parcial a partir da escrituração atual, com os IDs/versões/chaves de todos os
+documentos e hashes das projeções individual/agrupada. Não exige mudar a importação
+nem cria lançamento consolidado. Dados ausentes na projeção continuam em branco.
+
+Esta atualização supera somente a pendência de opção posterior no recorte atual
+de geração de NFC-e: não completa o gerador EFD, a interface/escolha persistida
+por empresa ou a consolidação no ato da importação XML. RECORD_LIMIT e
+SPED_FIELD_COUNT nativo permanecem não resolvidos. Contrato, comparação delimitada
+com o exportador anterior, fontes por período, testes e matriz das demais
+obrigações estão em [GERADOR_SPED_CONSOLIDACAO_ESCRITURACAO.md](GERADOR_SPED_CONSOLIDACAO_ESCRITURACAO.md).
