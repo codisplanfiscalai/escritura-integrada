@@ -1,0 +1,34 @@
+name: Prova experimental A1 nativo macOS
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'scripts/probes/macos_a1.*'
+      - '.github/workflows/macos-a1-probe.yml'
+permissions:
+  contents: read
+concurrency:
+  group: native-a1-probe-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  native-a1:
+    name: A1 nativo experimental · ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+          - runner: macos-15
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Testar Security e URLSession com PFX sintético e servidor local
+        run: python scripts/probes/macos_a1.py

@@ -59,6 +59,29 @@ def register_fiscal_routes(app, core, actor):
     def prepare(cid: int, item_id: int, payload: dict = Body(...)):
         return core.fiscal_posting_preview(cid, item_id, payload)
 
+    @app.get('/api/companies/{cid}/imports/{item_id}/documents/{index}/download')
+    def import_xml(cid: int, item_id: int, index: int):
+        import json
+        from .core import DomainError, digest, select_one
+        from .permissions import effect
+        from .import_package_cleanup import require_original
+        from .auditor_sources import original_xmls
+        with core.db.read(snapshot=True) as conn:
+            effect(conn, cid, 'fiscal.imports', 'read')
+            effect(conn, cid, 'fiscal.imports', 'export')
+            batch = select_one(conn, 'imports', cid, item_id)
+            require_original(conn, cid, item_id)
+            documents = json.loads(batch['parsed_json']).get('documents', [])
+            if not 0 <= index < len(documents):
+                raise DomainError('Documento não pertence à prévia.', 404, 'not_found')
+            source_hash = documents[index].get('source_hash')
+            raw, filename = batch['original'], batch['filename']
+        for _, content in original_xmls(filename, raw):
+            if digest(content) == source_hash:
+                return Response(content, media_type='application/xml', headers={
+                    'Content-Disposition': f'attachment; filename="documento-{item_id}-{index}.xml"'})
+        raise DomainError('XML íntegro correspondente indisponível.', 422, 'source_unavailable')
+
     @app.get('/api/companies/{cid}/imports/{item_id}/documents/{index}/danfe')
     def import_auxiliary(cid: int, item_id: int, index: int):
         with core.db.read() as conn:

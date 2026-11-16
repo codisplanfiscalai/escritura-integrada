@@ -92,11 +92,27 @@ class InfrastructureTests(unittest.TestCase):
     def test_runtime_lock_pins_all_runtime_packages_and_windows_marker(self):
         text = (ROOT / "docker/runtime.lock").read_text()
         blocks = [b for b in text.split("\n\n") if re.search(r"(?m)^[a-z][\w.-]*==", b)]
-        self.assertEqual(len(blocks), 38)
+        self.assertEqual(len(blocks), 41)
         for block in blocks:
             self.assertRegex(block, r"--hash=sha256:[0-9a-f]{64}")
         self.assertIn('colorama==0.4.6 ; sys_platform == "win32"', text)
+        for pin in ('cryptography==50.0.0', 'cffi==2.1.1', 'pycparser==3.0'):
+            self.assertIn(pin, text)
         self.assertNotIn("--extra-index-url", text)
+
+    def test_a1_runtime_platform_markers_preserve_macos_intel_base_app(self):
+        from packaging.requirements import Requirement
+        from scripts.ci.dependencies import runtime_constraints
+        pins=[Requirement(line) for line in runtime_constraints((ROOT/'docker/runtime.lock').read_text()).splitlines()]
+        a1=[pin for pin in pins if pin.name in {'cryptography','cffi','pycparser'}]
+        self.assertEqual(3,len(a1))
+        for system,machine,expected in [('darwin','x86_64',False),('darwin','arm64',True),('linux','x86_64',True),('win32','AMD64',True)]:
+            for pin in a1:
+                self.assertEqual(expected,pin.marker.evaluate({'sys_platform':system,'platform_machine':machine}))
+        requirement=next(Requirement(line) for line in (ROOT/'requirements.txt').read_text().splitlines() if line.startswith('cryptography=='))
+        self.assertFalse(requirement.marker.evaluate({'sys_platform':'darwin','platform_machine':'x86_64'}))
+        spec=(ROOT/'escritura-integrada-macos.spec').read_text()
+        self.assertIn("if platform.machine() != 'x86_64':",spec)
 
     def test_distribution_names_are_safe_and_semver_plus_maps_to_oci(self):
         self.assertEqual(validate_version("1.2.3-dev.4+build.5"), "1.2.3-dev.4_build.5")
