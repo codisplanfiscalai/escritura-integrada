@@ -1,0 +1,59 @@
+{
+  "synthetic_only": true,
+  "base_head": "70d1285d9db5da21295fd09c107684041487026a",
+  "develop": "4e031a1b34ea695d8768af4d30224197d9178ea3",
+  "upstream_fix": "d39963a66de08ca0ec5c0b03928bc2771f71eb81",
+  "timeout_ms": 15000,
+  "network_latency_ms": 750,
+  "baseline": {
+    "ok": false,
+    "browser_version": "141.0.7390.37",
+    "checks": [
+      "Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload",
+      "Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote",
+      "Escolha de layout fiscal persistida: somente saídas gera apenas SAIDAS.TXT; registros não selecionados têm motivo e retornar a ambas preserva intenção",
+      "Editar campos remove prévia/download; troca de empresa descarta prévia atrasada e não leva mapeamentos à empresa B",
+      "Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada",
+      "Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições",
+      "Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro",
+      "Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno"
+    ],
+    "console_errors": [],
+    "error": "Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for get_by_label(\"Espécie Prosoft do modelo 55\", exact=True)\n"
+  },
+  "fixed": {
+    "ok": true,
+    "browser_version": "141.0.7390.37",
+    "checks": [
+      "Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload",
+      "Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote",
+      "Escolha de layout fiscal persistida: somente saídas gera apenas SAIDAS.TXT; registros não selecionados têm motivo e retornar a ambas preserva intenção",
+      "Editar campos remove prévia/download; troca de empresa descarta prévia atrasada e não leva mapeamentos à empresa B",
+      "Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada",
+      "Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições",
+      "Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro",
+      "Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno",
+      "Navegação aguarda a troca de empresa/módulo e confirma a guia fiscal sob latência de 750 ms",
+      "Exportação em competência fechada permitida; documentos/fontes/lançamentos/partidas/títulos/contas/centros/cadastros econômicos com hashes idênticos"
+    ],
+    "console_errors": [],
+    "context_network_latency_ms": 750
+  },
+  "script_sha256": "22b3f739aaecb6113000630fbd07e577a4c4513fa5185dadb842e4649d3ec21d",
+  "regressions": {
+    "backup": {
+      "run": 42,
+      "passed": 41,
+      "skipped": 1
+    },
+    "prosoft": {
+      "run": 64,
+      "passed": 64
+    },
+    "frontend": {
+      "run": 183,
+      "passed": 183
+    }
+  },
+  "full_gate_rerun": false
+}
