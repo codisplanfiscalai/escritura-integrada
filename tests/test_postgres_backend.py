@@ -82,6 +82,35 @@ class PostgresBackendTests(unittest.TestCase):
             return tuple(conn.execute(sql.SQL("SELECT count(*) AS n FROM {}").format(
                 sql.Identifier(table))).fetchone()["n"] for table in ("probe_movements", "probe_audit"))
 
+    def test_nfce_candidate_ltrim_index_preserves_identity_contract_and_raw_values(self):
+        # SQL primitive compatibility only: create_app/Core still use SQLite.
+        from nfce_identity_fixture import (COLUMNS, TABLE_COLUMNS, fixture, index_ddl,
+            parameters, queries, raw_digest, unchanged_guard_ids)
+        source = fixture()
+        self.db.apply_migrations((Migration(1, "nfce_identity_probe", (
+            "CREATE TABLE probe_documents (" + TABLE_COLUMNS + ")",
+            index_ddl("probe_documents", "idx_probe_nfce_identity"),
+        )),))
+        with self.db.transaction() as conn:
+            for row in source["rows"]:
+                conn.execute("INSERT INTO probe_documents (" + ",".join(COLUMNS) + ") VALUES (" + ",".join("%s" for _ in COLUMNS) + ")",
+                             tuple(row[name] for name in COLUMNS))
+        with self.db.read(snapshot=True) as conn:
+            before = raw_digest(conn.execute("SELECT * FROM probe_documents ORDER BY id").fetchall())
+            old, new = queries("probe_documents", postgres=True)
+            for case in source["cases"]:
+                with self.subTest(case=case["name"]):
+                    previous = conn.execute(old, parameters(case)).fetchall()
+                    current = conn.execute(new, parameters(case, True)).fetchall()
+                    self.assertEqual(case["expected_guard_ids"], unchanged_guard_ids(previous, case))
+                    self.assertEqual(case["expected_guard_ids"], unchanged_guard_ids(current, case))
+                    self.assertLessEqual(len(current), len(previous))
+            self.assertEqual(before, raw_digest(conn.execute("SELECT * FROM probe_documents ORDER BY id").fetchall()))
+            index = conn.execute("SELECT indexdef FROM pg_indexes WHERE schemaname=%s AND indexname='idx_probe_nfce_identity'",
+                                 (self.db.settings.schema,)).fetchone()
+            self.assertIn("ltrim", index["indexdef"])
+            self.assertEqual("i", conn.execute("SELECT provolatile::text AS volatility FROM pg_proc WHERE oid='pg_catalog.ltrim(text,text)'::regprocedure").fetchone()["volatility"])
+
     def test_commit_returning_binary_xml_alphanumeric_cnpj_and_large_cents(self):
         self.create_probes()
         raw = (Path(__file__).parent / "fixtures" / "nfe_ficticia.xml").read_bytes()

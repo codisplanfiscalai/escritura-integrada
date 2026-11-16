@@ -60,6 +60,7 @@ def smoke_storage(manifest):
     with tempfile.TemporaryDirectory(prefix="escritura-storage-") as temporary:
         root = Path(temporary)
         env_text = deployment_env(manifest, "develop")
+        env_text = env_text.replace('COMPOSE_PROJECT_NAME=escritura-develop', 'COMPOSE_PROJECT_NAME=' + project)
         env_text = "\n".join("ESCRITURA_IMAGE=" + helper if row.startswith("ESCRITURA_IMAGE=") else row
                              for row in env_text.splitlines()) + "\n"
         credentials = {"REDIS_PASSWORD": secrets.token_hex(24), "POSTGRES_PASSWORD": secrets.token_hex(24),
@@ -149,6 +150,9 @@ def smoke_storage(manifest):
             run([*compose(fresh_mode=True), "exec", "-T", "app", "python", "-c", "from pathlib import Path; assert Path('/data/fresh-probe').read_text()=='ok'"])
             run([*compose(fresh_mode=True), "down"])
             record("five fresh services: explicit init, app UID 10001, existing destination refused, data survives recreation")
+            # Separate synthetic stack after the fresh-project scenario.
+            (root / '.env').write_text(env_text)
+            (root / '.env').chmod(0o600)
 
             run([*compose(True), "up", "-d", "--pull", "never", "--wait", "--wait-timeout", "300"])
             probe(old=True, seed=True)
@@ -168,6 +172,7 @@ def smoke_storage(manifest):
             cli("migrate", "--plan", plan)
             cli("verify", "--plan", plan)
             cli("migrate", "--plan", plan, expected=1)
+            cli('prepare-app', '--directory', root, '--project', project, '--helper-image', helper)
             # Verify every resolved mount, no extra anonymous/persistent volume paths.
             config = json.loads(run([*compose(), "config", "--format", "json"]))
             planned = json.loads(plan.read_text())

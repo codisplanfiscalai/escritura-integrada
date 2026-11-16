@@ -134,30 +134,30 @@ Python. A execução não estabelece desempenho ou concorrência reais. O result
 do CI remoto deve ser conferido na PR para o head exato; os testes locais não
 substituem essa verificação.
 
-## Composição da PR51 com develop dev.24
+## Composição atual da PR51 com develop dev.26
 
-A sincronização usa o head anterior da PR51
-`a91bb1aa0801eeae5b1972ffeff26aa0fdd44056` e develop
-`b82a5dc7273ddfcb19484bb2d4049fd186f178eb`, que inclui o merge da PR55 e os
-manifests 0.9.0-dev.24. O merge de composição foi preparado sem conflito, rebase
-ou force push. Os três arquivos de produto e os dois arquivos de testes desta
-PR permanecem byte a byte iguais ao head anterior; somente esta documentação
-recebe a evidência atualizada.
+A base atual é `12103b555d295489fe6a06de836c00b257562ce2`, com os manifests
+0.9.0-dev.26. Inclui a política de CI da PR55, seleção de bind Docker da PR54 e
+indexação da busca de cancelamentos NFC-e da PR57. O primeiro pai público é o
+head anterior da PR51 `b049997795fdff5c0ddfd3d593973974ea8d0e1a`; o segundo é a
+base dev.26. A sincronização foi preparada sem conflitos, rebase ou force push.
 
-Todos os workflows, scripts e testes de contrato de CI foram conferidos como
-idênticos à base dev.24. A política existente mantém binários desktop pausados
-para develop, passa a branch-base ao planejamento de PR e condiciona Windows e
-macOS a `desktop_enabled`. A PR não altera essa política, nem os gates para main.
-Os cenários Chromium existentes continuam no workflow. Nada é desativado para
-aprovar este patch. YAML, sintaxe de todos os arquivos Python e paridade dos
-manifests dev.24 foram conferidos. Esta composição passou em **258 testes em 67,313 s**, sem falhas, erros ou
-skips: os nove módulos backend anteriores mais `test_ci_delivery_cache`,
-`test_ci_artifacts_cache`, `test_ci_release`, `test_develop_alias` e
-`test_infrastructure`. A sintaxe dos 292 arquivos Python (app/scripts/tests),
-YAML e manifests de versão também passou. Binários desktop, build de imagens,
-navegador e importação real Prosoft não foram executados localmente nesta
-sincronização. O CI do novo head é identificado na descrição da PR; nenhum
-resultado de head anterior substitui sua validação.
+Os três arquivos de produto e os dois arquivos de testes próprios da PR51
+permanecem byte a byte iguais ao head anterior. Todos os workflows, scripts,
+templates Docker, core, banco e contratos/fixtures de identidade NFC-e foram
+conferidos como idênticos à base. A PR não modifica essas frentes. A política
+existente mantém desktop pausado para develop, passa a branch-base ao
+planejamento e condiciona Windows/macOS a `desktop_enabled`; os gates de main e
+cenários Chromium existentes permanecem preservados.
+
+A revalidação inclui os módulos Prosoft/core/contabilização e contratos CI
+anteriores, mais `test_deploy_storage`, `test_book_cancellation`,
+`test_nfce_identity_lookup` e `test_nfce_identity_contract`. Sintaxe dos 295
+arquivos Python, YAML e manifests de versão também passaram. A suíte desta
+composição passou em **314 testes em 80,974 s**, sem falhas, erros ou skips.
+O CI do head exato está na descrição da PR; CI de um pai anterior não
+aprova a composição atual. Não houve merge desta PR em develop, build/publicação
+manual de imagens, implantação ou acesso à instalação Prosoft.
 
 ## O que ainda não está comprovado
 
