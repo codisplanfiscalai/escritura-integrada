@@ -236,7 +236,11 @@ class BusinessTests(unittest.TestCase):
         j=self.core.create_journal(self.a['id'],data,'teste');mapping={str(a['id']):{'code':a['access_code'],'confirmed':True} for a in self.accounts}
         raw,manifest=encode_journals([j],mapping,{},'1');rows=raw.split(b'\r\n')[:-1]
         self.assertEqual([448,342,342,342],list(map(len,rows)));self.assertEqual(b'2',rows[0][11:12]);self.assertEqual(b'003',rows[0][65:68]);self.assertEqual(b'D',rows[1][11:12]);self.assertEqual(b'C',rows[3][11:12])
-        with self.assertRaises(DomainError):encode_journals([j|{'document':'X'*11}],mapping,{},'1')
+        aliased,trace=encode_journals([j|{'document':'X'*11}],mapping,{},'1')
+        self.assertEqual('X'*11,trace['trace'][0]['document_reference']['original'])
+        self.assertEqual(10,len(trace['trace'][0]['document_reference']['exported']))
+        self.assertEqual(rows[1:],aliased.split(b'\r\n')[1:-1])
+        with self.assertRaises(DomainError):encode_journals([j|{'history':'X'*241}],mapping,{},'1')
 
     def test_users_permissions_revoke_and_readonly(self):
         u=self.client.post('/api/users',json={'username':'consulta','password':'Senha-ficticia-123!','role':'viewer','company_ids':[self.a['id']]}).json()

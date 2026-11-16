@@ -1,5 +1,7 @@
 # Integração Contábil — entradas e saídas
 
+Este documento registra o incremento original da PR49 em dev.21. A atualização com PR40/PR44 e as evidências atuais de dev.23 estão em [composição com develop](PR49_COMPOSICAO_DEVELOP.md).
+
 ## Inventário e base
 
 A PR39 já integrada oferecia configuração por empresa e geração atômica de saídas individuais ou efetivamente consolidadas por dia, classificação e contas/dimensões. A PR42 acrescentou seleção, execução e rastreabilidade, mas sua tela e o serviço de lote recusavam entradas. O fluxo antigo de contabilização por documento já aceitava ambos os sentidos. Não existia prévia contábil do lote nesta tela; as prévias de importação e de modelos pertencem a outros fluxos.

@@ -157,6 +157,20 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
     def adjust(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
         check_period(request,payload.get('period'));return core.save_tax_adjustment(cid,payload,actor(request))
 
+    @app.get('/api/companies/{cid}/prosoft/settings')
+    def prosoft_settings(cid:int):return core.prosoft_settings(cid,'accounting')
+
+    @app.put('/api/companies/{cid}/prosoft/settings')
+    def save_prosoft_settings(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
+        return core.save_prosoft_settings(cid,'accounting',payload,actor(request))
+
+    @app.get('/api/companies/{cid}/prosoft-fiscal/settings')
+    def prosoft_fiscal_settings(cid:int):return core.prosoft_settings(cid,'fiscal')
+
+    @app.put('/api/companies/{cid}/prosoft-fiscal/settings')
+    def save_prosoft_fiscal_settings(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
+        return core.save_prosoft_settings(cid,'fiscal',payload,actor(request))
+
     @app.post('/api/companies/{cid}/prosoft/preview')
     def export_preview(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
         check_period(request,payload.get('period'));return core.export_prosoft(cid,payload,actor(request))
@@ -165,9 +179,40 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
     def export_confirm(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
         check_period(request,payload.get('period'));return core.export_prosoft(cid,payload,actor(request),True)
 
+    @app.get('/api/companies/{cid}/prosoft/exports/{item_id}/manifest')
+    def prosoft_manifest(cid:int,item_id:int,download:bool=False):
+        # Same export permission as the other /prosoft routes; immutable saved trace.
+        from .prosoft import LAYOUT
+        with db.read() as conn:r=select_one(conn,'export_batches',cid,item_id)
+        if r['layout']!=LAYOUT:raise DomainError('Lote contábil não encontrado.',404)
+        if download:
+            return Response(r['manifest_json'].encode('utf-8'),media_type='application/json',
+                            headers={'Content-Disposition':f'attachment; filename="PROSOFT_MANIFEST_{item_id}.json"'})
+        return json.loads(r['manifest_json'])
+
+    @app.post('/api/companies/{cid}/prosoft-fiscal/preview')
+    def prosoft_fiscal_preview(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
+        check_period(request,payload.get('period'));return core.export_prosoft_fiscal(cid,payload,actor(request))
+
+    @app.post('/api/companies/{cid}/prosoft-fiscal/confirm')
+    def prosoft_fiscal_confirm(cid:int,request:Request,payload:dict[str,Any]=Body(...)):
+        check_period(request,payload.get('period'));return core.export_prosoft_fiscal(cid,payload,actor(request),True)
+
+    @app.get('/api/companies/{cid}/prosoft-fiscal/exports/{item_id}/download')
+    def prosoft_fiscal_download(cid:int,item_id:int):
+        from .prosoft_fiscal import LAYOUT
+        with db.read() as conn:r=select_one(conn,'export_batches',cid,item_id)
+        if r['layout']!=LAYOUT:raise DomainError('Lote fiscal não encontrado.',404)
+        return Response(r['content'],media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{r["filename"]}"'})
+
     @app.get('/api/companies/{cid}/exports/{item_id}/download')
     def export_download(cid:int,item_id:int):
-        with db.read() as conn:r=select_one(conn,'export_batches',cid,item_id)
+        with db.read() as conn:
+            r=select_one(conn,'export_batches',cid,item_id)
+            from .prosoft_fiscal import LAYOUT
+            if r['layout']==LAYOUT:
+                from .permissions import effect
+                effect(conn,cid,'fiscal.prosoft','export')
         return Response(r['content'],media_type='application/octet-stream',headers={'Content-Disposition':f'attachment; filename="{r["filename"]}"'})
 
     @app.get('/api/companies/{cid}/imports/{item_id}/original')

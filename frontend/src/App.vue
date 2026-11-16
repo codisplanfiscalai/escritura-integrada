@@ -43,6 +43,7 @@ const menus=[
 {id:'auditor-internal',label:'Auditoria da escrituração',icon:'book',component:AuditorView,module:'auditor',routine:'auditor.analyses',props:{initialSection:'internal'}},
 {id:'auditor-standalone',label:'Auditoria avulsa',icon:'upload',component:AuditorView,module:'auditor',routine:'auditor.analyses',props:{initialSection:'standalone'}},
 {id:'auditor-catalogs',label:'Catálogos e versões',icon:'book',component:AuditorView,module:'auditor',routine:'auditor.catalogs',props:{initialSection:'catalogs'}},
+{id:'prosoft-fiscal',label:'Exportação Prosoft fiscal',icon:'import',component:ProsoftView,module:'fiscal',routine:'fiscal.prosoft',props:{area:'fiscal'}},
 {id:'prosoft',label:'Integração Prosoft',icon:'import',component:ProsoftView,module:'accounting',routine:'accounting.prosoft'},
 {id:'accounting-periods',label:'Competências contábeis',icon:'periods',component:PeriodsView,module:'accounting',routine:'accounting.periods',props:{module:'accounting'}},
 {id:'finance',label:'Contas a pagar',icon:'finance',component:FinanceView,module:'financial',routine:'financial.titles',props:{initialKind:'payable'}},
