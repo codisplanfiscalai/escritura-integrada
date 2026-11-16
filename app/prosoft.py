@@ -4,6 +4,7 @@ import json
 import re
 import unicodedata
 from .core import DomainError, audit, digest, now, pack, period, text
+from .prosoft_profiles import selected_types
 
 LAYOUT='CTBLCTOS-LC1-LC2-448-342'
 
@@ -132,12 +133,13 @@ def encode_account_registrations(journals, mappings, changes):
     return records, trace
 
 
-def encode_journals(journals,mappings,centers,batch,allow_ascii=False,participants=None):
+def encode_journals(journals,mappings,centers,batch,allow_ascii=False,participants=None,record_types=None):
     participants = participants or {}
     if not isinstance(participants,dict) or any(not isinstance(v,dict) for v in participants.values()):raise DomainError('Mapeamento de terceiros inválido.')
     if not isinstance(mappings,dict) or not isinstance(centers,dict) or any(not isinstance(v,dict) for v in [*mappings.values(),*centers.values()]):raise DomainError('Mapeamentos devem ser objetos de contas e centros.')
+    record_types=selected_types('accounting',record_types)
     changes=[]
-    records,account_trace=encode_account_registrations(journals,mappings,changes)
+    records,account_trace=encode_account_registrations(journals,mappings,changes) if 'CTA' in record_types else ([],[])
     trace=[]
     if not journals or len(journals)>99999:raise DomainError('Selecione de 1 a 99999 lançamentos.')
     references = document_references(journals)
@@ -197,7 +199,7 @@ def encode_journals(journals,mappings,centers,batch,allow_ascii=False,participan
                                          'scheme':'sha256-base32-10','original_sha256':digest(original.encode('utf-8'))}
         trace.append(entry)
     raw=('\r\n'.join(records)+'\r\n').encode('ascii')
-    return raw,{'layout':LAYOUT,'records':len(records),'journals':len(journals),'trace':trace,'text_changes':changes,
+    return raw,{'layout':LAYOUT,'selected_record_types':record_types,'records':len(records),'journals':len(journals),'trace':trace,'text_changes':changes,
         'account_registrations':account_trace,'record_counts':{kind:sum(r.startswith(kind) for r in records) for kind in ('CTA','LC1','LC2')},
         'debit_cents':sum(j['total_cents'] for j in journals),'credit_cents':sum(j['total_cents'] for j in journals),
         'needs_ascii_review':bool(changes) and not allow_ascii,'homologated_in_destination':False}
@@ -208,6 +210,8 @@ class ProsoftMixin:
         plan_code=numeric(payload.get('plan_code','050'),4,'Plano no destino')
         ids=payload.get('journal_ids')
         with self.db.transaction() as conn:
+            from .prosoft_settings import assert_settings_version
+            assert_settings_version(conn,cid,'accounting',payload)
             query='SELECT id FROM journals WHERE company_id=? AND period=? ORDER BY date,id'
             journals=[self._journal(conn,cid,r['id']) for r in conn.execute(query,(cid,competence))]
             if ids is not None:
@@ -235,7 +239,7 @@ class ProsoftMixin:
                     if participant_policy(conn,cid,resolve_account(conn,cid,line['account_id']))=='required':
                         if not line.get('participant_id'):raise DomainError('Partida histórica sem terceiro obrigatório. Revise antes de exportar.')
                         if canonical.get(str(line['account_id']),{}).get('third_mode')!='required':raise DomainError('Conta com terceiro obrigatório exige esse modo no destino.')
-            raw,manifest=encode_journals(journals,canonical,payload.get('centers',{}),payload.get('batch','1'),payload.get('allow_ascii') is True,participants=payload.get('participants',{}))
+            raw,manifest=encode_journals(journals,canonical,payload.get('centers',{}),payload.get('batch','1'),payload.get('allow_ascii') is True,participants=payload.get('participants',{}),record_types=payload.get('record_types'))
             manifest['plan_code']=plan_code
             manifest['limitations']=['Plano é parâmetro de conferência no destino, não campo do CTBLCTOS.','CTA opcional somente para contas movimentadas ausentes no destino. TRC e SLD não gerados.','Idempotência local não impede duplicação ao reimportar o arquivo no Prosoft.']
             fingerprint_data={'content_sha256':digest(raw),'configuration':canonical,

@@ -8,6 +8,7 @@ from zipfile import ZIP_STORED, ZipFile, ZipInfo
 from .core import DomainError, audit, company_row, digest, money, now, pack, period
 from .fiscal_analytics import fiscal_posting_lines
 from .prosoft import ascii_field, numeric, put
+from .prosoft_profiles import selected_types
 
 LAYOUT = 'PROSOFT-FISCAL-NOTAS-20261029-v1'
 WIDTHS = {'incoming': 2340, 'outgoing': 2611}
@@ -56,6 +57,7 @@ def object_map(value, label):
 
 def encode_fiscal(documents, payload):
     """Pure snapshot encoder. Incomplete fiscal decisions are warnings, never zeros."""
+    record_types = selected_types('fiscal', payload.get('record_types'))
     species = object_map(payload.get('species', {}), 'Espécies por modelo')
     accounts = object_map(payload.get('cfop_accounts', {}), 'Contas por CFOP')
     records = {k: [] for k in WIDTHS}
@@ -63,7 +65,8 @@ def encode_fiscal(documents, payload):
     totals = {k: {'documents': 0, 'cancelled_documents': 0, 'records': 0, 'total_cents': 0} for k in WIDTHS}
     for doc in documents:
         did = doc['id']
-        reason = ('not_booked' if doc['status'] != 'booked' else
+        reason = ('layout_not_selected' if ('incoming_notes' if doc['direction']=='incoming' else 'outgoing_notes') not in record_types else
+                  'not_booked' if doc['status'] != 'booked' else
                   'model_not_supported' if doc['model'] not in {'55', '65'} else '')
         if reason:
             skipped.append({'document_id': did, 'reason': reason, 'total_cents': doc['total_cents']})
@@ -168,6 +171,7 @@ def encode_fiscal(documents, payload):
                 'totals': totals, 'text_changes': changes, 'needs_ascii_review': bool(changes),
                 'homologated_in_destination': False, 'official_efd': False, 'transmitted': False,
                 'files': {name: {'sha256': digest(raw), 'size_bytes': len(raw)} for name, raw in files.items()}}
+    if 'record_types' in payload: manifest['selected_record_types'] = record_types
     return files, manifest
 
 
@@ -192,6 +196,8 @@ class ProsoftFiscalMixin:
                                 any(type(v) is not int or v <= 0 for v in ids) or len(set(ids)) != len(ids)):
             raise DomainError('Seleção de documentos inválida.')
         with self.db.transaction() as conn:
+            from .prosoft_settings import assert_settings_version
+            assert_settings_version(conn,cid,'fiscal',payload)
             company_row(conn, cid)
             from .fiscal_series import settings
             digits = settings(conn, cid)['digits']

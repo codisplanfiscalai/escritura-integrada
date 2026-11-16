@@ -165,7 +165,8 @@ class ProsoftCancellationReferenceApiTests(unittest.TestCase):
         with TestClient(self.app) as other:
             login=other.post('/api/login',json={'username':'manifest-read','password':'Senha-ficticia-123!'}).json()
             other.headers['X-CSRF-Token']=login['csrf_token'];self.activate(self.a['id'],client=other)
-            self.assertEqual(403,other.get(self.scope(f"/prosoft/exports/{saved['id']}/manifest")).status_code)
+            for suffix in ('','?download=1'):
+                self.assertEqual(403,other.get(self.scope(f"/prosoft/exports/{saved['id']}/manifest{suffix}")).status_code)
 
     def test_collision_rolls_back_without_new_batch_or_audit(self):
         for i in (1,2):
