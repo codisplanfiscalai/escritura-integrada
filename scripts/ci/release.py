@@ -14,6 +14,7 @@ import re
 import subprocess
 from urllib.parse import quote
 
+from .delivery_policy import delivery_mode, desktop_enabled, validate_delivery
 from .github_api import GitHub, GitHubError
 from .merge import MergeError, fetch_commits, merge_local, push_develop
 from .versioning import MANIFESTS, OPTIONAL_MANIFESTS, SemVer, choose_version, develop_version_after_main, manifest_versions, read_manifests, release_version, set_local, transform
@@ -184,7 +185,7 @@ def prepare(gh, *, branch, event_sha, run_number, run_id, run_attempt=1, expecte
         changed = []
     if branch == 'main':
         main_sha, main_version = current, version
-    return {'schema': 'escritura-ci-plan/1', 'repository': gh.repository, 'branch': branch, 'channel': 'production' if branch == 'main' else 'develop', 'version': version, 'tag': tag, 'source_sha': current, 'trigger_sha': event_sha, 'main_source_sha': main_sha, 'main_version': main_version, 'run_id': int(run_id), 'run_number': int(run_number), 'run_attempt': int(run_attempt), 'proceed': True, 'needs_release': not already, 'already_released': already, 'versioned_files': changed}
+    return {'schema': 'escritura-ci-plan/1', 'repository': gh.repository, 'branch': branch, 'channel': 'production' if branch == 'main' else 'develop', 'version': version, 'tag': tag, 'source_sha': current, 'trigger_sha': event_sha, 'main_source_sha': main_sha, 'main_version': main_version, 'run_id': int(run_id), 'run_number': int(run_number), 'run_attempt': int(run_attempt), 'proceed': True, 'needs_release': not already, 'already_released': already, 'versioned_files': changed, 'delivery_mode': delivery_mode(branch)}
 
 
 def validate_plan(plan, repository=None):
@@ -195,6 +196,7 @@ def validate_plan(plan, repository=None):
     branch = plan.get('branch')
     if branch not in {'main', 'develop'}:
         raise ReleaseError('Branch de publicação inválida.')
+    validate_delivery(plan)
     version = release_version(plan.get('version', ''))
     if branch == 'main' and (not version.stable or plan.get('tag') != 'v' + str(version) or plan.get('channel') != 'production'):
         raise ReleaseError('main exige tag estável vX.Y.Z e canal production.')
@@ -376,6 +378,8 @@ def stage_assets(gh, release, files, *, replace_allowed):
 
 def publish(gh, plan, directory, image_manifest):
     validate_plan(plan, gh.repository)
+    if validate_delivery(plan) == 'ghcr_only':
+        raise ReleaseError('Publicação GitHub suspensa em develop; somente recibo GHCR é permitido.')
     files, manifest_name, checksums_name = validate_assets(plan, directory)
     guard(gh, plan)
     tag, stable = plan['tag'], plan['branch'] == 'main'
@@ -469,7 +473,7 @@ def plan_pr(output):
     commit = subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()
     plan = {'schema': 'escritura-ci-plan/1', 'branch': 'pr', 'channel': 'ci', 'version': version, 'source_sha': sha(commit), 'repository': os.environ.get('GITHUB_REPOSITORY', ''), 'publish': False}
     write_json(output, plan)
-    outputs({'version': version, 'source_sha': commit, 'channel': 'ci'})
+    outputs({'version': version, 'source_sha': commit, 'channel': 'ci', 'desktop_enabled': desktop_enabled(os.environ.get('PR_BASE_BRANCH', ''))})
     return plan
 
 
@@ -493,7 +497,7 @@ def main():
                 except StaleRun as exc:
                     result = {'proceed': False, 'needs_release': False, 'reason': str(exc)}
                 write_json(args.output, result)
-                outputs({key: result.get(key, '') for key in ('proceed', 'needs_release', 'already_released', 'version', 'source_sha', 'branch', 'channel')})
+                outputs({key: result.get(key, '') for key in ('proceed', 'needs_release', 'already_released', 'version', 'source_sha', 'branch', 'channel', 'delivery_mode')})
             else:
                 plan = json.loads(Path(args.plan).read_text(encoding='utf-8'))
                 if args.command == 'guard':

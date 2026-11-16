@@ -57,6 +57,7 @@ jobs:
     outputs:
       version: ${{ steps.plan.outputs.version }}
       source_sha: ${{ steps.plan.outputs.source_sha }}
+      desktop_enabled: ${{ steps.plan.outputs.desktop_enabled }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,6 +74,7 @@ jobs:
         id: plan
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BASE_BRANCH: ${{ github.base_ref }}
         run: python -m scripts.ci.release plan-pr
       - run: python -m scripts.ci.dependencies
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -228,6 +230,7 @@ jobs:
           overwrite: true
 
   windows:
+    if: needs.linux.outputs.desktop_enabled == 'true'
     name: Windows x64 empacotado e smoke gráfico
     needs: linux
     runs-on: windows-2022
@@ -279,6 +282,7 @@ jobs:
           compression-level: 0
 
   macos:
+    if: needs.linux.outputs.desktop_enabled == 'true'
     name: macOS ${{ matrix.arch }} · instalação e interface nativas
     needs: linux
     runs-on: ${{ matrix.runner }}
