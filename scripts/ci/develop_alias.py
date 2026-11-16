@@ -10,6 +10,8 @@ import re
 
 from scripts.image_tools import GHCR_PREFIX, validate_manifest
 from . import image_aliases as aliases
+from .delivery_policy import delivery_mode, validate_delivery
+from .ghcr_publication import images_hash
 from .github_api import GitHub
 from .release import sha, write_json
 
@@ -55,7 +57,19 @@ class DevelopContext:
             raise ValueError('Leitura pública não confirmada.')
         if publication.get('status') != 'published' or any(publication.get(k) != ci.get(k) for k in ('version', 'source_sha')):
             raise ValueError('Publicação não concluída para o plano exato.')
-        if type(publication.get('release_id')) is not int or publication['release_id'] < 1:
+        self.ghcr_only = validate_delivery(ci) == 'ghcr_only'
+        if self.ghcr_only:
+            expected_receipt = {'schema': 'escritura-ghcr-publication/1', 'delivery_mode': 'ghcr_only',
+                                'desktop_binaries': False, 'github_release_created': False,
+                                'images_sha256': images_hash(images),
+                                **{k: ci[k] for k in ('repository', 'trigger_sha', 'run_id', 'run_number')}}
+            if (delivery_mode('develop') != 'ghcr_only'
+                    or any(publication.get(k) != v for k, v in expected_receipt.items())
+                    or type(publication.get('run_attempt')) is not int
+                    or not ci['run_attempt'] <= publication['run_attempt'] <= self.current_attempt
+                    or images.get('smoke', {}).get('status') != 'passed'):
+                raise ValueError('Recibo GHCR inválido, obsoleto ou de outro run.')
+        elif type(publication.get('release_id')) is not int or publication['release_id'] < 1:
             raise ValueError('ID da release inválido.')
         self.publication, self.image_id = publication, app['image_id']
         self.plan = {'schema_version': 1, 'repository': aliases.REPOSITORY, 'version': ci['version'],
@@ -63,7 +77,7 @@ class DevelopContext:
                      'digest': app['digest'], 'aliases': ['develop']}
         aliases.validate_plan(self.plan)
         self.protected = None
-        self.expected_assets = self.load_receipts(Path(receipts), images)
+        self.expected_assets = {} if self.ghcr_only else self.load_receipts(Path(receipts), images)
 
     def load_receipts(self, directory, images):
         prefix = 'EscrituraIntegrada-' + self.plan['version'] + '-'
@@ -121,9 +135,10 @@ class DevelopContext:
                 or f"Escritura-CI-Run: {self.ci['run_id']}\n" not in message
                 or f"Escritura-CI-Trigger: {self.ci['trigger_sha']}\n" not in message):
                 raise RuntimeError('Commit preparado não pertence à execução.')
-        release = gh.release('develop')
-        if release.get('prerelease') is not True or release.get('id') != self.publication['release_id']:
-            raise RuntimeError('Pré-release diverge do relatório.')
+        if not self.ghcr_only:
+            release = gh.release('develop')
+            if release.get('prerelease') is not True or release.get('id') != self.publication['release_id']:
+                raise RuntimeError('Pré-release diverge do relatório.')
         if self.protected is not None:
             self.protect(gh)
         if gh.commit_sha(gh.ref('heads/develop')) != plan['source_sha']:
@@ -145,6 +160,25 @@ class DevelopContext:
             or job.get('head_sha') != self.ci['trigger_sha']):
             raise RuntimeError('Gate pertence a outra execução/tentativa.')
 
+    def verify_ghcr_publication(self, gh, plan, branch):
+        if not self.ghcr_only or plan != self.plan or branch != 'develop':
+            raise ValueError('Prova exclusiva GHCR fora do contexto autorizado.')
+        if gh.file('VERSION', plan['source_sha']).strip() != plan['version']:
+            raise RuntimeError('VERSION diverge do commit publicado.')
+        path = gh.base + '/actions/runs/' + str(self.ci['run_id'])
+        run = gh.request('GET', path)
+        self.verify_run(run, plan, branch)
+        jobs = list(gh.pages(path + '/jobs', key='jobs', params={'filter': 'latest'}))
+        gates = aliases.GATES - {'Windows x64 e smoke do binário distribuído',
+                                'macOS arm64 · instalação e interface nativas',
+                                'macOS x64 · instalação e interface nativas'}
+        for name in gates:
+            matches = [j for j in jobs if j.get('name') == name]
+            if len(matches) != 1 or matches[0].get('status') != 'completed' or matches[0].get('conclusion') != 'success':
+                raise RuntimeError('Gate GHCR não aprovado: ' + name)
+            self.verify_gate(matches[0])
+        return {'run_url': run['html_url'], 'gates': sorted(gates), 'delivery_mode': 'ghcr_only'}
+
     def verify_assets(self, gh):
         found = {}
         prefix = 'EscrituraIntegrada-' + self.plan['version'] + '-'
@@ -163,7 +197,8 @@ class DevelopContext:
 
     def verify_proof(self, gh, plan):
         aliases.verify_release(gh, plan, 'develop', context=self)
-        self.verify_assets(gh)
+        if not self.ghcr_only:
+            self.verify_assets(gh)
         for registry, reference in ((self.registry, plan['digest']), (self.registry, plan['version']), (self.public, plan['digest'])):
             manifest = registry.manifest(reference)
             if manifest['digest'] != plan['digest'] or json.loads(manifest['raw']).get('config', {}).get('digest') != self.image_id:

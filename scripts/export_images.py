@@ -24,7 +24,7 @@ def assert_ids(manifest):
             raise RuntimeError("ID local diverge do publicado: " + item["reference"])
 
 
-def save_gzip(references, output):
+def save_gzip(references, output, *, compresslevel=6):
     """Streaming: não mantém tar ou imagens inteiras em RAM/disco temporário."""
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -35,7 +35,7 @@ def save_gzip(references, output):
         with tempfile.TemporaryFile() as errors, partial.open("wb") as target:
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors)
             try:
-                with gzip.GzipFile(fileobj=target, mode="wb", filename="", mtime=0, compresslevel=6) as packed:
+                with gzip.GzipFile(fileobj=target, mode="wb", filename="", mtime=0, compresslevel=compresslevel) as packed:
                     for chunk in iter(lambda: process.stdout.read(1024 * 1024), b""):
                         packed.write(chunk)
                 code = process.wait()
