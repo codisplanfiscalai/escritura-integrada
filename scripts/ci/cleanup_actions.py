@@ -64,7 +64,9 @@ def select_caches(caches, refs, *, now=None, protect_all_pr=False, max_delete=10
             groups[(cache['ref'], cache_family(cache.get('key', '')))].append(cache)
     for group in groups.values():
         ordered = sorted(group, key=lambda item: parse_time(item.get('last_accessed_at')) or datetime.max.replace(tzinfo=timezone.utc), reverse=True)
-        keep_recent.update(item['id'] for item in ordered[:2])
+        keep_recent.update(item['id'] for item in ordered[:2]
+                           if parse_time(item.get('last_accessed_at')) is None
+                           or now - parse_time(item['last_accessed_at']) < timedelta(days=90))
     candidates, protected = [], defaultdict(int)
     for cache in caches:
         identifier = cache.get('id')

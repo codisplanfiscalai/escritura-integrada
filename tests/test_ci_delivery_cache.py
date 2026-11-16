@@ -177,6 +177,15 @@ class CacheSafetyTests(unittest.TestCase):
         result = cleanup(remote, execute=True, now=NOW)
         self.assertEqual(result['deleted'], [1]); self.assertEqual(result['skipped_after_refresh'], [2])
 
+    def test_obsolete_runtime_families_cannot_accumulate_forever(self):
+        entries = [cache(1, 'refs/heads/main', days=91), cache(2, 'refs/heads/develop', days=91),
+                   cache(3, 'refs/tags/v0.4.0', days=91)]
+        result = select_caches(entries, set(), now=NOW)
+        self.assertEqual([x['id'] for x in result['candidates']], [1,2])
+        # Active refs override even this outer idle limit.
+        result = select_caches(entries, {'refs/heads/develop'}, now=NOW)
+        self.assertEqual([x['id'] for x in result['candidates']], [1])
+
     def test_read_failure_deletes_nothing_and_main_retains_two_useful_variants(self):
         remote = CacheGitHub([cache(1, 'refs/heads/old')])
         original = remote.pages
