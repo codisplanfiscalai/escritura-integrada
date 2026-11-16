@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import test_ecd_snapshot as existing
 from app.core import DomainError, digest
 from app.db import request_context
-from app.prosoft_balances import observed_balances, REQUIRED_READS
+from app.prosoft_balances import observed_balances, REQUIRED_READS, _project, amount
 
 
 class ProsoftBalancesTests(unittest.TestCase):
@@ -220,3 +220,69 @@ class ProsoftBalancesTests(unittest.TestCase):
         with patch('app.prosoft_balances.MAX_IMPORT_JSON_CHARS', 1):
             self.assertEqual(413, self.get().status_code)
         self.assertEqual(before, self.database_hash())
+
+    def test_projected_row_budget_counts_carry_forward_and_exact_boundary(self):
+        self.create('january', '2025-01-01', '1.00')
+        center = self.core.save_cost_center(self.a['id'], {'code': 'BORDER', 'name': 'Sintético'}, 'teste')['id']
+        self.create('february', '2025-02-01', lines=[
+            {'account_id': self.aid['3'], 'cost_center_id': center, 'debit': '1.00'},
+            {'account_id': self.aid['5'], 'credit': '1.00'}])
+        # January has two groups; February introduces a third. Ten empty months
+        # still carry three groups each: 2 + 3 + 10 * 3 = 35 projected rows.
+        before = self.database_hash()
+        for budget, status in [(34, 413), (35, 200), (36, 200)]:
+            with self.subTest(budget=budget), patch('app.prosoft_balances.MAX_PROJECTED_BALANCE_ROWS', budget):
+                response = self.get()
+                self.assertEqual(status, response.status_code, response.text)
+                if status == 413:
+                    self.assertEqual('preparation_volume_limit', response.json()['code'])
+                    self.assertNotIn('snapshot', response.json())
+                else:
+                    months = response.json()['snapshot']['monthly_balances']
+                    self.assertEqual(35, sum(len(m['balances']) for m in months))
+                    self.assertEqual('no_recorded_journals', months[-1]['evidence'])
+            self.assertEqual(before, self.database_hash())
+        with patch('app.prosoft_balances.MAX_PROJECTED_BALANCE_ROWS', 5):
+            s = self.snapshot(end='2025-02-28')
+            self.assertEqual([2, 3], [len(m['balances']) for m in s['monthly_balances']])
+        with patch('app.prosoft_balances.MAX_PROJECTED_BALANCE_ROWS', 4):
+            self.assertEqual(413, self.get(end='2025-02-28').status_code)
+        self.assertEqual(before, self.database_hash())
+
+    def test_default_projected_budget_stops_before_building_excess_month(self):
+        # 2,000 source lines/groups are below the 10,000 source-row cap, yet
+        # twelve months would amplify them to 24,000 projected balance rows.
+        source = {'scope': {'start': '2025-01-01', 'end': '2025-12-31'},
+                  'opening_history': {'journals': [{'lines': [
+                      {'id': i, 'account_id': 1, 'participant_id': i, 'cost_center_id': None,
+                       'debit': {'cents': '1'}, 'credit': {'cents': '0'}}
+                      for i in range(1, 2001)]}]}, 'journals': []}
+        import copy
+        original = copy.deepcopy(source)
+        before = self.database_hash()
+        calls = 0
+        def count_amount(value):
+            nonlocal calls
+            calls += 1
+            return amount(value)
+        with patch('app.prosoft_balances.amount', side_effect=count_amount):
+            with self.assertRaises(DomainError) as error:
+                _project(source)
+        self.assertEqual(413, error.exception.status)
+        self.assertEqual('preparation_volume_limit', error.exception.code)
+        # History plus four amounts per allowed monthly row. No amount from
+        # month 11 is constructed: the cumulative budget is checked first.
+        self.assertEqual(2000 + 4 * 20000, calls)
+        self.assertEqual(original, source)
+        self.assertEqual(before, self.database_hash())
+
+    def test_zero_projected_budget_allows_empty_but_rejects_first_group(self):
+        with patch('app.prosoft_balances.MAX_PROJECTED_BALANCE_ROWS', 0):
+            s = self.snapshot()
+            self.assertTrue(all(m['balances'] == [] for m in s['monthly_balances']))
+            self.create('first-group', '2025-01-01', '1.00')
+            before = self.database_hash()
+            response = self.get()
+            self.assertEqual(413, response.status_code)
+            self.assertNotIn('snapshot', response.json())
+            self.assertEqual(before, self.database_hash())

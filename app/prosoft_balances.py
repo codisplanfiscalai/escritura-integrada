@@ -17,6 +17,7 @@ from .sped_generator.ecd_snapshot import _snapshot, amount, bounds, months
 MAX_SOURCE_ROWS = 10000
 MAX_IMPORT_JSON_CHARS = 2_000_000
 MAX_RESPONSE_BYTES = 16_000_000
+MAX_PROJECTED_BALANCE_ROWS = 20_000
 REQUIRED_READS = ('accounting.prosoft', 'accounting.journals',
                   'accounting.accounts', 'accounting.cost_centers')
 
@@ -67,8 +68,16 @@ def _project(source):
     history = [identity(key) | {'observed_net': amount(rolling[key]), 'line_ids': prior_ids[key]}
                for key in sorted(rolling, key=order)]
     monthly = []
+    projected_rows = 0
     for first, last in months(source['scope']['start'], source['scope']['end']):
         entries = [j for j in selected if j['date'][:7] == first[:7]]
+        keys = rolling.keys() | {key_of(line) for journal in entries for line in journal['lines']}
+        # Charge the entire month before allocating its movements or balance rows.
+        # Carried groups count again, including months without recorded journals.
+        if projected_rows + len(keys) > MAX_PROJECTED_BALANCE_ROWS:
+            raise DomainError('Quantidade de saldos mensais projetados excede o limite preparatório.',
+                              413, 'preparation_volume_limit')
+        projected_rows += len(keys)
         movements = defaultdict(lambda: [0, 0, []])
         for journal in entries:
             for line in journal['lines']:
@@ -77,7 +86,7 @@ def _project(source):
                 totals[1] += int(line['credit']['cents'])
                 totals[2].append(line['id'])
         rows = []
-        for key in sorted(rolling.keys() | movements.keys(), key=order):
+        for key in sorted(keys, key=order):
             debits, credits, ids = movements.get(key, (0, 0, []))
             before = rolling[key]
             rolling[key] += debits - credits

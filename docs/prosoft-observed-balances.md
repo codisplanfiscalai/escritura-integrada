@@ -38,9 +38,23 @@ A leitura falha com HTTP 413, sem resultado parcial, quando qualquer coleção
 lida pelo snapshot excede 10.000 registros, os resultados JSON de importações
 contábeis somam mais de 2.000.000 caracteres ou a resposta supera 16 MB UTF-8.
 Os limites de coleções incluem evidências históricas e metadados: diminuir o
-intervalo pode não resolver o excesso. O limite de resposta é verificado após a
-projeção; não há paginação, processamento em streaming ou certificação de volume
-máximo em produção. Não há alterações de schema ou operações de escrita.
+intervalo pode não resolver o excesso.
+
+Há também teto cumulativo de 20.000 linhas de saldos mensais projetados. Antes
+de construir os movimentos e saldos de cada mês, a consulta conta a união dos
+grupos acumulados com os grupos das partidas daquele mês. Cada grupo carregado
+para outro mês consome outra linha, inclusive em meses sem lançamentos. O mês
+que excederia o teto é recusado com HTTP 413 antes da construção desse lote;
+nenhum mês previamente calculado é devolvido como resposta parcial. Exatamente
+20.000 linhas são permitidas, sujeitas aos demais limites.
+
+Esse teto limita a amplificação mensal da projeção Prosoft, mas não estabelece
+um limite rígido de memória ou de bytes do snapshot contábil de origem, que já
+foi construído pelo leitor compartilhado. Campos individuais não têm aqui teto
+geral de bytes, e o snapshot de origem também possui seus próprios saldos
+mensais. O limite de resposta é verificado após a projeção e serialização; não
+há paginação, processamento em streaming ou certificação de volume máximo em
+produção. Não há alterações de schema ou operações de escrita.
 
 Validação: `PYTHONPATH=tests:. python -m unittest test_prosoft_balances -q`.
 Fixtures exclusivamente sintéticas. A comparação integral do dump do banco
