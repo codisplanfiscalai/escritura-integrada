@@ -1,5 +1,6 @@
 """Versioned AES-256-GCM envelope; external keys, bounded streaming, no plaintext release before authentication."""
 import base64
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import json
 import os
@@ -154,11 +155,10 @@ def encrypt(source, destination, key_id, secret, cancelled=lambda: False):
         raise
 
 
-def restore(source, destination, expected_hash, *, secret=None, key_loader=None, work_dir=None):
-    """Authenticate private staging in full BEFORE creating the destination directory."""
-    source, destination = Path(source), Path(destination)
-    if destination.exists() or destination.is_symlink():
-        raise FileExistsError('Destino já existe.')
+@contextmanager
+def authenticated_payload(source, expected_hash, *, work_dir, secret=None, key_loader=None, cancelled=lambda: False):
+    """Yield private plaintext only after full GCM authentication; caller validates its format."""
+    source = Path(source)
     with source.open('rb') as src:
         import hashlib
         size = os.fstat(src.fileno()).st_size
@@ -177,12 +177,14 @@ def restore(source, destination, expected_hash, *, secret=None, key_loader=None,
         cipher = AES.new(secret.derive(salt), AES.MODE_GCM, nonce=nonce, mac_len=TAG_BYTES)
         cipher.update(aad)
         # Unauthenticated bytes remain inaccessible under a private temporary directory.
-        with platform.temporary_directory(work_dir or destination.parent, '.decrypt-') as work:
+        with platform.temporary_directory(work_dir, '.decrypt-') as work:
             plain = Path(work) / 'payload.zip'
             fd = os.open(plain, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_BINARY', 0), 0o600)
             with os.fdopen(fd, 'wb') as dst:
                 remaining = header['bytes']
                 while remaining:
+                    if cancelled():
+                        raise DomainError('Recuperação cancelada antes da autenticação.', 409, 'cancelled')
                     block = src.read(min(BLOCK, remaining))
                     if not block:
                         raise ValueError('Arquivo truncado.')
@@ -190,7 +192,17 @@ def restore(source, destination, expected_hash, *, secret=None, key_loader=None,
                     dst.write(cipher.decrypt(block))
                 cipher.verify(src.read(TAG_BYTES))
                 dst.flush(); os.fsync(dst.fileno())
-            return backup_archive.restore(plain, destination)
+            yield plain
+
+
+def restore(source, destination, expected_hash, *, secret=None, key_loader=None, work_dir=None):
+    """Authenticate private staging in full BEFORE creating the destination directory."""
+    destination = Path(destination)
+    if destination.exists() or destination.is_symlink():
+        raise FileExistsError('Destino já existe.')
+    with authenticated_payload(source, expected_hash, work_dir=work_dir or destination.parent,
+                               secret=secret, key_loader=key_loader) as plain:
+        return backup_archive.restore(plain, destination)
 
 
 def build(database, destination, key_id, secret, cancelled=lambda: False, work_dir=None):
