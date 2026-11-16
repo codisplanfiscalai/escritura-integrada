@@ -1,0 +1,258 @@
+{
+  "synthetic_only": true,
+  "base": "2bc2051486afeba3612b31fb112c32f213328cc9",
+  "version": "0.9.0-dev.30",
+  "previous_pr49_already_merged": true,
+  "validation_worktree_head": "2bc2051486afeba3612b31fb112c32f213328cc9",
+  "provenance_note": "Tests ran on the worktree before committing. Hashes below identify the actual tested sources; base HEAD alone is not the changed source snapshot.",
+  "backend": {
+    "modules": [
+      "test_core",
+      "test_business",
+      "test_company_accounting_settings",
+      "test_account_plans",
+      "test_global_account_plans",
+      "test_lazy_account_refs",
+      "test_journal_participants",
+      "test_accounting_report_models",
+      "test_report_models_api",
+      "test_fiscal_import",
+      "test_import_revision",
+      "test_import_reprocessing",
+      "test_reprocessing_linked_effects",
+      "test_generated_payables",
+      "test_import_package_cleanup",
+      "test_book_cancellation",
+      "test_bulk_operations",
+      "test_bulk_security",
+      "test_operational_settings",
+      "test_workspace_context",
+      "test_fiscal_sales_accounting",
+      "test_fiscal_sales_composition",
+      "test_fiscal_incoming_accounting",
+      "test_journal_query_loading",
+      "test_sped_generator",
+      "test_sped_native_export",
+      "test_sped_bookkeeping",
+      "test_sped_obligations",
+      "test_fiscal_analytics",
+      "test_fiscal_analytical_reports",
+      "test_fiscal_series",
+      "test_import_payables",
+      "test_purchase_reclassification",
+      "test_document_totals",
+      "test_movement_exports",
+      "test_deploy_storage",
+      "test_infrastructure",
+      "test_ci_release",
+      "test_ci_artifacts_cache",
+      "test_image_aliases",
+      "test_develop_alias",
+      "test_latest_alias",
+      "test_browser_script_bootstrap",
+      "test_fiscal_accounting_prosoft_composition",
+      "test_prosoft_increment",
+      "test_prosoft_cancel_references",
+      "test_prosoft_reception_composition",
+      "test_prosoft_settings",
+      "test_browser_cfop_checks",
+      "test_direct_fiscal_accounting"
+    ],
+    "tests_run": 693,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 383.929,
+    "ok": true
+  },
+  "frontend": {
+    "tests": 189,
+    "passed": 189,
+    "failed": 0,
+    "skipped": 0,
+    "milliseconds": 3209.38948
+  },
+  "build": {
+    "ok": true,
+    "version": "0.9.0-dev.30",
+    "seconds": 5.23,
+    "main_bundle_kb": 851.83,
+    "gzip_kb": 252.17,
+    "warning": "Existing >500 kB bundle warning; application dependencies unchanged."
+  },
+  "browser_engine": "Playwright 1.62.0 / Chromium headless 151.0.7922.34 from isolated official Chrome for Testing installation",
+  "browsers": {
+    "browser-fiscal-sales-accounting": {
+      "ok": true,
+      "synthetic_only": true,
+      "checks": [
+        "Pagination, empty/combined/rapid filters and KeepAlive navigation are read-only",
+        "Daily direct accounts, optional model regression preserved: 0.01 + 10.02 => one balanced 10.03 journal; lost response after commit and exact-key retry do not duplicate; both sources traced",
+        "Individual: three notes/dates/CFOP/accounts => three journals; company B has two independent journals; saved company mode and previous movements preserved",
+        "Fiscal fields, original single journal and receivable preserved; independent daily report read-only and balanced at 43.22",
+        "Closed accounting month refuses UI generation even with permissive legacy defaults; reopening permits it; FK and all journals balanced",
+        "Both menus share direct-account integration without required models: incoming preview/close read-only; daily sales setting preserved; two purchases remain individual; lost-response exact retry and alternate menu do not duplicate; origins/FK/balance preserved",
+        "Fresh company C has no accounting models: two direct sales consolidate at 10.03; two direct purchases stay individual; all origins and balances preserved without creating models",
+        "Configuration and controls remain within the 1100px viewport; wide table scroll is contained"
+      ],
+      "console_errors": [],
+      "browser_version": "151.0.7922.34",
+      "read_only_hashes": {
+        "before": {
+          "documents": "a1aad52b4acd593af83fba59eedfb6898a92e9cf158f20ded0fc7befa3957e13",
+          "journals": "172eddd12f07ec0639dc31c3354d7d11a149afd0a8a3100f8c800a7c04a86bd7",
+          "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+          "titles": "91319698b484606ab61fe34bdd259108c58bb3a7135fbd330332a78f14d88409",
+          "audit": "3b2a1ab44e96164c831ff0f40a31725468f0a04e24fa3c52c9504d8fda0538f7"
+        },
+        "after": {
+          "documents": "a1aad52b4acd593af83fba59eedfb6898a92e9cf158f20ded0fc7befa3957e13",
+          "journals": "172eddd12f07ec0639dc31c3354d7d11a149afd0a8a3100f8c800a7c04a86bd7",
+          "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+          "titles": "91319698b484606ab61fe34bdd259108c58bb3a7135fbd330332a78f14d88409",
+          "audit": "3b2a1ab44e96164c831ff0f40a31725468f0a04e24fa3c52c9504d8fda0538f7"
+        }
+      },
+      "replay_hashes": {
+        "before": {
+          "documents": "8d8caf2f4effb9b849a3e2897951c8789fc6595ea2c678ef570367e7fa3564f4",
+          "journals": "bcd9d2b91fe8fb8d3bf4444974cf6b78d9e60e462ddbe730c33e3024249f12e4",
+          "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+          "titles": "91319698b484606ab61fe34bdd259108c58bb3a7135fbd330332a78f14d88409",
+          "audit": "9f7cca6efd11d09f6b67cde3cd699b4759c16d1cf5d6c0172ccb2fbe34622b3a"
+        },
+        "after": {
+          "documents": "8d8caf2f4effb9b849a3e2897951c8789fc6595ea2c678ef570367e7fa3564f4",
+          "journals": "bcd9d2b91fe8fb8d3bf4444974cf6b78d9e60e462ddbe730c33e3024249f12e4",
+          "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+          "titles": "91319698b484606ab61fe34bdd259108c58bb3a7135fbd330332a78f14d88409",
+          "audit": "9f7cca6efd11d09f6b67cde3cd699b4759c16d1cf5d6c0172ccb2fbe34622b3a"
+        }
+      },
+      "report_hashes": {
+        "before": {
+          "documents": "613f014c9da981945190682c9211c360a7eaebf4d30d7563edf87e4b773e8d4e",
+          "journals": "9a6d8c967be9f626055dd8ff1ade8b66f2db2496ddf99c9cba89e463dacfa0ca",
+          "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+          "titles": "91319698b484606ab61fe34bdd259108c58bb3a7135fbd330332a78f14d88409",
+          "audit": "2c030444ce4a1817bbfadc4a7aa6939aa56e95ca04027b4d168c3146ccdb2b0d"
+        },
+        "after": {
+          "documents": "613f014c9da981945190682c9211c360a7eaebf4d30d7563edf87e4b773e8d4e",
+          "journals": "9a6d8c967be9f626055dd8ff1ade8b66f2db2496ddf99c9cba89e463dacfa0ca",
+          "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+          "titles": "91319698b484606ab61fe34bdd259108c58bb3a7135fbd330332a78f14d88409",
+          "audit": "2c030444ce4a1817bbfadc4a7aa6939aa56e95ca04027b4d168c3146ccdb2b0d"
+        }
+      },
+      "incoming_preview_hashes": {
+        "before": {
+          "documents": "13edb8745a4f0fec37c539671e71272cb319c52b70fc6687de9e3c53bfa63bb9",
+          "journals": "01fa6a264728c9f36c9f85d62d65bc33c542403c6367e1242242eeb8f0bd9000",
+          "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+          "titles": "91319698b484606ab61fe34bdd259108c58bb3a7135fbd330332a78f14d88409",
+          "audit": "e2a0ff34322543deb79ba81661c50702c572e5b91c3043b352e8356774b790cc"
+        },
+        "after": {
+          "documents": "13edb8745a4f0fec37c539671e71272cb319c52b70fc6687de9e3c53bfa63bb9",
+          "journals": "01fa6a264728c9f36c9f85d62d65bc33c542403c6367e1242242eeb8f0bd9000",
+          "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+          "titles": "91319698b484606ab61fe34bdd259108c58bb3a7135fbd330332a78f14d88409",
+          "audit": "e2a0ff34322543deb79ba81661c50702c572e5b91c3043b352e8356774b790cc"
+        }
+      },
+      "incoming_replay_hashes": {
+        "before": {
+          "documents": "a35cd774110c7d392c625114d4b44e27ee6993d10ae8a15b65add1ba7187bb8d",
+          "journals": "8d83259726353078315bd5c22469da1d5eced61a5bb58e8d2333d9c1a68b0aa2",
+          "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+          "titles": "91319698b484606ab61fe34bdd259108c58bb3a7135fbd330332a78f14d88409",
+          "audit": "828bc5cdee62663726dd9d37a342784903aa49d47fa7d40b3200be38e447c253"
+        },
+        "after": {
+          "documents": "a35cd774110c7d392c625114d4b44e27ee6993d10ae8a15b65add1ba7187bb8d",
+          "journals": "8d83259726353078315bd5c22469da1d5eced61a5bb58e8d2333d9c1a68b0aa2",
+          "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+          "titles": "91319698b484606ab61fe34bdd259108c58bb3a7135fbd330332a78f14d88409",
+          "audit": "828bc5cdee62663726dd9d37a342784903aa49d47fa7d40b3200be38e447c253"
+        }
+      },
+      "no_models_company_journals": 3,
+      "final_journals": {
+        "A": 8,
+        "B": 2,
+        "C": 3
+      }
+    },
+    "browser-prosoft-export": {
+      "ok": true,
+      "synthetic_only": true,
+      "checks": [
+        "Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload",
+        "Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote",
+        "Escolha de layout fiscal persistida: somente saídas gera apenas SAIDAS.TXT; registros não selecionados têm motivo e retornar a ambas preserva intenção",
+        "Editar campos remove prévia/download; troca de empresa descarta prévia atrasada e não leva mapeamentos à empresa B",
+        "Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada",
+        "Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições",
+        "Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro",
+        "Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno",
+        "Navegação aguarda a troca de empresa/módulo e confirma a guia fiscal sob latência de 750 ms",
+        "Exportação em competência fechada permitida; documentos/fontes/lançamentos/partidas/títulos/contas/centros/cadastros econômicos com hashes idênticos"
+      ],
+      "console_errors": [],
+      "screenshots": [
+        "fiscal-preview-desktop.png",
+        "accounting-preview-desktop.png",
+        "accounting-mobile.png"
+      ],
+      "browser_version": "151.0.7922.34",
+      "context_network_latency_ms": 750
+    }
+  },
+  "validated_source_files": {
+    "app/fiscal_sales_accounting.py": {
+      "sha256": "3b8818a310d720069f5901c5e6fcbbbe9a8244d7f218e340db7d97757b27def0",
+      "git_blob": "f83b2007a607312a5bfab5150b63061c71389d0e"
+    },
+    "frontend/src/views/FiscalSalesAccountingView.vue": {
+      "sha256": "531ba1e2e9afa0d4469f0cda2d0e6eeca7c8f703ef157306c4f6bbaef1db6320",
+      "git_blob": "2b3e175e204e813a8b12c321101722eb0147fb56"
+    },
+    "frontend/tests/fiscal-sales-accounting.test.js": {
+      "sha256": "dc2790fad5330c84bd20a4669a3883ca5c0c49330d465c1b6dd7a99a1e252bb7",
+      "git_blob": "3ac877ff70a331997f3e041a823c1c051062724d"
+    },
+    "scripts/browser_fiscal_sales_accounting.py": {
+      "sha256": "9b34f5c1a25bfcb1804f286f1c06f4533ecff4b58937f5af38b85485814fb8a6",
+      "git_blob": "6acdd4b8f03de05ea42de2c68d08f7196cf8e118"
+    },
+    "tests/test_direct_fiscal_accounting.py": {
+      "sha256": "74f5f727f523893fbb367d6999ea65ea77a29c3e29a8ff009f0c4a00ab654349",
+      "git_blob": "14d836270588f9877636f66e496c5ddd1e0c0de3"
+    }
+  },
+  "preservation": {
+    "upstream_prosoft_scenario_unchanged": true,
+    "no_diff_in_parallel_or_unrelated_paths": [
+      "frontend/src/views/DocumentsView.vue",
+      "frontend/src/views/ImportView.vue",
+      ".github/workflows",
+      "app/sped_generator",
+      "app/business.py",
+      "app/api.py"
+    ],
+    "no_schema_migration": true
+  },
+  "checks": {
+    "python_ast": true,
+    "vue_compile": true,
+    "git_diff_check": true,
+    "version_parity": true
+  },
+  "limits": [
+    "Direct batch accounting uses two lines for the note total and one optional cost center per direct entry; item allocation is not added.",
+    "Import-time automatic accounting and unifying the old individual buttons with the new batch remain pending.",
+    "Not full repository suite, operational PostgreSQL, installers/images, Prosoft/PVA homologation, scale or real installations.",
+    "No real data, backups, private logs, final merge, stable release, production or deployment."
+  ]
+}

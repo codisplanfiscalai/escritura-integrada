@@ -228,7 +228,7 @@ def scenario(page, url, fixture, report, baseline=False):
     expect(main.get_by_text('Página 2 de 452', exact=True)).to_be_visible()
     expect(main.locator('table tbody tr')).to_have_count(50)
 
-    current = measure('participants', 'Participantes, produtos e serviços', lambda: expect(main.locator('tbody tr')).to_have_count(fixture['participant_count']), '/masters/participant')
+    current = measure('participants', 'Participantes, produtos e serviços' if baseline else 'Vínculos locais de terceiros', lambda: expect(main.locator('tbody tr')).to_have_count(fixture['participant_count']), '/masters/participant')
     if not baseline:
         assert not any(r['path'].endswith(('/accounts', '/cost-centers', '/global-account-plans')) for r in current), current
     current = measure('payables_return', 'Contas a pagar', lambda: expect(main.locator('tbody tr')).to_have_count(50 if not baseline else 183))

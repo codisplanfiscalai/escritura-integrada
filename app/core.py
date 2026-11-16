@@ -666,8 +666,11 @@ class Core:
         elif 'document_state' in payload:
             raise DomainError('Estado documental não pode ser informado sem evidência de cancelamento pelo livro.')
         # A book assertion never cancels or replaces a matching electronic document.
-        candidates = conn.execute("SELECT * FROM documents WHERE company_id=? AND direction=? AND model=? AND (? OR extra_json LIKE '%\"book_cancellation\"%')",
-                                  (cid, direction, values['model'], bool(cancellation))).fetchall()
+        # Narrow before reading potentially large XML snapshots in extra_json.
+        # ltrim is only a candidate filter: the canonical Python comparison below
+        # still distinguishes nonnumeric numbers and validates series/issuer.
+        candidates = conn.execute("SELECT * FROM documents WHERE company_id=? AND direction=? AND model=? AND ltrim(number,'0')=ltrim(?,'0') AND (? OR extra_json LIKE '%\"book_cancellation\"%')",
+                                  (cid, direction, values['model'], values['number'], bool(cancellation))).fetchall()
         canonical = lambda value: str(int(value)) if value and value.isascii() and value.isdigit() else value
         for candidate in candidates:
             if any(canonical(candidate[k]) != canonical(values[k]) for k in ('series', 'number')):

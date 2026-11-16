@@ -1,0 +1,160 @@
+{
+  "ok": true,
+  "measurements": {
+    "fiscal_open": {
+      "samples_ms": [
+        2709.886,
+        2584.57,
+        2610.835,
+        2621.293,
+        2625.349
+      ],
+      "resources": [
+        {
+          "url": "companies/1/accounts",
+          "duration_ms": 1936.7999999821186,
+          "decoded_bytes": 5898676
+        },
+        {
+          "url": "companies/1/documents?year=2026",
+          "duration_ms": 2024.199999988079,
+          "decoded_bytes": 5991092
+        },
+        {
+          "url": "companies/1/masters/participant",
+          "duration_ms": 38.400000005960464,
+          "decoded_bytes": 2
+        },
+        {
+          "url": "companies/1/masters/establishment",
+          "duration_ms": 40.69999998807907,
+          "decoded_bytes": 2
+        },
+        {
+          "url": "companies/1/masters/product",
+          "duration_ms": 33.400000005960464,
+          "decoded_bytes": 2
+        },
+        {
+          "url": "companies/1/masters/service",
+          "duration_ms": 31.5,
+          "decoded_bytes": 2
+        },
+        {
+          "url": "companies/1/masters/accounting_model",
+          "duration_ms": 45.20000001788139,
+          "decoded_bytes": 2
+        }
+      ],
+      "dom_rows": 50,
+      "scope": "navigation through explicit account/movement responses and populated controls; includes networkidle heuristic"
+    },
+    "accounting_open": {
+      "samples_ms": [
+        1024.002,
+        1180.335,
+        1294.291,
+        1146.55,
+        1186.135
+      ],
+      "resources": [
+        {
+          "url": "companies/1/journals?year=2026",
+          "duration_ms": 197.2999999821186,
+          "decoded_bytes": 466495
+        },
+        {
+          "url": "companies/1/accounts",
+          "duration_ms": 758.3000000119209,
+          "decoded_bytes": 5898676
+        },
+        {
+          "url": "companies/1/cost-centers",
+          "duration_ms": 35.10000002384186,
+          "decoded_bytes": 125
+        },
+        {
+          "url": "companies/1/masters/history",
+          "duration_ms": 39.5,
+          "decoded_bytes": 2
+        },
+        {
+          "url": "companies/1/accounting-entry-defaults",
+          "duration_ms": 32.79999998211861,
+          "decoded_bytes": 77
+        }
+      ],
+      "dom_rows": 50,
+      "scope": "navigation through explicit account/movement responses and populated controls; includes networkidle heuristic"
+    },
+    "reports_open": {
+      "samples_ms": [
+        991.689,
+        986.805,
+        853.968,
+        834.683,
+        986.753
+      ],
+      "resources": [
+        {
+          "url": "companies/1/report-models?module=accounting",
+          "duration_ms": 29.69999998807907,
+          "decoded_bytes": 7735
+        },
+        {
+          "url": "companies/1/accounts",
+          "duration_ms": 627.5,
+          "decoded_bytes": 5898676
+        },
+        {
+          "url": "companies/1/cost-centers",
+          "duration_ms": 21.19999998807907,
+          "decoded_bytes": 125
+        }
+      ],
+      "dom_rows": 7,
+      "scope": "navigation through explicit account/movement responses and populated controls; includes networkidle heuristic"
+    },
+    "ledger_render": {
+      "samples_ms": [
+        13136.616,
+        11004.401,
+        10884.626,
+        14619.221,
+        11803.857
+      ],
+      "rows": 500,
+      "visible_rows": 50
+    }
+  },
+  "console_errors": [],
+  "checks": [
+    "Ledger 500 rows, 50 per page, next page, full CSV and search preserving two counterpart lines",
+    "Synthetic large account plan; five measured cold navigations after one warmup per view",
+    "Movement and audit hashes unchanged"
+  ],
+  "source_sha": "2bc2051486afeba3612b31fb112c32f213328cc9",
+  "fixture": {
+    "company_id": 1,
+    "other_company_id": 2,
+    "global_plan_id": 1,
+    "global_count": 22591,
+    "account_count": 22597,
+    "title_count": 183,
+    "title_partner": "Parceiro sint\u00e9tico de desempenho",
+    "title_amount_cents": 10000,
+    "titles_total_cents": 1830000,
+    "participant_count": 0,
+    "last_access_code": "P22591",
+    "last_name": "\u00daltima a\u00e7\u00e3o sint\u00e9tica 100%_literal\\fim Stra\u00dfe",
+    "accent_search": "ultima acao",
+    "literal_search": "%_literal\\fim",
+    "period": "2026-11",
+    "journals_added": 750,
+    "documents_added": 3000
+  },
+  "browser_version": "141.0.7390.37",
+  "network": {
+    "scope": "local loopback; CDP throttling disabled; not production"
+  }
+}
