@@ -4,7 +4,7 @@ import re
 from .core import DomainError, audit, company_row, now, pack
 from .account_refs import resolve_account
 from .prosoft import numeric
-from .prosoft_profiles import selected_types
+from .prosoft_profiles import selected_types, valid_fiscal_species
 
 KIND = 'prosoft_export_settings'
 
@@ -37,8 +37,9 @@ def mapping_values(value, kind):
     code = result.get('code', '')
     confirmed = result.get('confirmed', False)
     if type(confirmed) is not bool or not isinstance(code, str): raise DomainError('Código e conferência do mapeamento inválidos.')
-    pattern = '[A-Z0-9]{0,14}' if kind == 'participant' else '[A-Z0-9]{0,5}' if kind == 'species' else '[0-9]{0,5}'
-    if not re.fullmatch(pattern, code) or (confirmed and not code): raise DomainError('Código do mapeamento fora do formato permitido.')
+    pattern = '[A-Z0-9]{0,14}' if kind == 'participant' else '[0-9]{0,5}'
+    valid_code = (code == '' or valid_fiscal_species(code)) if kind == 'species' else re.fullmatch(pattern, code)
+    if not valid_code or (confirmed and not code): raise DomainError('Código do mapeamento fora do formato permitido.')
     if kind in {'account', 'center', 'cfop'} and code and int(code) == 0: raise DomainError('Acesso de destino deve ser maior que zero.')
     result.update(code=code, confirmed=confirmed)
     if kind == 'account':

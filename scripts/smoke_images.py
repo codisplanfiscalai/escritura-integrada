@@ -27,7 +27,9 @@ def validate_compose_templates(manifest):
     with tempfile.TemporaryDirectory(prefix="escritura-compose-check-") as temporary:
         for environment in ("production", "develop"):
             env_file = Path(temporary) / (environment + ".env")
-            env_file.write_text(deployment_env(manifest, environment), encoding="utf-8")
+            # Config-only fixture: production selection is done by prepare-app/init on its host.
+            env_file.write_text(deployment_env(manifest, environment).replace('ESCRITURA_APP_DATA_BIND=\n',
+                'ESCRITURA_APP_DATA_BIND=./data/escritura-' + environment + '/app\n'), encoding="utf-8")
             base = ["docker", "compose", "--env-file", env_file,
                     "--file", ROOT / "deploy" / environment / "compose.yaml"]
             release_file = Path(temporary) / (environment + ".release.yaml")

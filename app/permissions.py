@@ -10,6 +10,7 @@ ACTIONS = {'read': 'Consultar', 'create': 'Incluir', 'edit': 'Editar', 'delete':
 ROUTINES = {
     'fiscal.documents': ('Escrituração e documentos', 'read create edit delete book reverse export print'),
     'fiscal.imports': ('Importações fiscais', 'read import export delete'),
+    'fiscal.shared_parties': ('Catálogo global de terceiros', 'read create edit delete'),
     'fiscal.masters': ('Cadastros fiscais', 'read create edit delete'),
     'fiscal.parameters': ('Parametrizações fiscais', 'read create edit delete'),
     'fiscal.assessments': ('Apurações e ajustes', 'read create edit reverse book export print'),
@@ -30,6 +31,7 @@ ROUTINES = {
     'financial.settlements': ('Baixas financeiras', 'read settle reverse'),
     'financial.reconciliation': ('Conciliação bancária e de participantes', 'read import edit reverse export print'),
     'financial.reports': ('Relatórios financeiros', 'read export print'),
+    'accounting.accountants': ('Cadastro de contadores', 'read create edit delete'),
     'system.companies': ('Cadastro da empresa', 'read edit'),
     'system.audit': ('Auditoria da empresa', 'read export'),
 }
@@ -176,6 +178,12 @@ def route_policy(path, method, query, payload, session):
             return 'accounting.imports', 'export', False
         if write:return 'accounting.imports', 'import', False
         return 'accounting.accounts', 'read', False
+    if root == 'registrations':
+        kind = tail.strip('/').split('/')[1] if len(tail.strip('/').split('/')) > 1 else ''
+        routine = {'third-party':'fiscal.shared_parties','accountant':'accounting.accountants'}.get(kind,'invalid')
+        if tail.endswith(('/use','/links')):
+            return ('fiscal.masters','create',False) if kind=='third-party' else (routine,'edit',False)
+        return routine, action, write
     if root == 'third-parties':
         return 'fiscal.masters', ('read' if not write or tail.endswith('/reuse-preview') else 'edit'), False
     if root == 'master-movements':

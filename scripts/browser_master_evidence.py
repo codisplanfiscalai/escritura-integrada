@@ -84,7 +84,7 @@ def main():
                         modal.get_by_role('button',name='Cancelar',exact=True).click()
                         expect(page.get_by_role('dialog')).to_have_count(0)
                         report['checks'].append('Complete XML and item detail retain lexical precision; closing read-only consultation causes no save/discard prompt')
-                        nav('Participantes, produtos e serviços')
+                        nav('Vínculos locais de terceiros')
                         row=page.get_by_role('row').filter(has_text='Fornecedor Ficticio')
                         if not row.count():row=page.get_by_role('row').filter(has_text=doc['partner_name'])
                         row.get_by_role('button',name='Editar',exact=True).click()
@@ -114,6 +114,7 @@ def main():
                         assert response.ok,response.text()
                         persisted=next(p for p in response.json() if p['id']==doc['participant_id'])
                         assert persisted==participant,'Consulting and cancelling must preserve unknown IE activity and the complete master'
+                        nav('Produtos e serviços')
                         page.get_by_label('Tipo de cadastro',exact=True).select_option('product')
                         product=page.get_by_role('row').filter(has_text='Produto ficticio')
                         if not product.count():product=page.get_by_role('row').filter(has_text=doc['items'][0]['description'])

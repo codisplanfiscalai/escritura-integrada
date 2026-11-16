@@ -89,7 +89,7 @@ def main():
                     expect(page.get_by_role('dialog')).to_have_count(0)
                     report['checks'].append('Visão geral sozinha permanece aberta, sem fechar nem confirmação desnecessária')
 
-                    labels = ['Empresas', 'Escrituração e documentos', 'Importações fiscais', 'Participantes, produtos e serviços', 'Classificações fiscais', 'CFOP e associações', 'Parametrizações fiscais', 'Competências fiscais', 'Lançamentos contábeis', 'Plano de contas', 'Contas a pagar', 'Contas a receber', 'Usuários e acessos', 'Grupos de usuários']
+                    labels = ['Empresas', 'Escrituração e documentos', 'Importações fiscais', 'Terceiros', 'Contadores', 'Vínculos locais de terceiros', 'Produtos e serviços', 'Classificações fiscais', 'CFOP e associações', 'Parametrizações fiscais', 'Competências fiscais', 'Lançamentos contábeis', 'Plano de contas', 'Contas a pagar', 'Contas a receber', 'Usuários e acessos', 'Grupos de usuários']
                     for label in labels:
                         nav(label)
                         assert_selected_visible()
