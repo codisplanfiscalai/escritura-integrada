@@ -1,4 +1,4 @@
-"""Explicit, atomic accounting of booked sales; no implicit chart or tax mapping.
+"""Explicit, atomic accounting of booked fiscal documents; no implicit chart or tax mapping.
 
 The persisted mode applies only to this batch service. Each source contribution is
 saved in the existing immutable audit trail, independently of import retention.
@@ -94,8 +94,19 @@ class FiscalSalesAccountingMixin:
             return saved | {'notice': NOTICE}
 
     def generate_sales_accounting(self, cid, payload, actor):
+        return self._integrate_fiscal_accounting(cid, payload, actor)
+
+    def generate_purchase_accounting(self, cid, payload, actor):
+        return self._integrate_fiscal_accounting(cid, payload, actor, direction='incoming')
+
+    def preview_fiscal_accounting(self, cid, payload, direction='outgoing'):
+        return self._integrate_fiscal_accounting(cid, payload, None, direction=direction, preview=True)
+
+    def _integrate_fiscal_accounting(self, cid, payload, actor, *, direction='outgoing', preview=False):
+        incoming = direction == 'incoming'
+        operation_scope = 'fiscal-purchases-accounting' if incoming else SCOPE
         if set(payload) - {'entries', 'settings_version', 'idempotency_key', 'reason'}:
-            raise DomainError('Campos desconhecidos na integração contábil de saídas.')
+            raise DomainError('Campos desconhecidos na integração contábil.')
         entries = payload.get('entries')
         if not isinstance(entries, list) or not 1 <= len(entries) <= 1000:
             raise DomainError('Selecione de 1 a 1000 notas com seus modelos contábeis.')
@@ -106,25 +117,27 @@ class FiscalSalesAccountingMixin:
             ids.append(integer(entry.get('document_id'), 'Documento'))
         if len(set(ids)) != len(ids):
             raise DomainError('Selecione cada documento uma única vez.')
-        with self.db.transaction() as conn:
+        with (self.db.read(snapshot=True) if preview else self.db.transaction()) as conn:
             effect(conn, cid, 'fiscal.documents', 'read')
-            effect(conn, cid, 'accounting.journals', 'create')
+            effect(conn, cid, 'accounting.journals', 'read' if preview else 'create')
             effect(conn, cid, 'accounting.histories', 'read')
-            key, hashed, previous = self._operation(conn, cid, SCOPE, payload)
-            if previous:
-                return previous
+            if not preview:
+                key, hashed, previous = self._operation(conn, cid, operation_scope, payload)
+                if previous:
+                    return previous
             cfg = settings(conn, cid)
             if type(payload.get('settings_version')) is not int or payload['settings_version'] != cfg['version']:
                 raise DomainError('O modo de integração mudou. Atualize os parâmetros antes de gerar.', 409, 'stale_version')
-            reason = text(payload.get('reason') or 'Integração contábil de saídas fiscais.', 'Histórico', True, 1000)
+            cfg = cfg | {'mode': 'individual'} if incoming else cfg
+            reason = text(payload.get('reason') or ('Integração contábil de entradas fiscais.' if incoming else 'Integração contábil de saídas fiscais.'), 'Histórico', True, 1000)
             groups, skipped = {}, []
             ctx = request_context.get() or {}
             for entry, item_id in zip(entries, ids):
                 doc = self._document(conn, cid, item_id)
                 if ctx.get('year') and doc['period'][:4] != ctx['year']:
                     raise DomainError('Selecione o exercício da escrituração antes de integrar.', 409, 'stale_context')
-                if doc['direction'] != 'outgoing':
-                    raise DomainError('A integração selecionada aceita somente saídas fiscais.')
+                if doc['direction'] != direction:
+                    raise DomainError('A seleção deve conter somente entradas fiscais.' if incoming else 'A integração selecionada aceita somente saídas fiscais.')
                 if doc['journal_id']:
                     skipped.append({'document_id': item_id, 'journal_id': doc['journal_id'], 'reason': 'already_accounted'})
                     continue
@@ -138,7 +151,7 @@ class FiscalSalesAccountingMixin:
                 model_id = integer(entry.get('model_id'), 'Modelo contábil configurado')
                 model = self._master(conn, cid, model_id, 'accounting_model', True)
                 lines = self._document_accounting_lines(conn, cid, doc, self._model_lines(conn, cid, model_id, doc))
-                normalized, total = self._normalize_lines(conn, cid, lines, materialize=True, actor=actor)
+                normalized, total = self._normalize_lines(conn, cid, lines, materialize=not preview, actor=actor)
                 if total != doc['total_cents']:
                     raise DomainError('O valor contabilizado deve corresponder ao total do documento.')
                 dimensions = [(x['account_id'], bool(x['debit_cents']), x['cost_center_id'], x.get('participant_id')) for x in normalized]
@@ -149,7 +162,7 @@ class FiscalSalesAccountingMixin:
                 group['sources'].append({'document_id': item_id, 'document_number': doc['number'], 'document_key': doc['key'],
                     'document_series': doc['series'], 'participant_id': doc.get('participant_id'),
                     'document_version': doc['version'], 'posting_date': doc['posting_date'], 'issue_date': doc['issue_date'],
-                    'source_hash': doc['source_hash'], 'total_cents': total, 'lines': normalized, 'model_snapshot': model})
+                    'direction': direction, 'source_hash': doc['source_hash'], 'total_cents': total, 'lines': normalized, 'model_snapshot': model})
             journals, sources = [], []
             for group_key, group in groups.items():
                 combined = {}
@@ -159,9 +172,21 @@ class FiscalSalesAccountingMixin:
                         summed = combined.setdefault(dimension, line | {'debit_cents': 0, 'credit_cents': 0})
                         summed['debit_cents'] += line['debit_cents']
                         summed['credit_cents'] += line['credit_cents']
-                journal = self._create_journal(conn, cid, {'date': group['date'], 'document': 'SAIDAS-FISCAIS',
+                if preview:
+                    # Resolve aliases read-only: preview never allocates shared account FKs.
+                    from .account_refs import resolve_account
+                    planned, total = self._normalize_lines(conn, cid, journal_lines(combined.values()))
+                    planned = [line | {k: resolve_account(conn, cid, line['account_id'])[v]
+                               for k, v in (('account_code', 'access_code'), ('account_name', 'name'))}
+                               for line in planned]
+                    journals.append({'date': group['date'], 'total_cents': total, 'lines': planned,
+                                     'document_ids': [s['document_id'] for s in group['sources']],
+                                     'classification': group['classification']})
+                    sources.extend(group['sources'])
+                    continue
+                journal = self._create_journal(conn, cid, {'date': group['date'], 'document': 'ENTRADAS-FISCAIS' if incoming else 'SAIDAS-FISCAIS',
                     'history': reason, 'lines': journal_lines(combined.values()),
-                    'idempotency_key': 'sales:' + digest([key, group_key])}, actor)
+                    'idempotency_key': ('purchases:' if incoming else 'sales:') + digest([key, group_key])}, actor)
                 if journal.get('duplicate'):
                     raise DomainError('Chave contábil já utilizada fora desta operação; nenhum vínculo foi alterado.', 409, 'idempotency_conflict')
                 journals.append(journal)
@@ -172,8 +197,10 @@ class FiscalSalesAccountingMixin:
                     audit(conn, cid, actor, SOURCE, 'document', source['document_id'], snapshot)
                     sources.append(snapshot)
             result = {'mode': cfg['mode'], 'settings_version': cfg['version'], 'journals': journals, 'sources': sources,
-                      'created_count': len(journals), 'accounted_count': len(sources), 'skipped': skipped, 'notice': NOTICE}
-            self._record_operation(conn, cid, SCOPE, key, hashed, result)
+                      'created_count': len(journals), 'accounted_count': len(sources), 'skipped': skipped, 'notice': ('Entradas são contabilizadas individualmente. ' if incoming else '') + NOTICE}
+            if preview:
+                return result | {'preview': True}
+            self._record_operation(conn, cid, operation_scope, key, hashed, result)
             return result
 
     def trace_sales_accounting_journal(self, cid, item_id):
@@ -197,7 +224,7 @@ class FiscalSalesAccountingMixin:
         contributions = [s for s in source_events(conn, cid, doc['id']) if s['journal_id'] == jid]
         if not contributions:
             shared = conn.execute('SELECT COUNT(*) FROM documents WHERE company_id=? AND journal_id=?', (cid, jid)).fetchone()[0] > 1
-            generated = conn.execute("SELECT 1 FROM journals WHERE company_id=? AND id=? AND idempotency_key LIKE 'sales:%'", (cid, jid)).fetchone()
+            generated = conn.execute("SELECT 1 FROM journals WHERE company_id=? AND id=? AND (idempotency_key LIKE 'sales:%' OR idempotency_key LIKE 'purchases:%')", (cid, jid)).fetchone()
             if shared or generated:
                 raise DomainError('Contribuição de origem ausente no lançamento compartilhado. Confira a integridade dos vínculos.', 409, 'source_evidence_missing')
             return self._reverse_linked_journal(conn, cid, jid, day, reason, actor, key)
@@ -245,3 +272,15 @@ def register(app, core, actor):
     @app.get(root + '/journals/{item_id}/sources')
     def trace(cid: int, item_id: int):
         return core.trace_sales_accounting_journal(cid, item_id)
+
+    @app.post(root + '/preview')
+    def preview_sales(cid: int, payload: dict = Body(...)):
+        return core.preview_fiscal_accounting(cid, payload)
+
+    @app.post('/api/companies/{cid}/fiscal-purchases-accounting/preview')
+    def preview_purchases(cid: int, payload: dict = Body(...)):
+        return core.preview_fiscal_accounting(cid, payload, direction='incoming')
+
+    @app.post('/api/companies/{cid}/fiscal-purchases-accounting/generate')
+    def generate_purchases(cid: int, request: Request, payload: dict = Body(...)):
+        return core.generate_purchase_accounting(cid, payload, actor(request))

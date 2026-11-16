@@ -1,0 +1,250 @@
+{
+  "synthetic_only": true,
+  "initial_base": "87b913990d8dc6160734c5b1f8046f6af9feb44f",
+  "tested_develop": "3c8aa7158e6bfcc8710739b08ddc9bf58c0fb1a5",
+  "version": "0.9.0-dev.21",
+  "validation_worktree_head": "e7e590daa6b017ffbc2860749b4c3d4b4723f37f",
+  "provenance_note": "Tests ran on the composed worktree before the evidence commit. The Chromium scenario changed only fixture account selection and preview screenshot visibility after the merge commit; hashes below identify tested files. The workspace-context report source_sha is that worktree HEAD, not a claim of an immutable clean checkout.",
+  "validated_source_files": {
+    "app/fiscal_sales_accounting.py": {
+      "sha256": "8571d487ad1d2e7b49f0cc3ec172ee7e95c3814b215066b5d014b532616d86cc",
+      "git_blob": "851f2a1866dba075d7e3c8496fc71c8a583c3977"
+    },
+    "app/permissions.py": {
+      "sha256": "17f35e5ba373793411442cbbeacb8df3918e9a28b76d6783db3d5bf09b4db7e9",
+      "git_blob": "dc45c1e26558b31c9b16e5dede393d7c1d0e330c"
+    },
+    "frontend/src/App.vue": {
+      "sha256": "c1ba11f9ace893b301b9a2169f076862ff1f016fb135122115ee2b77c68d8ff2",
+      "git_blob": "7f90e68bc92d758af4c4d3ae585e856a5392e471"
+    },
+    "frontend/src/views/FiscalSalesAccountingView.vue": {
+      "sha256": "1dcdd8b357a340ac98d2f6f184d5b31c821ad3715ab1f2aa2d7dc9ee53656468",
+      "git_blob": "c1212cbbcac3925fed1fe49d729d5c1957fd7177"
+    },
+    "frontend/tests/fiscal-sales-accounting.test.js": {
+      "sha256": "0bf4893f7b392c34c627c18868bf1c4a2c66bd7ee76ab8bd802daf82f1501b2d",
+      "git_blob": "ef51ea29d0cd9e1a2291fe4f180112628198428d"
+    },
+    "scripts/browser_fiscal_sales_accounting.py": {
+      "sha256": "554e0309144bae26d37e9cc87be8f655b9e369f9988cfd32663a9c6b89edb603",
+      "git_blob": "d5743d7ac4ebef74cba763833331f50f5fb6e90c"
+    },
+    "tests/test_fiscal_incoming_accounting.py": {
+      "sha256": "bd3da16d6dc03253be94af8bc76e691e7b773a14225dacad20f8ce47eeeaf191",
+      "git_blob": "cce7202ac6b663c284927eb35a77d5a0782abc66"
+    }
+  },
+  "backend": {
+    "modules": [
+      "test_core",
+      "test_business",
+      "test_company_accounting_settings",
+      "test_account_plans",
+      "test_global_account_plans",
+      "test_lazy_account_refs",
+      "test_journal_participants",
+      "test_accounting_report_models",
+      "test_report_models_api",
+      "test_fiscal_import",
+      "test_import_revision",
+      "test_import_reprocessing",
+      "test_reprocessing_linked_effects",
+      "test_generated_payables",
+      "test_import_package_cleanup",
+      "test_book_cancellation",
+      "test_bulk_operations",
+      "test_bulk_security",
+      "test_operational_settings",
+      "test_workspace_context",
+      "test_fiscal_sales_accounting",
+      "test_fiscal_sales_composition",
+      "test_fiscal_incoming_accounting",
+      "test_journal_query_loading",
+      "test_sped_generator",
+      "test_sped_native_export",
+      "test_sped_bookkeeping",
+      "test_sped_obligations",
+      "test_fiscal_analytics",
+      "test_fiscal_analytical_reports",
+      "test_fiscal_series",
+      "test_import_payables",
+      "test_purchase_reclassification",
+      "test_document_totals",
+      "test_movement_exports",
+      "test_deploy_storage",
+      "test_infrastructure",
+      "test_ci_release",
+      "test_ci_artifacts_cache",
+      "test_image_aliases",
+      "test_develop_alias",
+      "test_latest_alias",
+      "test_browser_script_bootstrap"
+    ],
+    "tests_run": 607,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 232.139,
+    "ok": true
+  },
+  "frontend": {
+    "tests": 164,
+    "passed": 164,
+    "failed": 0,
+    "skipped": 0,
+    "milliseconds": 2923.198282,
+    "command": "node --test tests/*.test.js"
+  },
+  "build": {
+    "ok": true,
+    "version": "0.9.0-dev.21",
+    "seconds": 4.27,
+    "main_bundle_kb": 819.9,
+    "gzip_kb": 243.34,
+    "warning": "Existing bundle >500 kB warning; application dependencies unchanged."
+  },
+  "browser_engine": "Playwright 1.56.0 / Chromium headless 141.0.7390.37, isolated test dependencies",
+  "browsers": {
+    "browser-fiscal-sales-accounting": {
+      "ok": true,
+      "synthetic_only": true,
+      "checks": [
+        "Pagination, empty/combined/rapid filters and KeepAlive navigation are read-only",
+        "Daily: 0.01 + 10.02 => one balanced 10.03 journal; lost response after commit and exact-key retry do not duplicate; both sources traced",
+        "Individual: three notes/dates/CFOP/accounts => three journals; company B has two independent journals; saved company mode and previous movements preserved",
+        "Fiscal fields, original single journal and receivable preserved; independent daily report read-only and balanced at 43.22",
+        "Closed accounting month refuses UI generation even with permissive legacy defaults; reopening permits it; FK and all journals balanced",
+        "Both menus share integration: incoming preview/close read-only; daily sales setting preserved; two purchases remain individual; lost-response exact retry and alternate menu do not duplicate; origins/FK/balance preserved",
+        "Configuration and controls remain within the 1100px viewport; wide table scroll is contained"
+      ],
+      "console_errors": [],
+      "browser_version": "141.0.7390.37",
+      "read_only_hashes": {
+        "before": {
+          "documents": "a88fe5713e3e7562a68118c8ebc6c67c60fcf7351fde0d0e5b0a4d229e205c59",
+          "journals": "ebf41b46caf2b617a199f57348d64c498dfa03a3abb8860375e5bf4b02152dd0",
+          "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+          "titles": "0daee5eebcfa82aad49b7e20f0368c6e529823914d1c3fffe48c3fc3090dc0b5",
+          "audit": "878de32d44a9a42038fa78cfef124a3ba17e28a679391ba8be15c539f2e465d9"
+        },
+        "after": {
+          "documents": "a88fe5713e3e7562a68118c8ebc6c67c60fcf7351fde0d0e5b0a4d229e205c59",
+          "journals": "ebf41b46caf2b617a199f57348d64c498dfa03a3abb8860375e5bf4b02152dd0",
+          "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+          "titles": "0daee5eebcfa82aad49b7e20f0368c6e529823914d1c3fffe48c3fc3090dc0b5",
+          "audit": "878de32d44a9a42038fa78cfef124a3ba17e28a679391ba8be15c539f2e465d9"
+        }
+      },
+      "replay_hashes": {
+        "before": {
+          "documents": "6d49ecc0e8414e882258ebaec440071a5d10fc9bbcebdce0789a12b20e04468e",
+          "journals": "742fc630913952e3ef0e483a39541eed1044504b6ed8d4dc0caf7583481701c7",
+          "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+          "titles": "0daee5eebcfa82aad49b7e20f0368c6e529823914d1c3fffe48c3fc3090dc0b5",
+          "audit": "9c1cf871544c60aadc485ffd117e9c34de6ee2739a88ea907be8d8c9b1d6abf0"
+        },
+        "after": {
+          "documents": "6d49ecc0e8414e882258ebaec440071a5d10fc9bbcebdce0789a12b20e04468e",
+          "journals": "742fc630913952e3ef0e483a39541eed1044504b6ed8d4dc0caf7583481701c7",
+          "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+          "titles": "0daee5eebcfa82aad49b7e20f0368c6e529823914d1c3fffe48c3fc3090dc0b5",
+          "audit": "9c1cf871544c60aadc485ffd117e9c34de6ee2739a88ea907be8d8c9b1d6abf0"
+        }
+      },
+      "report_hashes": {
+        "before": {
+          "documents": "ebf8767ee9be021a1db3483564bc73a8b4e03ccf94519ecbd9dd5c8ff9b5eed2",
+          "journals": "722c12ad74c0b99bd20dd04546ccf04cbfcbb054d2bbc013a1050eae5107d5f6",
+          "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+          "titles": "0daee5eebcfa82aad49b7e20f0368c6e529823914d1c3fffe48c3fc3090dc0b5",
+          "audit": "498619b32bef7838de0ed1223ab5d34263e915f1c8e2e2f8e3419114f3c00289"
+        },
+        "after": {
+          "documents": "ebf8767ee9be021a1db3483564bc73a8b4e03ccf94519ecbd9dd5c8ff9b5eed2",
+          "journals": "722c12ad74c0b99bd20dd04546ccf04cbfcbb054d2bbc013a1050eae5107d5f6",
+          "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+          "titles": "0daee5eebcfa82aad49b7e20f0368c6e529823914d1c3fffe48c3fc3090dc0b5",
+          "audit": "498619b32bef7838de0ed1223ab5d34263e915f1c8e2e2f8e3419114f3c00289"
+        }
+      },
+      "incoming_preview_hashes": {
+        "before": {
+          "documents": "a0858f2ed7fda3386e5cd5d6c816044a0f6582559bda84b8c0c56c1175347ab4",
+          "journals": "29cd60500eb121f674198c31985c02b9fc8fd40fc4789c988875dce13c631955",
+          "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+          "titles": "0daee5eebcfa82aad49b7e20f0368c6e529823914d1c3fffe48c3fc3090dc0b5",
+          "audit": "13ff776fe20b1e0bf23e3a233b714ce335e3096b1b20b796ab2d10beb42cc3f5"
+        },
+        "after": {
+          "documents": "a0858f2ed7fda3386e5cd5d6c816044a0f6582559bda84b8c0c56c1175347ab4",
+          "journals": "29cd60500eb121f674198c31985c02b9fc8fd40fc4789c988875dce13c631955",
+          "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+          "titles": "0daee5eebcfa82aad49b7e20f0368c6e529823914d1c3fffe48c3fc3090dc0b5",
+          "audit": "13ff776fe20b1e0bf23e3a233b714ce335e3096b1b20b796ab2d10beb42cc3f5"
+        }
+      },
+      "incoming_replay_hashes": {
+        "before": {
+          "documents": "9ecd36fa8ba0e5898f08c9f13737c665798cab9ba7d18760e92e0d997a3eaec6",
+          "journals": "e2834ae1a051fc923be8d519bc342f388315e680f69d151ef9d484421a435eab",
+          "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+          "titles": "0daee5eebcfa82aad49b7e20f0368c6e529823914d1c3fffe48c3fc3090dc0b5",
+          "audit": "71d3ec1a1130efe1f437c829449e1024cc5c9bec64c0b37eede32fdee5e8909b"
+        },
+        "after": {
+          "documents": "9ecd36fa8ba0e5898f08c9f13737c665798cab9ba7d18760e92e0d997a3eaec6",
+          "journals": "e2834ae1a051fc923be8d519bc342f388315e680f69d151ef9d484421a435eab",
+          "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+          "titles": "0daee5eebcfa82aad49b7e20f0368c6e529823914d1c3fffe48c3fc3090dc0b5",
+          "audit": "71d3ec1a1130efe1f437c829449e1024cc5c9bec64c0b37eede32fdee5e8909b"
+        }
+      },
+      "final_journals": {
+        "A": 8,
+        "B": 2
+      }
+    },
+    "browser-workspace-context": {
+      "ok": true,
+      "checks": [
+        "Dashboard fiscal/accounting cards follow suggested August/September and company, without changing operational November",
+        "F8 code with leading zeros, suggested September, table wheel reaches page scrolling",
+        "manual July survives navigation; F8 and F9 are blocked while editing",
+        "sidebar scrolls by keyboard with thin scrollbar",
+        "F9 clears company and persisted year/month without deleting records",
+        "Document, journal, journal-line, title and audit hashes unchanged by context/filter navigation"
+      ],
+      "console_errors": [],
+      "screenshots": [
+        "dashboard-monthly-indicators.png",
+        "workspace-context.png"
+      ],
+      "source_sha": "e7e590daa6b017ffbc2860749b4c3d4b4723f37f",
+      "stage": "complete"
+    },
+    "browser-document-summary": {
+      "ok": true,
+      "checks": [
+        "September: 52 documents across two pages; August: 1; October: zero cards/grid/export count",
+        "Combined operation/status/search, rapid month changes and KeepAlive navigation retain correct cards",
+        "Company B and next exercise empty; returning to A/current exercise restores September",
+        "Documents, journals, journal lines, titles and audit hashes unchanged after UI filtering/navigation"
+      ],
+      "console_errors": [],
+      "synthetic_only": true,
+      "browser_version": "141.0.7390.37"
+    }
+  },
+  "checks": {
+    "python_ast": true,
+    "git_diff_check": true,
+    "frontend_compile": true,
+    "upstream_sped_core_api_preserved": true
+  },
+  "limitations": [
+    "Import automation, item allocation and previous individual buttons remain separate pending increments.",
+    "Not full repository suite, operational PostgreSQL, PVA/Prosoft, installers/images, scale or real installations.",
+    "No real data, backups, private logs, production, final merge, release or deployment."
+  ]
+}

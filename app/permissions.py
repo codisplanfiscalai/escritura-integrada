@@ -144,10 +144,10 @@ def route_policy(path, method, query, payload, session):
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
-    if root == 'fiscal-sales-accounting':
+    if root in {'fiscal-sales-accounting', 'fiscal-purchases-accounting'}:
         if tail.endswith('/settings'):
             return 'accounting.accounts', 'edit' if write else 'read', False
-        return 'accounting.journals', 'create' if write else 'read', False
+        return 'accounting.journals', 'create' if write and not tail.endswith('/preview') else 'read', False
     if root == 'accounting-entry-defaults':
         return 'accounting.journals', 'read', False
     if root == 'accounting-settings' and '/plan-manager' in tail:
