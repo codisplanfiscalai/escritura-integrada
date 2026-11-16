@@ -4,7 +4,7 @@ from .core import DomainError
 RENDERER='BrazilFiscalReport 1.3.1'
 
 
-def render_danfe(raw):
+def render_danfe(raw, *, document_preview=False):
     from lxml import etree
     if b'<!DOCTYPE' in raw.upper() or b'<!ENTITY' in raw.upper():raise DomainError('DTD não permitido.')
     root=etree.fromstring(raw,etree.XMLParser(resolve_entities=False,no_network=True))
@@ -17,11 +17,16 @@ def render_danfe(raw):
     try:
         from brazilfiscalreport.danfe import Danfe
         from brazilfiscalreport.danfce import Danfce
-        from .dacte_preview import PreviewDacte
+        from brazilfiscalreport.dacte import Dacte
+        if document_preview and model == '57':
+            from .dacte_preview import PreviewDacte
+            Dacte = PreviewDacte
         from brazilfiscalreport.damdfe import Damdfe
-        renderer={'55':Danfe,'65':Danfce,'57':PreviewDacte,'58':Damdfe}[model]
+        renderer={'55':Danfe,'65':Danfce,'57':Dacte,'58':Damdfe}[model]
         doc=renderer(xml=etree.tostring(root,encoding='unicode'))
         return bytes(doc.output()),RENDERER+'/'+type(doc).__name__
+    except DomainError:
+        raise
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning('Falha no renderizador DANFE: %s',type(exc).__name__)

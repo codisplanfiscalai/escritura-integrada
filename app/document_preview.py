@@ -49,7 +49,7 @@ def document_auxiliary(core, cid, item_id):
                         continue
                     if info.attrib.get('versao') != '4.00':
                         raise DomainError('Versão XML sem layout de prévia validado neste fluxo (NF-e/NFC-e/CT-e 4.00).', 422, 'renderer_not_validated')
-                    pdf, renderer = render_danfe(raw)
+                    pdf, renderer = render_danfe(raw, document_preview=True)
                     return pdf, renderer, source_hash
             except (ValueError, OSError, BadZipFile):
                 continue

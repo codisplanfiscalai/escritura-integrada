@@ -16,6 +16,45 @@ FIXTURES = Path(__file__).parent / 'fixtures'
 
 
 def synthetic_xml(name, company_tax_id):
+    if name == 'auditor_cte_stress':
+        from lxml import etree
+        from copy import deepcopy
+        root = etree.fromstring(synthetic_xml('auditor_cte_long', company_tax_id))
+        ns = {'c':'http://www.portalfiscal.inf.br/cte'}
+        tag = '{'+ns['c']+'}'
+        root.find('.//c:nCT',ns).text = '99203225'
+        old_key=root.find('.//c:infCte',ns).get('Id')[3:]
+        new_key=old_key[:-2]+'83'
+        for node in root.iter():
+            if node.text:
+                node.text = node.text.replace(old_key,new_key)
+            for key in node.attrib:
+                node.attrib[key] = node.attrib[key].replace(old_key,new_key)
+        info = root.find('.//c:infCte',ns)
+        rem = info.find('c:rem',ns)
+        for kind,address in [('exped','enderExped'),('receb','enderReceb')]:
+            party = deepcopy(rem);party.tag=tag+kind
+            party.find('c:enderReme',ns).tag=tag+address
+            party.find('c:xNome',ns).text=kind.upper()+' SINTETICO TRANSPORTES COM NOME COMPLETO PRESERVADO'
+            info.insert(list(info).index(rem)+1,party)
+        for kind in ('emit','rem','dest'):
+            party=info.find('c:'+kind,ns)
+            party.find('c:xNome',ns).text=kind.upper()+' SINTETICO COM NOME EXTENSO INTEGRAL E MARCADOR FINAL'
+            party.find('.//c:xLgr',ns).text='RUA '+kind.upper()+' SINTETICA EXTENSA COM COMPLEMENTO E FINAL DISTINTO'
+        toma3=root.find('.//c:toma3',ns);toma3.getparent().remove(toma3)
+        payer=deepcopy(rem);payer.tag=tag+'toma4';payer.find('c:CNPJ',ns).tag=tag+'CPF';payer.find('c:CPF',ns).text='00000000000'
+        payer.find('c:enderReme',ns).tag=tag+'enderToma'
+        payer.find('c:xNome',ns).text='TOMADOR CPF SINTETICO COMPLETO SEM VALOR FISCAL'
+        etree.SubElement(payer,tag+'toma').text='4';root.find('.//c:ide',ns).append(payer)
+        refs=root.find('.//c:infDoc',ns)
+        for child in list(refs):refs.remove(child)
+        for i in range(1,121):
+            etree.SubElement(etree.SubElement(refs,tag+'infNFe'),tag+'chave').text='352601'+'0'*14+'55001'+str(i).zfill(19)
+        comp=root.find('.//c:compl',ns)
+        for i in range(1,31):
+            obs=etree.SubElement(comp,tag+'ObsCont',xCampo='SINTETICO '+str(i))
+            etree.SubElement(obs,tag+'xTexto').text=f'OBSERVACAO {i:03d} '+('CONTEUDO SINTETICO INTEGRAL SEM VALOR FISCAL '*3)+f'FIM{i:03d}'
+        return etree.tostring(root,encoding='utf-8',xml_declaration=True)
     raw = (FIXTURES / (('auditor_demo' if name == 'auditor_long' else 'auditor_cte' if name == 'auditor_cte_long' else name) + '.xml')).read_bytes()
     if name == 'auditor_long':
         item = re.search(br'<det nItem="1">.*?</det>', raw, re.S)[0]
@@ -110,11 +149,45 @@ class DocumentPreviewTests(unittest.TestCase):
                 self.assertIn('EMITIDO EM AMBIENTE DE', text)
                 self.assertIn('HOMOLOGAÇÃO - SEM VALOR FISCAL', text)
                 if fixture == 'auditor_cte_long':
-                    self.assertEqual(2, len(PdfReader(io.BytesIO(response.content)).pages))
+                    self.assertEqual(3, len(PdfReader(io.BytesIO(response.content)).pages))
                     for key in re.findall(br'<chave>([0-9]+)</chave>', raw):
                         self.assertIn(key.decode(), text)
                 self.assertEqual(hashlib.sha256(raw).hexdigest(), response.headers['x-source-sha256'])
                 self.assertEqual(before, self.snapshot())
+
+    def test_dacte_long_fields_and_multiple_continuations_keep_all_content(self):
+        from app.dacte_preview import PreviewDacte
+        from lxml import etree
+        doc, raw, _ = self.imported('auditor_cte_stress')
+        before=self.snapshot()
+        response=self.client.get(self.url(doc))
+        self.assertEqual(200,response.status_code,response.text[:200])
+        pdf=PdfReader(io.BytesIO(response.content))
+        self.assertGreaterEqual(len(pdf.pages),4)
+        text=' '.join(page.extract_text() for page in pdf.pages)
+        compact=re.sub(r'\s+','',text)
+        root=etree.fromstring(raw)
+        for node in root.xpath('.//*[local-name()="xNome" or local-name()="xLgr" or local-name()="xCpl" or local-name()="xMun" or local-name()="xTexto" or local-name()="chave"]'):
+            self.assertIn(re.sub(r'\s+','',node.text or ''),compact)
+        self.assertNotIn('...',text)
+        for index,page in enumerate(pdf.pages,1):
+            self.assertIn(f'{index}/{len(pdf.pages)}',page.extract_text())
+            self.assertIn('HOMOLOGAÇÃO - SEM VALOR FISCAL',page.extract_text())
+        self.assertEqual(before,self.snapshot())
+        layout=PreviewDacte(raw.decode())
+        for page,x,y,w,h in layout.layout_boxes:
+            self.assertGreaterEqual(x,layout.l_margin-0.01)
+            self.assertLessEqual(x+w,layout.w-layout.r_margin+0.01)
+            self.assertLessEqual(y+h,layout.h-28+0.01)
+
+    def test_unreviewed_dacte_profiles_are_explicit_not_lossy_fallbacks(self):
+        from app.auxiliary import render_danfe
+        from app.core import DomainError
+        raw=synthetic_xml('auditor_cte',self.a['tax_id'])
+        for old,new in [(b'<modal>01',b'<modal>02'),(b'<tpImp>1',b'<tpImp>2'),(b'<tpEmis>1',b'<tpEmis>5'),(b'<tpServ>0',b'<tpServ>1')]:
+            with self.subTest(new=new),self.assertRaises(DomainError) as caught:
+                render_danfe(raw.replace(old,new),document_preview=True)
+            self.assertEqual('renderer_not_validated',caught.exception.code)
 
     def test_multipage_danfe_preserves_all_items(self):
         doc, _, _ = self.imported('auditor_long')
@@ -134,7 +207,7 @@ class DocumentPreviewTests(unittest.TestCase):
         before = self.snapshot()
         with patch('app.auxiliary.render_danfe',return_value=(b'%PDF-test','fixture')) as render:
             self.assertEqual(200,self.client.get(self.url(doc)).status_code)
-            render.assert_called_once_with(raw)
+            render.assert_called_once_with(raw, document_preview=True)
         self.assertEqual(before,self.snapshot())
 
     def test_missing_tampered_and_wrong_identity_are_refused(self):

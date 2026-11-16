@@ -56,7 +56,7 @@ onBeforeUnmount(dispose);
 <template>
 <BaseModal :title="title" :subtitle="subtitle" wide @close="emit('close')">
  <p class="field-help">Representação do XML original preservado. Não altera a escrituração nem valida assinatura, autorização ou tratamento fiscal.</p>
- <p v-if="model==='57'" class="message warning">Prévia DACTE: há limitações conhecidas de sobreposição e corte de textos longos no renderizador. O QR tem área protegida, mas a fidelidade completa não foi validada. Confira a legibilidade; este layout ainda exige revisão.</p>
+ <p v-if="model==='57'" class="message warning">Prévia disponível para CT-e normal rodoviário em retrato, com emissão e serviço normais. Outros perfis exigem validação específica. A representação não comprova autorização fiscal.</p>
  <div v-if="error" class="message warning" role="alert">{{error}} <button class="button small" @click="load">Tentar novamente</button></div>
  <p v-if="loading" role="status">Preparando documento original…</p>
  <div v-if="pages" class="actions preview-navigation" aria-label="Navegação do PDF">

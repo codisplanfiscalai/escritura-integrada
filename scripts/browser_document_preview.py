@@ -50,7 +50,7 @@ def main():
                             r=page.request.get(url+path);assert r.ok,r.text();return r.json()
                         post('/api/context',{'company_id':cid,'module':'fiscal','period':'2026-11'})
                         documents=[]
-                        for fixture,label in [('auditor_demo','DANFE'),('auditor_nfce','DANFC-e'),('auditor_cte','DACTE'),('auditor_cte_long','DACTE'),('auditor_long','DANFE')]:
+                        for fixture,label in [('auditor_demo','DANFE'),('auditor_nfce','DANFC-e'),('auditor_cte','DACTE'),('auditor_cte_long','DACTE'),('auditor_cte_stress','DACTE'),('auditor_long','DANFE')]:
                             raw=synthetic_xml(fixture,company['tax_id'])
                             batch=post(scope+'/imports/preview',{'filename':fixture+'.xml','period':'2026-11','options':{'posting_date':'2026-11-06'},'content_base64':base64.b64encode(raw).decode()})
                             assert batch['can_confirm'],batch['issues']
@@ -77,10 +77,24 @@ def main():
                             expect(modal.get_by_text('Página 1 de',exact=False)).to_be_visible()
                             expect(modal.get_by_role('alert')).to_have_count(0)
                             if label == 'DACTE':
-                                for zoom in ('0.75', '1', '1.25', '1.5'):
-                                    modal.get_by_label('Zoom',exact=True).select_option(zoom)
+                                count=int(re.search(r'de (\d+)$',modal.locator('canvas').get_attribute('aria-label'))[1])
+                                base_width=modal.locator('canvas').evaluate('c => parseFloat(c.style.width)')
+                                for number in range(1,count+1):
+                                    for zoom in ('0.75', '1', '1.25', '1.5'):
+                                        modal.get_by_label('Zoom',exact=True).select_option(zoom)
+                                        page.wait_for_function("width => Math.abs(parseFloat(document.querySelector('.document-pdf-pages canvas')?.style.width)-width)<0.1",arg=base_width*float(zoom))
+                                        expect(modal.locator('.document-pdf-pages')).to_have_attribute('aria-busy','false')
+                                        suffix='' if number==1 else f'-page-{number}'
+                                        (OUT/(label+'-'+doc['number']+suffix+'-zoom-'+zoom+'.png')).write_bytes(base64.b64decode(modal.locator('canvas').evaluate("canvas => canvas.toDataURL('image/png').split(',')[1]")))
+                                    if number<count:
+                                        modal.get_by_role('button',name='Próxima página',exact=True).click()
+                                        expect(modal.locator('canvas')).to_have_attribute('aria-label',re.compile(f'página {number+1} de'))
+                                        expect(modal.locator('.document-pdf-pages')).to_have_attribute('aria-busy','false')
+                                page.screenshot(path=str(OUT/(label+'-'+doc['number']+'-last-page-ui.png')),full_page=True)
+                                for number in range(count-1,0,-1):
+                                    modal.get_by_role('button',name='Página anterior',exact=True).click()
+                                    expect(modal.locator('canvas')).to_have_attribute('aria-label',re.compile(f'página {number} de'))
                                     expect(modal.locator('.document-pdf-pages')).to_have_attribute('aria-busy','false')
-                                    (OUT/(label+'-'+doc['number']+'-zoom-'+zoom+'.png')).write_bytes(base64.b64decode(modal.locator('canvas').evaluate("canvas => canvas.toDataURL('image/png').split(',')[1]")))
                             modal.get_by_label('Zoom',exact=True).select_option('1.25')
                             expect(modal.locator('canvas')).to_be_visible()
                             if doc['number']=='81':

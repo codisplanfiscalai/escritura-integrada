@@ -8,7 +8,7 @@ Incremento local sobre `develop` 67a5e2e0b3c65fe7948827d6d66da5361970bfb1 (0.9.0
 | --- | --- | --- |
 | NF-e 55, XML 4.00 | BrazilFiscalReport 1.3.1 / DanfeMoc70 | Prévia na escrituração; amostras sintéticas A4 de 1 e 3 páginas inspecionadas, 80 itens preservados. |
 | NFC-e 65, XML 4.00 | BrazilFiscalReport 1.3.1 / Danfce | Prévia na escrituração; bobina sintética inspecionada, QR decodificado para o valor original `example.invalid`, sem navegar. |
-| CT-e 57, XML 4.00 | BrazilFiscalReport 1.3.1 / Dacte | Prévia implementada e testada, mas fidelidade visual ainda pendente: textos longos sobrepostos nos quadros de partes/tomador e cortes na biblioteca. QR com área protegida nesta revisão; limites abaixo. Aviso explícito na prévia. |
+| CT-e 57, XML 4.00 | BrazilFiscalReport 1.3.1 / Dacte | Composição medida para CT-e normal rodoviário, retrato, emissão e serviço normais. Demais perfis e grupos especiais são recusados explicitamente; não há fallback para o layout com cortes. Ver validação atual abaixo. |
 | MDF-e 58, XML 3.00 | BrazilFiscalReport 1.3.1 / Damdfe, já usado na auditoria | Não integrado à escrituração: o importador fiscal não aceita esse leiaute. Não se cria documento fiscal para habilitar a prévia. |
 | CT-e OS 67 | Espelho próprio de conferência na auditoria | Não equivale a DACTE OS; recusado nesta prévia de leiaute. |
 | NFS-e | `Danfse` existe na dependência 1.3.1 | Não integrado ao fluxo fiscal/registro e não validado contra NT 008/2026; perfis municipais/nacional e vínculo ao XML exigem trabalho específico. Recepção ADN não implica renderização/escrituração. |
@@ -27,7 +27,7 @@ As respostas têm `Cache-Control: no-store`, identificação do renderizador e h
 
 PDF.js 6.5.438, build `legacy`, e codecs JS locais são carregados somente ao abrir a prévia. `npm run build`/`npm run dev` preparam os codecs. Não há CDN, navegação de QR, `eval` nem relaxamento de CSP. Renderização de uma página por vez a 2x, cancelamento de fetch/render e contadores de geração impedem respostas antigas de ocupar a seleção atual. A build normal do PDF.js usou API JS ainda ausente no Chromium 141 do ambiente; por isso foi adotada a build oficial de compatibilidade.
 
-## Evidências locais e reprodução
+## Evidências da versão inicial (histórico) e reprodução
 
 - Backend: 64 testes passaram (`test_document_preview`, `test_import_revision`, `test_master_evidence`, `test_core`, `test_evolution`). As 6 provas novas cobrem modelos reais, bytes exatos em ZIP com basenames repetidos, edição independente, repetição sem writes, origem ausente/alterada/inválida, modelo não suportado, acesso por empresa e read/export, DANFE multipágina.
 - Frontend: 181 testes Node passaram; build Vite passou. Aviso de chunk principal acima de 500 kB permanece; PDF.js é chunk separado sob demanda.
@@ -62,7 +62,7 @@ O script do navegador usa banco descartável, fixtures `auditor_*` existentes e 
 - [PDF.js: uso de worker, renderização e paginação](https://mozilla.github.io/pdf.js/examples/). Licenças das dependências e codecs preservadas no build.
 
 
-## Continuação PR50: correção parcial de QR, layout ainda reprovado
+## Histórico d3997a2b: correção parcial de QR, layout então reprovado
 
 Correção local `PreviewDacte` sobre BrazilFiscalReport 1.3.1: redesenha apenas o QR e sua área branca depois da marca d'água, com margem de pelo menos 10% da dimensão total e conteúdo extraído do XML. Preserva a marca diagonal e acrescenta identificação explícita de homologação no espaço variável do cabeçalho. Restaura a posição de desenho, sem alterar bytes XML, dados fiscais ou dependência instalada. Aplica-se também aos cabeçalhos de continuação. Referência: MOC CT-e 4.00 Anexo II §§2.18, 2.20 e 2.21.1 (link acima); marca d'água não pode impedir leitura. Não é certificação do leiaute.
 
@@ -71,3 +71,24 @@ Causas ainda **não corrigidas**: `_draw_recipient_sender`/`_draw_service_recipi
 Evidência final local: 65 testes backend, 181 frontend e build passaram; navegador passou com abertura/fechamento, troca de empresa/seleção, zoom e continuação DACTE. `auditor_cte_long` deriva exclusivamente da fixture sintética: nomes/endereço ampliados, 30 documentos originários, URL de teste com parâmetros XML escapados, homologação. PDFs/XMLs/canvases permanecem em `artifacts/document-preview`; falhas anteriores em `artifacts/dacte-before-qr-fix`. Nenhum endereço QR é acessado.
 
 O QR dos dois DACTEs coincide exatamente com o conteúdo XML no PDF rasterizado a 1,25x/2x/4x e no canvas a 75/100/125/150%. Entretanto, Code128 não decodifica nas rasterizações 1,25x/2x nem no canvas 75%; decodifica a 4x e no canvas 100/125/150%. **O comando `scripts/check_document_preview_pdfs.py` retorna falha**, pois conserva a exigência de leitura de todos os códigos em todos esses tamanhos. Os resultados negativos e `layout_status: FAIL` permanecem em `pdf-qa.json`; não foram transformados em sucesso. A inspeção visual confirma sobreposições/cortes, embora o QR e a identificação de homologação estejam legíveis. Não interpretar testes funcionais aprovados como aceite visual integral.
+
+
+## Revisão atual: composição medida e matriz de códigos aprovada localmente
+
+`PreviewDacte` mantém o leitor XML do BrazilFiscalReport 1.3.1 e substitui os quadros afetados por largura delimitada e altura calculada antes do desenho. Nomes, logradouros, complementos, municípios, componentes e observações não passam por `limit_text`/`long_field`. As células crescem ou continuam na folha seguinte com as mesmas colunas. Observações que cabem numa folha ficam inteiras; títulos acompanham a primeira linha. O título DACTE tem posição independente da altura do endereço do emitente. Todas as folhas repetem identificação completa, chave, códigos, natureza, protocolo, numeração atual/total e identificação de homologação. Campos ausentes não são convertidos em zeros inventados.
+
+A marca diagonal opcional foi substituída pela identificação obrigatória centralizada, em caixa alta, no cabeçalho de todas as folhas. O manual permite marca d'água apenas se não afetar a leitura; mantê-la sobre textos e códigos contrariava essa condição. Isso não muda `tpAmb`, autorização, assinatura ou qualquer byte XML.
+
+O código anterior era comprimido em 8,5 mm de altura; agora o Code128-C tem 15 mm, início C explícito, pares dos 44 dígitos, checksum módulo 103 e dez módulos de silêncio em cada lado. Símbolos vetoriais não dependem de bitmap de baixa resolução. O principal usa módulo 25,4/90 mm (largura total 83,82 mm). O rodapé repete a mesma chave com módulo 25,4/96 mm (78,58125 mm); essa repetição é permitida pelo §2.21.3 e evita que a mesma fase de rasterização afete ambos. A leitura nas menores escalas pode vir do símbolo do rodapé: não se afirma que cada símbolo isolado sempre decodifique. Ambos respeitam o limite de largura e a altura/margens do MOC. Impressão física continua sujeita à resolução mínima de 300 dpi do manual; aprovação de screenshots não é garantia para qualquer dispositivo ou chave.
+
+Escopo explícito: modelo 57 normal, rodoviário, retrato, emissão normal e serviço normal. Outros modais, contingência, tipos de CT-e/serviço e grupos especiais (perigosos, veículos novos, globalizado e multimodal) retornam `renderer_not_validated`. Não há espelho genérico fingindo um DACTE suportado. A adaptação é selecionada apenas pelo endpoint de prévia da escrituração; a auditoria e os demais modelos continuam usando seus renderizadores anteriores. Formulários com dados de emitente que excedam a capacidade segura do cabeçalho retornam erro explícito, nunca corte silencioso. Isso é um limite de suporte, não certificação de conformidade integral.
+
+Validação final local:
+
+- 67 testes backend; 181 testes frontend; build Vite; cenário Chromium completos aprovados. O aviso de chunk grande permanece; o único HTTP 422 do navegador é intencional no teste de falha/retry. Não há `pageerror`.
+- DACTEs sintéticos de 2, 3 e 8 páginas: campos longos distintos, CPF de tomador, expedidor/recebedor, 30 e 120 referências e 30 observações extensas. Campos completos, todas as referências e marcadores finais aparecem no PDF; estado fiscal/hash/XML permanecem idênticos. A amostra longa passou de 2 para 3 páginas para preservar campos e divisórias, sem reduzir fonte para forçar a contagem anterior.
+- A matriz original permanece: PDF 1,25x/2x/4x; canvas 75/100/125/150%. Foi ampliada a todas as páginas dos três DACTEs: 39 rasterizações PDF e 52 canvases, totalizando 91 combinações. Os canvases comparados são seus pixels internos a 2x, não uma garantia de leitura óptica de screenshots CSS reduzidos ou de qualquer tela/câmera. QR e Code128 coincidem com XML/chave. O comando QA agora termina com sucesso, sem remover as assertivas anteriores.
+- Acrescentadas verificações de conteúdo completo, texto dentro dos quadros e colisões na mesma linha. O relatório atual contém listas vazias de campos ausentes, colisões e saídas dos quadros. A inspeção humana percorreu todas as páginas e canvases de continuação; não equivale a homologação fiscal.
+- Evidências negativas anteriores continuam preservadas em `artifacts/dacte-before-qr-fix` e `artifacts/dacte-before-layout-fix`; resultados atuais, PDFs, XMLs e pixels em `artifacts/document-preview`. Nenhuma falha histórica foi apresentada como aprovação.
+
+Referências específicas: MOC CT-e 4.00 Anexo II §§2.3, 2.6, 2.8 e 2.12 (campos/quebras/continuações), §2.17 (Code128-C, margens, altura e resolução), §§2.18/2.20/2.21.1 (QR, homologação e marca d'água), §2.21.3 (código adicional no rodapé), conforme fonte oficial já vinculada acima. A versão da dependência permanece fixada; não há alteração da instalação compartilhada, XML de origem, escrituração ou transmissão.
