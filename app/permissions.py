@@ -24,6 +24,7 @@ ROUTINES = {
     'auditor.analyses': ('Auditorias internas e avulsas', 'read create import edit delete export print'),
     'auditor.catalogs': ('Catálogos do Auditor', 'read create edit import book export'),
     'system.storage': ('Arquivos e integridade', 'read export'),
+    'fiscal.prosoft': ('Integração fiscal Prosoft', 'read export'),
     'accounting.prosoft': ('Integração Prosoft', 'read export'),
     'financial.titles': ('Títulos a pagar e receber', 'read create edit reverse export print'),
     'financial.settlements': ('Baixas financeiras', 'read settle reverse'),
@@ -210,7 +211,7 @@ def route_policy(path, method, query, payload, session):
         'catalogs': 'fiscal.masters', 'rules': 'fiscal.parameters', 'templates': 'fiscal.parameters',
         'imports': 'fiscal.imports', 'assessments': 'fiscal.assessments', 'tax-adjustments': 'fiscal.assessments',
         'tax-ledgers': 'fiscal.assessments', 'fiscal-reports': 'fiscal.reports',
-        'prosoft': 'accounting.prosoft', 'exports': 'accounting.prosoft', 'audit': 'system.audit'}
+        'prosoft': 'accounting.prosoft', 'prosoft-fiscal': 'fiscal.prosoft', 'exports': 'accounting.prosoft', 'audit': 'system.audit'}
     if root == 'import-packages': return 'fiscal.imports', 'delete' if write else 'read', False
     if root == 'module-imports':
         module = payload.get('module') or query.get('module') or session.get('module')
@@ -252,7 +253,7 @@ def route_policy(path, method, query, payload, session):
     if root == 'imports':
         routine = 'financial.reconciliation' if session.get('module') == 'financial' else 'fiscal.imports'
         if write: action = 'import'
-    if root == 'prosoft': action = 'export'
+    if root in {'prosoft','prosoft-fiscal'}: action = 'export'
     if tail.endswith(('/original', '/download')): action = 'export'
     if tail.endswith('/review'): action = 'edit'
     if tail.endswith(('/book', '/finalize')): action = 'book'

@@ -14,6 +14,7 @@ os.environ['ESCRITURA_DEMO'] = '0'
 import test_fiscal_sales_accounting as sales
 import test_sped_generator as sped
 import test_sped_native_export as native
+import test_prosoft_increment as prosoft
 
 
 class FiscalSalesCompositionTests(unittest.TestCase):
@@ -174,6 +175,122 @@ class FiscalSalesCompositionTests(unittest.TestCase):
             self.assertEqual(403, response.status_code, response.text)
             self.assertEqual(before, self.database_hash())
         finally: client.close()
+
+
+    def import_prosoft_xmls(self, *numbers):
+        # Numeric synthetic issuer makes the XML access key representable in Prosoft.
+        # Existing SPED fixtures intentionally also exercise alphanumeric tax IDs.
+        self.a = self.create_company('PROSOFT001', '112223330001')
+        self.activate(self.a['id'])
+        self.accounts = self.client.get(self.scope('/accounts')).json()
+        self.aid = {a['access_code']: a['id'] for a in self.accounts}
+        return self.import_xmls(*numbers, book=True)
+
+    def prosoft_economic_snapshot(self):
+        economic = {'documents', 'document_sources', 'journals', 'journal_lines', 'titles', 'imports'}
+        return {table: rows for table, rows in self.snapshot().items() if table in economic}
+
+    def prosoft_fiscal_payload(self):
+        return prosoft.configuration() | {'period': '2026-11', 'company_code': '99'}
+
+    def prosoft_accounting_payload(self, *, cta=False, journal_ids=None):
+        mappings = {str(a['id']): {'code': a['access_code'], 'confirmed': True} for a in self.accounts}
+        if cta:
+            mappings[str(self.aid['3'])].update(third_mode='none', create_account={
+                'destination_missing': True, 'classifier': '1.01', 'name': 'Conta sintetica',
+                'cost_center_mode': '0', 'reconciliation': '0'})
+        return {'period': '2026-11', 'company_code': '99', 'plan_code': '52',
+                'accounts': mappings, 'allow_ascii': True, **({'journal_ids': journal_ids} if journal_ids else {})}
+
+    def test_prosoft_daily_accounting_keeps_individual_fiscal_records_and_stale_preview_guard(self):
+        from io import BytesIO
+        from zipfile import ZipFile
+        self.import_prosoft_xmls(1, 2, 3)
+        fiscal_payload = self.prosoft_fiscal_payload()
+        old = self.post('/prosoft-fiscal/preview', fiscal_payload)
+        block = self.block_c()
+        self.mode(); model = self.model()
+        result = self.generate(self.core.documents(self.a['id']), model)
+        self.assertEqual((1, 3), (result['created_count'], result['accounted_count']))
+        manual = self.core.create_journal(self.a['id'], {
+            'date': '2026-11-06', 'document': 'COMP1', 'history': 'Synthetic', 'idempotency_key': 'compose-lc2',
+            'lines': [{'account_id': self.aid['3'], 'debit': '0.01'},
+                      {'account_id': self.aid['4'], 'debit': '0.02'},
+                      {'account_id': self.aid['5'], 'credit': '0.03'}]}, 'synthetic')
+        before = self.prosoft_economic_snapshot()
+        self.post('/prosoft-fiscal/confirm', fiscal_payload | {
+            'preview_hash': old['preview_hash'], 'destination_reviewed': True}, status=409)
+        current = self.post('/prosoft-fiscal/preview', fiscal_payload)
+        self.assertNotEqual(old['preview_hash'], current['preview_hash'])
+        self.assertEqual(old['manifest']['files'], current['manifest']['files'])
+        self.assertEqual((3, 3, 30000), tuple(current['manifest']['totals']['outgoing'][k]
+                                            for k in ('documents', 'records', 'total_cents')))
+        saved = self.post('/prosoft-fiscal/confirm', fiscal_payload | {
+            'preview_hash': current['preview_hash'], 'destination_reviewed': True})
+        response = self.client.get(self.scope(f"/prosoft-fiscal/exports/{saved['id']}/download"))
+        self.assertEqual(200, response.status_code, response.text)
+        with ZipFile(BytesIO(response.content)) as archive:
+            self.assertEqual([2611] * 3, list(map(len, archive.read('SAIDAS.TXT').splitlines())))
+        all_journals = self.post('/prosoft/preview', self.prosoft_accounting_payload())
+        shortened = [r['document_reference'] for r in all_journals['manifest']['trace'] if 'document_reference' in r]
+        self.assertEqual(['SAIDAS-FISCAIS'], [r['original'] for r in shortened])
+        self.assertEqual(10, len(shortened[0]['exported']))
+        accounting_payload = self.prosoft_accounting_payload(cta=True, journal_ids=[manual['id']])
+        accounting = self.post('/prosoft/preview', accounting_payload)
+        self.assertEqual({'CTA': 1, 'LC1': 1, 'LC2': 3}, accounting['manifest']['record_counts'])
+        self.assertEqual(3, accounting['manifest']['debit_cents'])
+        self.assertEqual(3, accounting['manifest']['credit_cents'])
+        self.assertEqual('0052', accounting['manifest']['plan_code'])
+        confirm = accounting_payload | {'preview_hash': accounting['preview_hash'], 'destination_reviewed': True}
+        saved = self.post('/prosoft/confirm', confirm)
+        self.assertEqual(saved['id'], self.post('/prosoft/confirm', confirm)['id'])
+        response = self.client.get(self.scope(f"/exports/{saved['id']}/download"))
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual([208, 448, 342, 342, 342], list(map(len, response.content.splitlines())))
+        self.assertEqual(block, self.block_c())
+        self.assertEqual(before, self.prosoft_economic_snapshot())
+        self.assertFalse(current['manifest']['homologated_in_destination'])
+        self.assertFalse(accounting['manifest']['homologated_in_destination'])
+
+    def test_prosoft_partial_daily_reversal_preserves_compensation_and_fiscal_scope(self):
+        self.import_prosoft_xmls(1, 2, 3)
+        self.mode(); model = self.model(); docs = self.core.documents(self.a['id'])
+        original = self.generate(docs, model)['journals'][0]
+        current = next(d for d in self.core.documents(self.a['id']) if d['id'] == docs[0]['id'])
+        compensation = self.reverse(current)['journal']
+        before = self.database_hash()
+        fiscal = self.post('/prosoft-fiscal/preview', self.prosoft_fiscal_payload())['manifest']
+        self.assertEqual(20000, fiscal['totals']['outgoing']['total_cents'])
+        self.assertEqual([docs[0]['id']], [s['document_id'] for s in fiscal['skipped']])
+        self.assertEqual('not_booked', fiscal['skipped'][0]['reason'])
+        all_journals = self.post('/prosoft/preview', self.prosoft_accounting_payload())
+        shortened = [r['document_reference'] for r in all_journals['manifest']['trace'] if 'document_reference' in r]
+        self.assertEqual(['SAIDAS-FISCAIS'], [r['original'] for r in shortened])
+        self.assertEqual(10, len(shortened[0]['exported']))
+        journals = self.core.journals(self.a['id'])
+        self.assertEqual(40000, sum(j['total_cents'] for j in journals))
+        self.assertTrue(all(sum(l['debit_cents'] for l in j['lines']) ==
+                            sum(l['credit_cents'] for l in j['lines']) for j in journals))
+        self.assertEqual({original['id'], compensation['id']}, {j['id'] for j in self.core.journals(self.a['id'])})
+        self.assertEqual(20000, self.block_c()['summary']['total_cents'])
+        self.assertEqual(before, self.database_hash())
+
+    def test_prosoft_exports_closed_period_without_weakening_daily_generation_guard(self):
+        self.import_prosoft_xmls(1, 2)
+        self.mode(); model = self.model(); docs = self.core.documents(self.a['id'])
+        self.generate(docs[:1], model)
+        manual = self.core.create_journal(self.a['id'], self.journal(key='compose-export-closed') |
+                                          {'document': 'COMP2', 'history': 'Synthetic'}, 'synthetic')
+        for module in ('fiscal', 'accounting'):
+            self.post('/periods/close', {'module': module, 'period': '2026-11', 'reason': 'Fechamento sintetico'})
+        before = self.prosoft_economic_snapshot()
+        for root, payload in [('/prosoft-fiscal', self.prosoft_fiscal_payload()),
+                              ('/prosoft', self.prosoft_accounting_payload(journal_ids=[manual['id']]))]:
+            preview = self.post(root + '/preview', payload)
+            self.post(root + '/confirm', payload | {'preview_hash': preview['preview_hash'], 'destination_reviewed': True})
+        self.generate(docs[1:], model, 'prosoft-compose-closed', status=409)
+        self.assertEqual(2, self.block_c()['summary']['exported_documents'])
+        self.assertEqual(before, self.prosoft_economic_snapshot())
 
 
 if __name__ == '__main__':
