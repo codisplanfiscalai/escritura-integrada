@@ -12,12 +12,14 @@ from fastapi import Body, Request
 from . import backup_archive, backup_providers, backup_crypto, backup_platform, backup_workspace
 from .core import DomainError
 from .permissions import require
+from .backup_backends import select_backend
 
 ACTIVE = ('queued', 'snapshot', 'uploading')
 
 
 class BackupService:
     def __init__(self, db, uploader=backup_providers.upload, clock=time.time):
+        self.backend = select_backend(db)  # Reject unknown backends before filesystem/network effects.
         self.db, self.uploader, self.clock = db, uploader, clock
         self.root = db.data_dir / 'backup-control'
         backup_platform.private_directory(self.root, exist_ok=True)
@@ -32,6 +34,10 @@ class BackupService:
                   state TEXT NOT NULL, created REAL NOT NULL, finished REAL, actor TEXT NOT NULL, error TEXT NOT NULL DEFAULT '',
                   checksum TEXT, cancel INTEGER NOT NULL DEFAULT 0);
                 CREATE UNIQUE INDEX IF NOT EXISTS single_backup ON jobs((1)) WHERE state IN ('queued','snapshot','uploading');''')
+            conn.execute('BEGIN IMMEDIATE')
+            columns={row['name'] for row in conn.execute('PRAGMA table_info(jobs)')}
+            for name,definition in [('source_backend',"TEXT NOT NULL DEFAULT 'sqlite'"),('source_id','TEXT'),('verification','TEXT')]:
+                if name not in columns:conn.execute('ALTER TABLE jobs ADD COLUMN '+name+' '+definition)
         self.state_path.chmod(0o600)
         backup_platform.private_directory(self.root / 'restores', exist_ok=True)
 
@@ -74,11 +80,13 @@ class BackupService:
             settings = conn.execute('SELECT * FROM settings WHERE id=1').fetchone()
             jobs = [self.public(row) for row in conn.execute('SELECT * FROM jobs ORDER BY created DESC, rowid DESC LIMIT 100')]
         return {'config': json.loads(settings['config']) if settings else None, 'next_due': settings['next_due'] if settings else None,
-                'jobs': jobs, 'worker_error': self.worker_error, 'retention': 'Sem exclusão automática local ou remota.', 'max_archive_mib': backup_archive.MAX_BYTES // (1024*1024)}
+                'jobs': jobs, 'worker_error': self.worker_error, 'retention': 'Sem exclusão automática local ou remota.', 'max_archive_mib': self.backend.max_archive_mib, 'source_backend': self.backend.metadata}
 
     @staticmethod
     def public(row):
         result = {key: row[key] for key in ('id', 'state', 'created', 'finished', 'actor', 'error', 'checksum', 'cancel')}
+        result['source_backend'] = row['source_backend']
+        result['verification'] = json.loads(row['verification']) if row['verification'] else None
         config = json.loads(row['config'])
         result['encryption_key_id'] = config.get('encryption_key_id')
         result['destination'] = {key: config.get(key, '') for key in ('provider', 'folder', 'bucket', 'prefix', 'endpoint')}
@@ -110,8 +118,8 @@ class BackupService:
             if conn.execute("SELECT 1 FROM jobs WHERE state IN ('queued','snapshot','uploading')").fetchone():
                 raise DomainError('Já existe um backup em andamento.', 409, 'backup_busy')
             job_id = uuid.uuid4().hex
-            conn.execute('INSERT INTO jobs(id,intent,config,state,created,actor) VALUES(?,?,?,\'queued\',?,?)',
-                         (job_id, intent, settings['config'], self.clock(), actor))
+            conn.execute('INSERT INTO jobs(id,intent,config,state,created,actor,source_backend,source_id) VALUES(?,?,?,\'queued\',?,?,?,?)',
+                         (job_id, intent, settings['config'], self.clock(), actor, self.backend.kind, self.backend.identity))
             if scheduled:
                 # Coalesce missed slots: one job, next interval from admission; no catch-up storm.
                 conn.execute('UPDATE settings SET next_due=? WHERE id=1', (self.clock() + config['interval_hours'] * 3600,))
@@ -154,6 +162,15 @@ class BackupService:
             if row:
                 self.run(row)
 
+    def check_source(self,row):
+        # Legacy rows can only be SQLite; new jobs pin the explicitly declared source identity.
+        if row['source_backend']!=self.backend.kind or (row['source_id'] and row['source_id']!=self.backend.identity):
+            raise DomainError('A origem/backend mudou desde a solicitação. Nenhuma cópia ou conexão será iniciada.',409,'backup_source_changed')
+
+    def record_verification(self,job_id,result):
+        with self.connection() as conn:
+            conn.execute('UPDATE jobs SET verification=? WHERE id=?',(json.dumps(result),job_id))
+
     def run(self, row):
         job_id = row['id']
         config = json.loads(row['config'])
@@ -170,13 +187,12 @@ class BackupService:
                 if current['state'] != 'queued' or current['cancel']:
                     return
                 conn.execute("UPDATE jobs SET state='snapshot' WHERE id=?", (job_id,))
+            self.check_source(row)
             backup_providers.credentials(json.loads(row['config'])['credential_ref'])
             secret = backup_crypto.load_key(config.get('encryption_key_id'), self.db.data_dir)
             work = backup_workspace.create(self.work_root, job_id)
-            checksum = backup_crypto.build(self.db.path, path, config['encryption_key_id'], secret, cancelled, work_dir=work)
-            verified = work / 'verified'
-            backup_crypto.restore(path, verified, checksum, secret=secret, work_dir=work)
-            (verified / 'escritura.sqlite3').unlink(); verified.rmdir()
+            checksum = self.backend.capture(path,config['encryption_key_id'],secret,cancelled,work)
+            self.backend.verify(path,checksum,secret,cancelled,work,lambda result:self.record_verification(job_id,result))
             with self.connection() as conn:
                 conn.execute('BEGIN IMMEDIATE')
                 if cancelled():
@@ -213,16 +229,14 @@ class BackupService:
             row = conn.execute('SELECT * FROM jobs WHERE id=?', (job_id,)).fetchone()
         if not row or row['state'] not in {'completed', 'uncertain', 'interrupted'} or not row['checksum']:
             raise DomainError('Backup verificado indisponível.', 409)
+        self.check_source(row)
         target = self.root / 'restores' / job_id
         work = backup_workspace.create(self.work_root, job_id)
         try:
             config = json.loads(row['config'])
-            if config.get('encryption_key_id'):
-                backup_crypto.restore(self.root / (job_id + '.eibk'), target, row['checksum'],
-                                      key_loader=lambda key_id: backup_crypto.load_key(key_id, self.db.data_dir), work_dir=work)
-            else:
-                # Explicit compatibility for historical ZIP jobs; new writes never fall back to plaintext.
-                backup_archive.restore(self.root / (job_id + '.zip'), target, row['checksum'])
+            legacy=not config.get('encryption_key_id')
+            result=self.backend.restore(self.root/(job_id+('.zip' if legacy else '.eibk')),target,row['checksum'],
+                lambda key_id:backup_crypto.load_key(key_id,self.db.data_dir),work,legacy=legacy)
         except FileExistsError:
             raise DomainError('Extração isolada já existe; nenhum arquivo foi sobrescrito.', 409, 'restore_exists') from None
         except Exception:
@@ -232,7 +246,7 @@ class BackupService:
             except (OSError, ValueError):
                 self.worker_error = 'Temporários privados pendentes de limpeza; a cópia isolada pode já existir.'
                 raise DomainError(self.worker_error, 503, 'backup_cleanup') from None
-        return {'directory': 'backup-control/restores/' + job_id, 'activated': False}
+        return {'directory': 'backup-control/restores/' + job_id, **result}
 
     def start(self):
         def loop():
@@ -256,6 +270,8 @@ class BackupService:
 class UnavailableBackupService:
     # Keep the existing application usable when Windows cannot secure the backup area.
     message = 'Backups indisponíveis: o ambiente Windows precisa de volume local com ACLs persistentes e permissões privadas.'
+    def __init__(self,message=None):
+        if message:self.message=message
     def start(self): pass
     def close(self): pass
     def status(self):
@@ -269,6 +285,9 @@ class UnavailableBackupService:
 def register(application, core):
     try:
         service = BackupService(core.db)
+    except DomainError as error:
+        if error.code!='backup_backend':raise
+        service=UnavailableBackupService(error.detail)
     except (OSError, ValueError):
         if not backup_platform.WINDOWS: raise
         service = UnavailableBackupService()

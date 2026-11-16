@@ -20,7 +20,7 @@ const date=value=>value?new Date(value*1000).toLocaleString():'—';
  <header class="view-heading"><div><div class="eyebrow">ADMINISTRAÇÃO DO AMBIENTE</div><h1>Backups remotos</h1><p>Cópia consistente do SQLite e dos originais armazenados no banco, para todas as empresas.</p></div><button class="button outline" :disabled="m.busy" @click="c.status">Atualizar histórico</button></header>
  <p v-if="m.status?.worker_error" class="message error" role="alert">{{m.status.worker_error}}</p>
  <p v-if="m.error" class="message error" role="alert">{{m.error}} Confira o histórico antes de repetir.</p>
- <p class="message warning">Novos pacotes usam AES-256-GCM e contêm dados fiscais e hashes de senha; proteja o acesso ao destino. Sessões, credenciais externas e certificados em pastas não são incluídos. Limite: {{m.status?.max_archive_mib||512}} MiB compactados / 2 GiB de banco. Não há exclusão automática nem ativação da cópia restaurada.</p>
+ <p>Backend de origem: {{m.status?.source_backend?.label||'Indisponível'}}. A origem é definida pelo servidor, sem seleção automática.</p>\n <p class="message warning">Novos pacotes usam AES-256-GCM e contêm dados fiscais e hashes de senha; proteja o acesso ao destino. Sessões, credenciais externas e certificados em pastas não são incluídos. Limite: {{m.status?.source_backend?.limits||'512 MiB no pacote cifrado / 2 GiB de SQLite'}}. Não há exclusão automática nem ativação da cópia restaurada.</p>
  <form class="panel panel-body" @submit.prevent="c.save">
   <h2>Destino e agendamento</h2>
   <fieldset :disabled="m.busy||active"><div class="backup-grid">

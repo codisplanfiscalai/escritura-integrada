@@ -190,6 +190,8 @@ CREATE INDEX IF NOT EXISTS idx_audit_company ON audit(company_id,id);
 
 
 class Database:
+    backend = "sqlite"
+
     def __init__(self, data_dir=None):
         if data_dir is None:
             data_dir = os.environ.get("ESCRITURA_DATA_DIR")

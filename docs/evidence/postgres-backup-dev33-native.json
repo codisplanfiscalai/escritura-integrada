@@ -1,0 +1,54 @@
+{
+  "ok": true,
+  "engine": "postgresql",
+  "scope": "synthetic-disposable-cluster",
+  "production_connected": false,
+  "docker_used": false,
+  "server_version_num": 170012,
+  "test_exit_code": 0,
+  "duration_seconds": 3.844,
+  "test_summary": "test_application_queue_restore_and_repeat_protection (__main__.NativePostgresBackupProbeTests.test_application_queue_restore_and_repeat_protection) ... ok\ntest_capture_excludes_pending_write_and_preserves_snapshot_after_commit (__main__.NativePostgresBackupProbeTests.test_capture_excludes_pending_write_and_preserves_snapshot_after_commit) ... ok\ntest_real_dump_restore_hashes_sessions_constraints_and_source_preserved (__main__.NativePostgresBackupProbeTests.test_real_dump_restore_hashes_sessions_constraints_and_source_preserved) ... ok\ntest_wrong_key_and_corruption_create_no_database (__main__.NativePostgresBackupProbeTests.test_wrong_key_and_corruption_create_no_database) ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 3.649s\n\nOK\n",
+  "proofs": [
+    {
+      "test": "application_queue",
+      "backend": "postgresql-fixture",
+      "upload_simulated": true,
+      "upload_count": 1,
+      "verification_and_restore_hash_match": true,
+      "payload_sha256": "52b044f09e5ec6448b0c71ffc5c019bbfe498d369e2c99aa90160645ebbacd2b",
+      "repeat_refused": true,
+      "receipt_persisted": true,
+      "activated": false
+    },
+    {
+      "test": "concurrent_snapshot",
+      "writer_open_during_capture": true,
+      "source_commit_visible_after_capture": true,
+      "restored_matches_capture_snapshot": true,
+      "payload_sha256": "52b044f09e5ec6448b0c71ffc5c019bbfe498d369e2c99aa90160645ebbacd2b"
+    },
+    {
+      "test": "roundtrip",
+      "payload_sha256": "52b044f09e5ec6448b0c71ffc5c019bbfe498d369e2c99aa90160645ebbacd2b",
+      "source_payload_sha256": "52b044f09e5ec6448b0c71ffc5c019bbfe498d369e2c99aa90160645ebbacd2b",
+      "dump_bytes": 4471,
+      "dump_sha256": "576fef99635f833b921e4d2a0e01f58281492009421cf7607abdd86f0aa9924b",
+      "envelope_bytes": 5468,
+      "envelope_sha256": "88a9eaba84727019da76332a7a2607d5f6fc87bbc1a7049fdd541fb2a84583fd",
+      "constraints_verified": true,
+      "sessions_empty": true,
+      "source_preserved": true
+    },
+    {
+      "test": "authentication",
+      "wrong_key_refused": true,
+      "corruption_refused": true,
+      "restore_databases_before": 0,
+      "restore_databases_after": 0
+    }
+  ],
+  "created_databases_removed": true,
+  "workspace_removed": true,
+  "composition_base": "4f53d1a0b52fc7c0edffd744bc259128863259e2",
+  "previous_pr58_head": "8e557844a6f0077d4eba634f738d9564dbd5dee4"
+}

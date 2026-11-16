@@ -1,0 +1,61 @@
+{
+  "ok": true,
+  "engine": "postgresql",
+  "scope": "synthetic-disposable-cluster",
+  "production_connected": false,
+  "docker_used": false,
+  "server_version_num": 170012,
+  "test_exit_code": 0,
+  "duration_seconds": 2.343,
+  "test_summary": "test_capture_excludes_pending_write_and_preserves_snapshot_after_commit (__main__.NativePostgresBackupProbeTests.test_capture_excludes_pending_write_and_preserves_snapshot_after_commit) ... ok\ntest_real_dump_restore_hashes_sessions_constraints_and_source_preserved (__main__.NativePostgresBackupProbeTests.test_real_dump_restore_hashes_sessions_constraints_and_source_preserved) ... ok\ntest_wrong_key_and_corruption_create_no_database (__main__.NativePostgresBackupProbeTests.test_wrong_key_and_corruption_create_no_database) ... ok\n\n----------------------------------------------------------------------\nRan 3 tests in 2.151s\n\nOK\n",
+  "proofs": [
+    {
+      "test": "concurrent_snapshot",
+      "writer_open_during_capture": true,
+      "source_commit_visible_after_capture": true,
+      "restored_matches_capture_snapshot": true,
+      "payload_sha256": "52b044f09e5ec6448b0c71ffc5c019bbfe498d369e2c99aa90160645ebbacd2b"
+    },
+    {
+      "test": "roundtrip",
+      "payload_sha256": "52b044f09e5ec6448b0c71ffc5c019bbfe498d369e2c99aa90160645ebbacd2b",
+      "source_payload_sha256": "52b044f09e5ec6448b0c71ffc5c019bbfe498d369e2c99aa90160645ebbacd2b",
+      "dump_bytes": 4471,
+      "dump_sha256": "99620ef187bd6ad5ed3c682d80bc1dffeaca13d6e16d7befd6e0c8aeb89f7899",
+      "envelope_bytes": 5468,
+      "envelope_sha256": "bc49773adc4fba894616801abb195059a7d9cdb59c4201750c7946847d12ce55",
+      "constraints_verified": true,
+      "sessions_empty": true,
+      "source_preserved": true
+    },
+    {
+      "test": "authentication",
+      "wrong_key_refused": true,
+      "corruption_refused": true,
+      "restore_databases_before": 0,
+      "restore_databases_after": 0
+    }
+  ],
+  "created_databases_removed": true,
+  "workspace_removed": true,
+  "packages": [
+    {
+      "Package": "libpq5",
+      "Version": "17.12-0+deb13u1",
+      "Filename": "pool/updates/main/p/postgresql-17/libpq5_17.12-0+deb13u1_amd64.deb",
+      "SHA256": "b93ae6e06672919c28eb018e7e13af34f1a94fc357f21e28488d339faf53ec98"
+    },
+    {
+      "Package": "postgresql-17",
+      "Version": "17.12-0+deb13u1",
+      "Filename": "pool/updates/main/p/postgresql-17/postgresql-17_17.12-0+deb13u1_amd64.deb",
+      "SHA256": "72443dcedfa0bdfa79dafdf414c18498b89929eeee1555e987c87154f3082fea"
+    },
+    {
+      "Package": "postgresql-client-17",
+      "Version": "17.12-0+deb13u1",
+      "Filename": "pool/updates/main/p/postgresql-17/postgresql-client-17_17.12-0+deb13u1_amd64.deb",
+      "SHA256": "53466b127f3f6e95c7a30352db7fcdd7b83d2143a03efbdcd005032b5047aa83"
+    }
+  ]
+}

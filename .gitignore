@@ -41,3 +41,7 @@ compose.named*.yaml
 # Encrypted fiscal backups and external recovery keys must never be versioned.
 *.eibk
 *.key
+
+# Experimental encrypted PostgreSQL fixtures; never publish payloads.
+*.eipg
+*.pgpass
