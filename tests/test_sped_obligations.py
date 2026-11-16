@@ -131,6 +131,26 @@ class ObligationCatalogApiTests(unittest.TestCase):
                             json={'period': '2026-11', 'import_id': 1})
             self.assertEqual(403, r.status_code, r.text)
 
-    def test_catalog_does_not_create_new_obligation_export_endpoints(self):
-        for name in ('ecd', 'ecf', 'efd-contribuicoes'):
-            self.assertFalse(any(name in getattr(r, 'path', '') for r in self.app.routes))
+    def test_catalog_only_adds_metadata_and_preserves_preparation_endpoints(self):
+        def routes(app):
+            return {(method, route.path) for route in app.routes
+                    for method in getattr(route, 'methods', ())}
+
+        app = FastAPI()
+        before = routes(app)
+        register_obligation_routes(app)
+        self.assertEqual({('GET', CATALOG_PATH)}, routes(app) - before)
+
+        # ECD snapshots and ECF references already belong to develop; neither
+        # constitutes a complete obligation generator supplied by this catalog.
+        installed = routes(self.app)
+        for path in ('/api/sped/ecf-references',
+                     '/api/companies/{cid}/sped-generator/accounting-snapshot'):
+            self.assertIn(('GET', path), installed)
+        response = self.client.get(CATALOG_PATH)
+        self.assertEqual(200, response.status_code, response.text)
+        obligations = by_id(response.json())
+        for name in ('ecd', 'ecf', 'efd_contribuicoes'):
+            self.assertEqual([], obligations[name]['exports'])
+            self.assertFalse(obligations[name]['complete_file_generator'])
+            self.assertFalse(obligations[name]['validated_in_official_program'])

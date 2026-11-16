@@ -1,0 +1,16 @@
+{
+  "services": {
+    "app": {
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "./data/app",
+          "target": "/data",
+          "bind": {
+            "create_host_path": false
+          }
+        }
+      ]
+    }
+  }
+}
