@@ -111,8 +111,8 @@ test('centros não buscam contas/lançamentos; lançamentos mantêm catálogos c
 test('cadastros fiscais e históricos não leem contas; modelos contábeis mantêm listas completas',async()=>{
  const fiscal=await harness('MastersView',{area:'fiscal'});
  try{
-  assert.deepEqual(fiscal.requests.map(x=>x.url),['/companies/1/masters/participant']);fiscal.requests[0].resolve([]);await flush();
-  fiscal.view.kind.value='product';await flush();assert.equal(fiscal.requests.at(-1).url,'/companies/1/masters/product');assert.equal(fiscal.requests.length,2);
+  assert.deepEqual(fiscal.requests.map(x=>x.url),['/companies/1/masters/product']);fiscal.requests[0].resolve([]);await flush();
+  fiscal.view.kind.value='service';await flush();assert.equal(fiscal.requests.at(-1).url,'/companies/1/masters/service');assert.equal(fiscal.requests.length,2);
  }finally{fiscal.close();}
  const accounting=await harness('MastersView',{area:'accounting'});
  try{
