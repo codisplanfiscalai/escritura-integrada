@@ -1,5 +1,7 @@
 # Interface da integração contábil de saídas — incremento sobre a PR39
 
+Este documento registra o incremento original da PR42. A ampliação posterior para entradas e saídas, os dois acessos e a prévia compartilhada estão em [Integração Contábil — entradas e saídas](INTEGRACAO_CONTABIL_ENTRADAS_SAIDAS.md).
+
 Base original: PR39, `feat/fiscal-sales-daily-accounting-20261115`, commit `e4ca8ccc8ceb8bf57b58c52a9aa78c9bd38b927e`. A documentação de API em `INTEGRACAO_CONTABIL_SAIDAS.md` descreve o inventário anterior e a geração/estorno; este documento registra o incremento de interface.
 
 A atualização posterior à integração da PR39 usa develop dev.14; ver [composição, resolução de CI e validação atual](PR42_COMPOSICAO_DEVELOP.md).

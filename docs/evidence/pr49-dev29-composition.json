@@ -1,0 +1,373 @@
+{
+  "synthetic_only": true,
+  "original_pr_head": "d39963a66de08ca0ec5c0b03928bc2771f71eb81",
+  "tested_develop": "4e031a1b34ea695d8768af4d30224197d9178ea3",
+  "version": "0.9.0-dev.29",
+  "prior_pr_CI": {
+    "id": 43818810497,
+    "conclusion": "success"
+  },
+  "parallel_PR52_observed": {
+    "head": "448f60826f2bff8bc9884da92f73a67f2c8d31a0",
+    "state": "open/draft",
+    "ci_run": 43875031879,
+    "ci_status_when_consulted": "in_progress",
+    "source_script_identical": true,
+    "branch_changed_by_this_task": false
+  },
+  "validation_worktree_head": "d39963a66de08ca0ec5c0b03928bc2771f71eb81",
+  "provenance_note": "Tests ran on the composed worktree before committing the merge. Browser source_sha may record the first parent. These file hashes identify the validated composition.",
+  "backend_regression": {
+    "modules": [
+      "test_core",
+      "test_business",
+      "test_company_accounting_settings",
+      "test_account_plans",
+      "test_global_account_plans",
+      "test_lazy_account_refs",
+      "test_journal_participants",
+      "test_accounting_report_models",
+      "test_report_models_api",
+      "test_fiscal_import",
+      "test_import_revision",
+      "test_import_reprocessing",
+      "test_reprocessing_linked_effects",
+      "test_generated_payables",
+      "test_import_package_cleanup",
+      "test_book_cancellation",
+      "test_bulk_operations",
+      "test_bulk_security",
+      "test_operational_settings",
+      "test_workspace_context",
+      "test_fiscal_sales_accounting",
+      "test_fiscal_sales_composition",
+      "test_fiscal_incoming_accounting",
+      "test_journal_query_loading",
+      "test_sped_generator",
+      "test_sped_native_export",
+      "test_sped_bookkeeping",
+      "test_sped_obligations",
+      "test_fiscal_analytics",
+      "test_fiscal_analytical_reports",
+      "test_fiscal_series",
+      "test_import_payables",
+      "test_purchase_reclassification",
+      "test_document_totals",
+      "test_movement_exports",
+      "test_deploy_storage",
+      "test_infrastructure",
+      "test_ci_release",
+      "test_ci_artifacts_cache",
+      "test_image_aliases",
+      "test_develop_alias",
+      "test_latest_alias",
+      "test_browser_script_bootstrap",
+      "test_fiscal_accounting_prosoft_composition",
+      "test_prosoft_increment",
+      "test_prosoft_cancel_references",
+      "test_prosoft_reception_composition",
+      "test_prosoft_settings",
+      "test_browser_cfop_checks",
+      "test_shared_registrations",
+      "test_contributions_contracts",
+      "test_contributions_snapshot",
+      "test_contributions_composition",
+      "test_nfce_identity_lookup",
+      "test_nfce_identity_contract",
+      "test_prosoft_reference_contract",
+      "test_ci_delivery_cache"
+    ],
+    "tests_run": 763,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 374.523,
+    "ok": true
+  },
+  "backend_new_composition": {
+    "modules": [
+      "test_fiscal_accounting_dev29_composition"
+    ],
+    "tests_run": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 2.794,
+    "ok": true
+  },
+  "backend_total": {
+    "tests_run": 765,
+    "modules": 58,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "frontend": {
+    "tests": 184,
+    "passed": 184,
+    "failed": 0,
+    "skipped": 0,
+    "milliseconds": 3117.542141
+  },
+  "build": {
+    "ok": true,
+    "version": "0.9.0-dev.29",
+    "seconds": 4.63,
+    "main_bundle_kb": 848.71,
+    "gzip_kb": 251.34,
+    "warning": "Existing >500 kB bundle warning; dependency changes only those from develop."
+  },
+  "browsers": {
+    "browser-fiscal-sales-accounting": {
+      "ok": true,
+      "synthetic_only": true,
+      "checks": [
+        "Pagination, empty/combined/rapid filters and KeepAlive navigation are read-only",
+        "Daily: 0.01 + 10.02 => one balanced 10.03 journal; lost response after commit and exact-key retry do not duplicate; both sources traced",
+        "Individual: three notes/dates/CFOP/accounts => three journals; company B has two independent journals; saved company mode and previous movements preserved",
+        "Fiscal fields, original single journal and receivable preserved; independent daily report read-only and balanced at 43.22",
+        "Closed accounting month refuses UI generation even with permissive legacy defaults; reopening permits it; FK and all journals balanced",
+        "Both menus share integration: incoming preview/close read-only; daily sales setting preserved; two purchases remain individual; lost-response exact retry and alternate menu do not duplicate; origins/FK/balance preserved",
+        "Configuration and controls remain within the 1100px viewport; wide table scroll is contained"
+      ],
+      "console_errors": [],
+      "browser_version": "151.0.7922.34",
+      "read_only_hashes": {
+        "before": {
+          "documents": "9cce1f82d6ff0c0da4c2a44af7997eb29ad5f179d37f036165d6efff0051aee2",
+          "journals": "b8d8db269af1581487a432e257f80462614c7337c49a2ad4834bcd4e302d9c09",
+          "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+          "titles": "41daa9ae45afbd7558867d4153ae4b5a026f034269aa9470cbed136e8cf3795d",
+          "audit": "a7a41ce1d819813f47afe7a6d93a79cd3d02dffb0bbc401d8071b65b6978bce8"
+        },
+        "after": {
+          "documents": "9cce1f82d6ff0c0da4c2a44af7997eb29ad5f179d37f036165d6efff0051aee2",
+          "journals": "b8d8db269af1581487a432e257f80462614c7337c49a2ad4834bcd4e302d9c09",
+          "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+          "titles": "41daa9ae45afbd7558867d4153ae4b5a026f034269aa9470cbed136e8cf3795d",
+          "audit": "a7a41ce1d819813f47afe7a6d93a79cd3d02dffb0bbc401d8071b65b6978bce8"
+        }
+      },
+      "replay_hashes": {
+        "before": {
+          "documents": "c1add59958cdfd4ebf20f306aaa5693db0e5ddeac72dd0ce5f30cbd2c3acb489",
+          "journals": "25a6c0890ec1aa56aff35082dede0ee97cb617200e8cf02f1ccc90cba73547b5",
+          "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+          "titles": "41daa9ae45afbd7558867d4153ae4b5a026f034269aa9470cbed136e8cf3795d",
+          "audit": "9772bd9e84fe5097e4ad758df5c5d58c7a0aaac3b088fc9a5dc7ce8678b2293e"
+        },
+        "after": {
+          "documents": "c1add59958cdfd4ebf20f306aaa5693db0e5ddeac72dd0ce5f30cbd2c3acb489",
+          "journals": "25a6c0890ec1aa56aff35082dede0ee97cb617200e8cf02f1ccc90cba73547b5",
+          "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+          "titles": "41daa9ae45afbd7558867d4153ae4b5a026f034269aa9470cbed136e8cf3795d",
+          "audit": "9772bd9e84fe5097e4ad758df5c5d58c7a0aaac3b088fc9a5dc7ce8678b2293e"
+        }
+      },
+      "report_hashes": {
+        "before": {
+          "documents": "5a92359770599fbe5f111adbc6be469facf0534c7dea9f4ad7d8b06f04281f31",
+          "journals": "03708cd5dc1ecc3617383ddd7dbc777a9edf634d5e726c193be1e19ffdac1bc2",
+          "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+          "titles": "41daa9ae45afbd7558867d4153ae4b5a026f034269aa9470cbed136e8cf3795d",
+          "audit": "839369394928093847797439d3b959cc454bbe73cbba19ab0a1438e19573cc48"
+        },
+        "after": {
+          "documents": "5a92359770599fbe5f111adbc6be469facf0534c7dea9f4ad7d8b06f04281f31",
+          "journals": "03708cd5dc1ecc3617383ddd7dbc777a9edf634d5e726c193be1e19ffdac1bc2",
+          "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+          "titles": "41daa9ae45afbd7558867d4153ae4b5a026f034269aa9470cbed136e8cf3795d",
+          "audit": "839369394928093847797439d3b959cc454bbe73cbba19ab0a1438e19573cc48"
+        }
+      },
+      "incoming_preview_hashes": {
+        "before": {
+          "documents": "22bfce7d61cfeffa5e3f4250a3461708f15b3737516f3c7b942cd6fb03f4ca6e",
+          "journals": "84cade9c206468842b817ceb2bb779cc31095a02e857c65e3151ecc6bbd4a8a9",
+          "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+          "titles": "41daa9ae45afbd7558867d4153ae4b5a026f034269aa9470cbed136e8cf3795d",
+          "audit": "18bd1c812c71a6a3bc571c8be085bbf71e56be46bc0a2adf9e536cbff6c28d1f"
+        },
+        "after": {
+          "documents": "22bfce7d61cfeffa5e3f4250a3461708f15b3737516f3c7b942cd6fb03f4ca6e",
+          "journals": "84cade9c206468842b817ceb2bb779cc31095a02e857c65e3151ecc6bbd4a8a9",
+          "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+          "titles": "41daa9ae45afbd7558867d4153ae4b5a026f034269aa9470cbed136e8cf3795d",
+          "audit": "18bd1c812c71a6a3bc571c8be085bbf71e56be46bc0a2adf9e536cbff6c28d1f"
+        }
+      },
+      "incoming_replay_hashes": {
+        "before": {
+          "documents": "bd585a24ac06969d66b4d95b115ad98ed49f4a69e0e4be4c550dcd1b72ef53cb",
+          "journals": "e4ea26f2467da402622a0dd14f02a808fae53976988fa3c17bdd4513eef185a1",
+          "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+          "titles": "41daa9ae45afbd7558867d4153ae4b5a026f034269aa9470cbed136e8cf3795d",
+          "audit": "85d0ff8111d6d8f82d87707d8235f6a18ced361a1f00414a7ad9f3e7d49ebf07"
+        },
+        "after": {
+          "documents": "bd585a24ac06969d66b4d95b115ad98ed49f4a69e0e4be4c550dcd1b72ef53cb",
+          "journals": "e4ea26f2467da402622a0dd14f02a808fae53976988fa3c17bdd4513eef185a1",
+          "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+          "titles": "41daa9ae45afbd7558867d4153ae4b5a026f034269aa9470cbed136e8cf3795d",
+          "audit": "85d0ff8111d6d8f82d87707d8235f6a18ced361a1f00414a7ad9f3e7d49ebf07"
+        }
+      },
+      "final_journals": {
+        "A": 8,
+        "B": 2
+      }
+    },
+    "browser-prosoft-export": {
+      "ok": true,
+      "synthetic_only": true,
+      "checks": [
+        "Mapeamentos fiscais persistidos por empresa: plano escolhido, espécies 55/65 e contas por CFOP sobrevivem a reload",
+        "Prévia fiscal com totais reconciliados, emissão anterior, avisos não bloqueantes e não cobertos; download ZIP real e replay no mesmo lote",
+        "Escolha de layout fiscal persistida: somente saídas gera apenas SAIDAS.TXT; registros não selecionados têm motivo e retornar a ambas preserva intenção",
+        "Editar campos remove prévia/download; troca de empresa descarta prévia atrasada e não leva mapeamentos à empresa B",
+        "Canceladas identificadas no TXT e na prévia; referência curta no LC1 com mapa imutável baixado e original preservada",
+        "Contábil preserva mapeamentos de contas, terceiros e centros e gera CTA/LC1 via UI, com download real e conferência de posições",
+        "Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro",
+        "Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno",
+        "Navegação aguarda a troca de empresa/módulo e confirma a guia fiscal sob latência de 750 ms",
+        "Exportação em competência fechada permitida; documentos/fontes/lançamentos/partidas/títulos/contas/centros/cadastros econômicos com hashes idênticos"
+      ],
+      "console_errors": [],
+      "screenshots": [
+        "fiscal-preview-desktop.png",
+        "accounting-preview-desktop.png",
+        "accounting-mobile.png"
+      ],
+      "browser_version": "151.0.7922.34",
+      "context_network_latency_ms": 750
+    },
+    "browser-workspace-context": {
+      "ok": true,
+      "checks": [
+        "Dashboard fiscal/accounting cards follow suggested August/September and company, without changing operational November",
+        "F8 code with leading zeros, suggested September, table wheel reaches page scrolling",
+        "manual July survives navigation; F8 and F9 are blocked while editing",
+        "sidebar scrolls by keyboard with thin scrollbar",
+        "F9 clears company and persisted year/month without deleting records",
+        "Document, journal, journal-line, title and audit hashes unchanged by context/filter navigation"
+      ],
+      "console_errors": [],
+      "screenshots": [
+        "dashboard-monthly-indicators.png",
+        "workspace-context.png"
+      ],
+      "source_sha": "d39963a66de08ca0ec5c0b03928bc2771f71eb81",
+      "stage": "complete"
+    },
+    "browser-document-summary": {
+      "ok": true,
+      "checks": [
+        "September: 52 documents across two pages; August: 1; October: zero cards/grid/export count",
+        "Combined operation/status/search, rapid month changes and KeepAlive navigation retain correct cards",
+        "Company B and next exercise empty; returning to A/current exercise restores September",
+        "Documents, journals, journal lines, titles and audit hashes unchanged after UI filtering/navigation"
+      ],
+      "console_errors": [],
+      "synthetic_only": true,
+      "browser_version": "151.0.7922.34"
+    }
+  },
+  "general_smoke_not_passed": {
+    "headless_shell": {
+      "ok": false,
+      "completed_checks": [
+        "Login e contexto por sessão; confirmações e conferência separada são opcionais por padrão",
+        "Editar outra empresa mantém a empresa ativa",
+        "CNPJ: consulta simulada, comparação, aplicação seletiva e persistência de múltiplas IEs",
+        "Terceiros: criação/edição/cancelamento/desativação na UI, consulta sem vínculo na outra empresa e uso sem duplicar perfil",
+        "Contadores: criação/edição/cancelamento/desativação na UI, consulta sem vínculo na outra empresa e uso sem duplicar perfil",
+        "Conferência padrão salva o responsável sem diálogo extra e mantém escrituração disponível",
+        "Documento → conferência → contabilidade + duas parcelas em transação única",
+        "Baixa parcial com juros/desconto e estorno pela interface",
+        "Importação CSV padrão executa uma única confirmação final, preservando autenticação e arquivo original",
+        "Relatório com totais e acesso às partidas de origem",
+        "Exercício 2028 com 12 meses, seleção, fechamento/reabertura justificados e independência contábil",
+        "Grupo e usuário criados pela interface; origem efetiva exibida; API recusa escrita e outra empresa",
+        "Finalização fiscal revisada com saldo credor, memória persistida e exportações PDF/Excel",
+        "Livro fiscal com filtros e Excel gerado no backend"
+      ],
+      "error": "Timeout 30000ms exceeded.\n=========================== logs ===========================\n\"commit\" event fired\n\"networkidle\" event fired\n============================================================",
+      "failed_at": "scripts/browser_exports.py:25 popup.wait_for_load_state(domcontentloaded)",
+      "note": "14 checks completed, including both original Cadastros helper checks. Overall smoke not counted as success."
+    },
+    "full_chromium": {
+      "ok": false,
+      "completed_checks": 0,
+      "error": "Chromium 151 startup SIGABRT: process_singleton_posix socket() failed: Operation not permitted (1)."
+    },
+    "assertions_changed_or_skipped": false,
+    "CI_smoke_gate_preserved": true
+  },
+  "validated_source_files": {
+    "app/fiscal_sales_accounting.py": {
+      "sha256": "8571d487ad1d2e7b49f0cc3ec172ee7e95c3814b215066b5d014b532616d86cc",
+      "git_blob": "851f2a1866dba075d7e3c8496fc71c8a583c3977"
+    },
+    "app/permissions.py": {
+      "sha256": "120410d513285d427ce2445f83b7934128e83c835c35fcaf2596558a6ec3e338",
+      "git_blob": "1e5fa3fa3b4b120e01730e9c10959f9431d3850b"
+    },
+    "frontend/src/App.vue": {
+      "sha256": "4ce576cfc88e92413a699e588ee69859a487848851ab4d94b3027a2a611a160b",
+      "git_blob": "ee81a6a2a7c024cd92089f78955093179575d27b"
+    },
+    "frontend/src/views/FiscalSalesAccountingView.vue": {
+      "sha256": "1dcdd8b357a340ac98d2f6f184d5b31c821ad3715ab1f2aa2d7dc9ee53656468",
+      "git_blob": "c1212cbbcac3925fed1fe49d729d5c1957fd7177"
+    },
+    "frontend/tests/fiscal-sales-accounting.test.js": {
+      "sha256": "0bf4893f7b392c34c627c18868bf1c4a2c66bd7ee76ab8bd802daf82f1501b2d",
+      "git_blob": "ef51ea29d0cd9e1a2291fe4f180112628198428d"
+    },
+    "scripts/browser_fiscal_sales_accounting.py": {
+      "sha256": "554e0309144bae26d37e9cc87be8f655b9e369f9988cfd32663a9c6b89edb603",
+      "git_blob": "d5743d7ac4ebef74cba763833331f50f5fb6e90c"
+    },
+    "scripts/browser_prosoft_export.py": {
+      "sha256": "22b3f739aaecb6113000630fbd07e577a4c4513fa5185dadb842e4649d3ec21d",
+      "git_blob": "7c00107219818df08088b7c459c8eaa99ecbc123"
+    },
+    "tests/test_fiscal_incoming_accounting.py": {
+      "sha256": "bd3da16d6dc03253be94af8bc76e691e7b773a14225dacad20f8ce47eeeaf191",
+      "git_blob": "cce7202ac6b663c284927eb35a77d5a0782abc66"
+    },
+    "tests/test_fiscal_accounting_prosoft_composition.py": {
+      "sha256": "b48096245d04b15a18e68b6d1b9c6e91b0cd19542bc8ba0bbcc9301604a2da0a",
+      "git_blob": "c7fd0f73bb4a5495bac4411d1a10aebec8d27afb"
+    },
+    "tests/test_fiscal_accounting_dev29_composition.py": {
+      "sha256": "552a61cc9d35fafac0cb11d05900f91b15b775276694bd9946865ad75762d34f",
+      "git_blob": "8343b1c0e427cdd1f49c03ee59aedff4bd082c63"
+    }
+  },
+  "preservation": {
+    "backend_files_compared": 132,
+    "backend_differences_from_develop": [
+      "app/fiscal_sales_accounting.py",
+      "app/permissions.py"
+    ],
+    "original_feature_service_view_and_tests_unchanged": true,
+    "prosoft_script_sha": "7c00107219818df08088b7c459c8eaa99ecbc123",
+    "prosoft_script_matches_PR52": true,
+    "upstream_ci_release_cleanup_workflows_unchanged": true
+  },
+  "browser_engine": "Playwright 1.62.0 / Chromium headless shell 151.0.7922.34, isolated test install; full Chromium 151 attempt documented separately",
+  "checks": {
+    "version_parity": true,
+    "python_ast": true,
+    "vue_compile": true,
+    "git_diff_check": true,
+    "git_index_diff_check": true
+  },
+  "limits": [
+    "General local smoke incomplete due PDF popup wait and full-browser socket restriction; no tests weakened or bypassed. New CI must validate all its gates.",
+    "Not full repository suite, operational PostgreSQL, installers/images, destination homologation or scale.",
+    "Import automation, item allocation and earlier individual buttons remain pending.",
+    "No real data, backups, production, final PR merge, stable release or deployment."
+  ]
+}

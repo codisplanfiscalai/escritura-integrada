@@ -51,10 +51,12 @@ def main():
             def shot(name):page.screenshot(path=str(OUT/name),full_page=True);report['screenshots'].append(name)
             def check(value):report['checks'].append(value)
             def nav(name):
+                expect(page.locator('#active-company')).to_be_enabled()
                 button=page.get_by_role('navigation',name='Navegação principal').get_by_role('button',name=name,exact=True,include_hidden=True)
                 parent=button.locator('xpath=ancestor::details')
                 if parent.count() and parent.get_attribute('open') is None:parent.locator('summary').click()
                 button.click()
+                expect(button).to_have_class(re.compile(r'\bselected\b'))
             def download(link,name):
                 with page.expect_download() as item:link.click()
                 target=OUT/name;item.value.save_as(target);return target.read_bytes()
@@ -209,7 +211,16 @@ def main():
                 page.keyboard.press('F8');dialog.get_by_label('Ano a fixar (opcional)').fill('2026');dialog.get_by_role('button',name='Aplicar contexto').click();expect(dialog).to_have_count(0)
                 expect(page.get_by_label('Acesso Prosoft da conta 3',exact=True)).to_have_value('111')
                 check('Desktop/mobile sem overflow; F8/exercício descarta resposta antiga, limpa confirmação e restaura mapeamentos da empresa no retorno')
-                page.locator('#active-company').select_option(str(b));nav('Exportação Prosoft fiscal');expect(code).to_be_enabled();code.fill('88')
+                # Exercise the real async company/module boundary with a slow network.
+                network=page.context.new_cdp_session(page)
+                network.send('Network.enable')
+                network.send('Network.emulateNetworkConditions',{'offline':False,'latency':750,'downloadThroughput':-1,'uploadThroughput':-1})
+                report['context_network_latency_ms']=750
+                page.locator('#active-company').select_option(str(b));nav('Exportação Prosoft fiscal')
+                expect(page.locator('#active-company')).to_have_value(str(b))
+                expect(page.get_by_role('heading',name='Exportação Prosoft fiscal',exact=True)).to_be_visible()
+                check('Navegação aguarda a troca de empresa/módulo e confirma a guia fiscal sob latência de 750 ms')
+                expect(code).to_be_enabled();code.fill('88')
                 page.get_by_label('Espécie Prosoft do modelo 55',exact=True).fill('NFE');page.get_by_label('Espécie do modelo 55 conferida no destino',exact=True).check()
                 page.get_by_role('button',name='Salvar mapeamentos nesta empresa',exact=True).click();expect(page.locator('.prosoft-view:visible [role="status"]')).to_contain_text('Mapeamentos salvos nesta empresa')
                 post(f'/companies/{b}/periods/close',{'period':'2026-11','module':'fiscal','reason':'Fechamento sintético'})

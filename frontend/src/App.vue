@@ -22,7 +22,7 @@ import {state,company,api,refreshSession,activate,notify,answer,ask,can,moduleNa
 const menus=[
 {id:'dashboard',label:'Visão geral',icon:'dashboard',component:DashboardView,module:null},
 {id:'documents',label:'Escrituração e documentos',icon:'documents',component:DocumentsView,module:'fiscal',routine:'fiscal.documents'},
-{id:'sales-accounting',label:'Integração contábil de saídas',icon:'journal',component:FiscalSalesAccountingView,module:'fiscal',routine:'fiscal.documents'},
+{id:'sales-accounting',label:'Integração Contábil',icon:'journal',component:FiscalSalesAccountingView,module:'fiscal',routine:'fiscal.documents'},
 {id:'imports',label:'Importações fiscais',icon:'import',component:ImportView,module:'fiscal',routine:'fiscal.imports'},
 {id:'companies',label:'Empresas',icon:'building',component:CompaniesView,module:'registrations'},
 {id:'third-parties',label:'Terceiros',icon:'building',component:SharedRegistrationsView,module:'registrations',routine:'fiscal.shared_parties',props:{kind:'third-party'}},
@@ -36,6 +36,7 @@ const menus=[
 {id:'fiscal-reports',label:'Livros e relatórios fiscais',icon:'reports',component:ReportsView,module:'fiscal',routine:'fiscal.reports',props:{area:'fiscal'}},
 {id:'periods',label:'Competências fiscais',icon:'periods',component:PeriodsView,module:'fiscal',routine:'fiscal.periods',props:{module:'fiscal'}},
 {id:'journal',label:'Lançamentos contábeis',icon:'journal',component:JournalView,module:'accounting',routine:'accounting.journals',props:{initialSection:'journals'}},
+{id:'fiscal-accounting',label:'Integração Fiscal',icon:'documents',component:FiscalSalesAccountingView,module:'accounting',routine:'accounting.journals'},
 {id:'accounts',label:'Plano de contas',icon:'book',component:JournalView,module:'accounting',routine:'accounting.accounts',props:{initialSection:'accounts'}},
 {id:'global-plans',label:'Gerenciar planos globais',icon:'book',component:GlobalPlansView,module:'accounting',routine:'accounting.accounts',admin:true},
 {id:'histories',label:'Históricos e modelos',icon:'layers',component:MastersView,module:'accounting',routine:'accounting.histories',props:{area:'accounting'}},

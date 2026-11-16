@@ -63,8 +63,8 @@ def main():
                             if group.count() and group.get_attribute('open') is None: group.locator('summary').click()
                             b.click()
                         def enter():
-                            nav('Integração contábil de saídas')
-                            expect(page.get_by_role('heading', name='Integração contábil de saídas', exact=True)).to_be_visible()
+                            nav('Integração Contábil')
+                            expect(page.get_by_role('heading', name='Integração Contábil', exact=True)).to_be_visible()
                             expect(page.get_by_label('Geração de lançamentos')).to_be_enabled()
                         def context(cid):
                             page.keyboard.press('F8'); d = page.get_by_role('dialog', name='Empresa, ano e competência')
@@ -108,7 +108,7 @@ def main():
                         mb, _ = setup(b, 'B'); sale(b,'B-01','3.01'); sale(b,'B-02','4.02')
                         post('/context', {'company_id':a,'module':'fiscal','period':year+'-11'})
                         page.reload(); enter(); save_mode('daily')
-                        page.get_by_role('heading',name='Integração contábil de saídas',exact=True).scroll_into_view_if_needed()
+                        page.get_by_role('heading',name='Integração Contábil',exact=True).scroll_into_view_if_needed()
                         page.screenshot(path=str(OUT/'configuration.png'),full_page=True)
                         before_read = snapshot(folder,a)
                         expect(page.locator('.sales-accounting-view tbody tr')).to_have_count(50)
@@ -117,8 +117,8 @@ def main():
                         page.get_by_label('Situação contábil').select_option('eligible')
                         expect(page.locator('.sales-accounting-view tbody tr')).to_have_count(5)
                         for value in ('12','11','10','11'): page.get_by_label('Competência da escrituração').select_option(value)
-                        page.get_by_label('Pesquisar saídas').fill('NO-MATCH'); expect(page.locator('.sales-accounting-view tbody tr')).to_have_count(0)
-                        page.get_by_label('Pesquisar saídas').fill(''); expect(page.locator('.sales-accounting-view tbody tr')).to_have_count(5)
+                        page.get_by_label('Pesquisar notas').fill('NO-MATCH'); expect(page.locator('.sales-accounting-view tbody tr')).to_have_count(0)
+                        page.get_by_label('Pesquisar notas').fill(''); expect(page.locator('.sales-accounting-view tbody tr')).to_have_count(5)
                         nav('Visão geral'); enter(); expect(page.get_by_label('Situação contábil')).to_have_value('eligible')
                         report['read_only_hashes']={'before':before_read,'after':snapshot(folder,a)}
                         assert report['read_only_hashes']['before']==report['read_only_hashes']['after'], 'Filters/navigation changed business tables'
@@ -141,7 +141,7 @@ def main():
                         assert report['replay_hashes']['before']==report['replay_hashes']['after'], 'Idempotent replay changed business tables'
                         result=page.get_by_role('region',name='Resultado da contabilização')
                         result.get_by_role('button',name='Notas do lançamento',exact=False).click()
-                        modal=page.get_by_role('dialog',name='Rastreabilidade contábil das saídas')
+                        modal=page.get_by_role('dialog',name='Rastreabilidade contábil fiscal')
                         expect(modal.locator('.sales-source')).to_have_count(2)
                         modal.get_by_role('button',name='Consultar nota A-01',exact=True).click();expect(modal.locator('.sales-source')).to_have_count(1)
                         modal.get_by_role('button',name='Fechar rastreabilidade').click()
@@ -194,8 +194,65 @@ def main():
                             assert not conn.execute('SELECT j.id FROM journals j JOIN journal_lines l ON l.journal_id=j.id GROUP BY j.id HAVING SUM(l.debit_cents)<>SUM(l.credit_cents)').fetchall()
                         report['checks'].append('Closed accounting month refuses UI generation even with permissive legacy defaults; reopening permits it; FK and all journals balanced')
                         page.screenshot(path=str(OUT/'reopened.png'),full_page=True)
+                        # Both approved menus reuse the same engine. Purchases stay individual
+                        # even when this company's saved sales mode is daily.
+                        incoming_accounts = {x['access_code']:x['id'] for x in get(f'/companies/{a}/accounts')}
+                        incoming_model = post(f'/companies/{a}/masters/accounting_model', {'code':'SYN-BUY','name':'Entrada sintética','data':{
+                            'debit_account_id':incoming_accounts['6'],'credit_account_id':incoming_accounts['4'],
+                            'direction':'incoming','valid_from':year+'-01-01','status':'validated','history':'Compra sintética',
+                            'source':'Fixture sintética','responsible':'Teste'}})['id']
+                        for number,amount in (('E-01','0.01'),('E-02','10.02')):
+                            d=post(f'/companies/{a}/documents',{'direction':'incoming','number':number,'series':'1','model':'55',
+                                'issue_date':year+'-10-30','posting_date':year+'-11-06','partner_name':'Fornecedor sintético','cfop':'1102','total':amount})
+                            post(f'/companies/{a}/documents/{d["id"]}/book',{'version':d['version'],'reason':'Fixture sintética'})
+                        nav('Integração Fiscal')
+                        expect(page.get_by_role('heading',name='Integração Contábil',exact=True)).to_be_visible()
+                        page.get_by_label('Sentido da integração').select_option('incoming')
+                        expect(page.get_by_text('Entradas geram um lançamento por nota.',exact=False)).to_be_visible()
+                        page.get_by_label('Situação contábil').select_option('eligible')
+                        expect(page.locator('.sales-accounting-view tbody tr')).to_have_count(2)
+                        page.get_by_role('button',name='Selecionar aptas da consulta').click();apply_model(incoming_model)
+                        before_preview=snapshot(folder,a)
+                        page.get_by_role('button',name='Consultar prévia contábil',exact=True).click()
+                        preview=page.get_by_role('region',name='Prévia contábil',exact=True)
+                        expect(preview.get_by_text('2 lançamento(s) previsto(s)',exact=False)).to_be_visible()
+                        after_preview=snapshot(folder,a)
+                        assert before_preview==after_preview,'Preview wrote business data'
+                        preview.scroll_into_view_if_needed()
+                        page.screenshot(path=str(OUT/'incoming-preview.png'),full_page=True)
+                        page.get_by_role('button',name='Fechar prévia',exact=True).click();expect(preview).to_have_count(0)
+                        assert len(journals(a))==6,'Closing preview generated movements'
+                        incoming_mutations=[]
+                        page.on('request',lambda r: incoming_mutations.append(r.post_data_json) if r.method=='POST' and r.url.endswith('/fiscal-purchases-accounting/generate') else None)
+                        page.route('**/fiscal-purchases-accounting/generate',commit_then_drop,times=1)
+                        page.get_by_role('button',name='Gerar lançamentos da seleção',exact=True).click()
+                        expect(page.get_by_role('button',name='Repetir a mesma solicitação')).to_be_visible()
+                        assert len(journals(a))==8,'Incoming notes were consolidated or duplicated'
+                        incoming_committed=snapshot(folder,a)
+                        page.get_by_role('button',name='Repetir a mesma solicitação').click()
+                        expect(page.get_by_role('heading',name='Solicitação já processada')).to_be_visible()
+                        assert len(incoming_mutations)==2 and incoming_mutations[0]==incoming_mutations[1]
+                        assert incoming_committed==snapshot(folder,a),'Incoming retry wrote business data'
+                        result=page.get_by_role('region',name='Resultado da contabilização')
+                        result.get_by_role('button',name='Notas do lançamento',exact=False).first.click()
+                        incoming_trace=page.get_by_role('dialog',name='Rastreabilidade contábil fiscal')
+                        expect(incoming_trace.locator('.sales-source')).to_have_count(1)
+                        incoming_trace.get_by_role('button',name='Fechar rastreabilidade').click()
+                        nav('Integração Contábil')
+                        page.get_by_label('Sentido da integração').select_option('incoming')
+                        page.get_by_label('Situação contábil').select_option('accounted')
+                        expect(page.locator('.sales-accounting-view tbody tr')).to_have_count(2)
+                        expect(page.get_by_label('Contabilizar nota E-01',exact=True)).to_be_disabled()
+                        assert incoming_committed==snapshot(folder,a),'Alternate menu changed accounting data'
+                        assert get(f'/companies/{a}/fiscal-sales-accounting/settings')['mode']=='daily'
+                        with sqlite3.connect(Path(folder)/'escritura.sqlite3') as conn:
+                            assert not conn.execute('PRAGMA foreign_key_check').fetchall()
+                            assert not conn.execute('SELECT j.id FROM journals j JOIN journal_lines l ON l.journal_id=j.id GROUP BY j.id HAVING SUM(l.debit_cents)<>SUM(l.credit_cents)').fetchall()
+                        report['incoming_preview_hashes']={'before':before_preview,'after':after_preview}
+                        report['incoming_replay_hashes']={'before':incoming_committed,'after':snapshot(folder,a)}
+                        report['checks'].append('Both menus share integration: incoming preview/close read-only; daily sales setting preserved; two purchases remain individual; lost-response exact retry and alternate menu do not duplicate; origins/FK/balance preserved')
                         page.set_viewport_size({'width':1100,'height':900})
-                        page.get_by_role('heading',name='Integração contábil de saídas',exact=True).scroll_into_view_if_needed()
+                        page.get_by_role('heading',name='Integração Contábil',exact=True).scroll_into_view_if_needed()
                         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
                         page.screenshot(path=str(OUT/'narrow-configuration.png'),full_page=True)
                         report['checks'].append('Configuration and controls remain within the 1100px viewport; wide table scroll is contained')
