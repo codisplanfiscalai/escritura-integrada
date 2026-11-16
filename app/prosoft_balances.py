@@ -18,6 +18,7 @@ MAX_SOURCE_ROWS = 10000
 MAX_IMPORT_JSON_CHARS = 2_000_000
 MAX_RESPONSE_BYTES = 16_000_000
 MAX_PROJECTED_BALANCE_ROWS = 20_000
+MAX_SOURCE_TEXT_BYTES = 1_000_000
 REQUIRED_READS = ('accounting.prosoft', 'accounting.journals',
                   'accounting.accounts', 'accounting.cost_centers')
 
@@ -50,6 +51,37 @@ def _limit_sources(conn, cid, end):
     row = conn.execute("SELECT COALESCE(SUM(LENGTH(result_json)),0) AS size FROM module_imports WHERE company_id=? AND module='accounting'", (cid,)).fetchone()
     if row['size'] > MAX_IMPORT_JSON_CHARS:
         raise DomainError('Volume de origens importadas excede o limite preparatório.', 413, 'preparation_volume_limit')
+
+    _limit_source_text(conn, cid, end)
+
+
+def _limit_source_text(conn, cid, end):
+    # Explicit inventory of textual columns materialized by the shared reader,
+    # including company_row's profile JSON and definition/binding joins. Keep in
+    # sync with its SELECTs. Only numeric aggregates cross the DB boundary here.
+    sources = [
+        ('companies', 'id=?', (cid,),
+         'code name trade_name tax_id regime state city address number district postal_code ibge ie im cnae email phone prosoft_code created_at updated_at profile_json'),
+        ('effective_accounts a LEFT JOIN global_account_entries g ON g.id=a.shared_entry_id LEFT JOIN global_account_plans p ON p.id=g.global_plan_id',
+         'a.company_id=?', (cid,), 'a.access_code a.classifier a.name a.nature a.report_group a.prosoft_code p.sha256'),
+        ('company_account_plan_bindings b JOIN global_account_plans p ON p.id=b.global_plan_id',
+         'b.company_id=?', (cid,), 'b.mode b.attached_at b.attached_by b.copy_scope p.name p.sha256'),
+        ('cost_centers', 'company_id=?', (cid,), 'code name prosoft_code'),
+        ('journals', 'company_id=? AND date<=?', (cid, end), 'date period document history created_at created_by'),
+        ('audit', "company_id=? AND entity='journal'", (cid,), 'entity_id action created_at'),
+        ('module_imports', "company_id=? AND module='accounting' AND result_json IS NOT NULL", (cid,),
+         'layout fingerprint result_json'),
+    ]
+    total = 0
+    for table, where, args, columns in sources:
+        # BLOB length counts encoded bytes, including embedded NUL; LENGTH(text)
+        # would stop at NUL. Application SQLite databases use UTF-8 encoding.
+        lengths = '+'.join(f"LENGTH(CAST(COALESCE({column},'') AS BLOB))" for column in columns.split())
+        total += conn.execute(f'SELECT COALESCE(SUM({lengths}),0) AS size FROM {table} WHERE {where}', args).fetchone()['size']
+        if total > MAX_SOURCE_TEXT_BYTES:
+            raise DomainError('Volume textual das evidências excede o limite preparatório.',
+                              413, 'preparation_volume_limit')
+    return total
 
 
 def _project(source):
@@ -128,7 +160,7 @@ def observed_balances(core, cid, start, end):
     with core.db.read(snapshot=True) as conn:
         _authorize(conn, cid, start)
         _limit_sources(conn, cid, end)
-        result = _project(_snapshot(conn, cid, start, end))
+        result = _project(_snapshot(conn, cid, start, end, include_balances=False))
     response = pack({'snapshot': result, 'snapshot_sha256': digest(result)}) + '\n'
     if len(response.encode('utf-8')) > MAX_RESPONSE_BYTES:
         raise DomainError('Resposta excede o limite preparatório.', 413, 'preparation_volume_limit')

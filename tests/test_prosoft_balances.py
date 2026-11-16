@@ -211,6 +211,19 @@ class ProsoftBalancesTests(unittest.TestCase):
         ref = next(x for x in journal['source_references'] if x['entity'] == 'module_imports')
         self.assertEqual(batch['id'], ref['id'])
         self.assertEqual(batch['fingerprint'], ref['fingerprint'])
+        from app.prosoft_balances import _limit_source_text
+        with self.core.db.read(snapshot=True) as conn:
+            text_size = _limit_source_text(conn, self.a['id'], '2025-12-31')
+            saved_json = conn.execute('SELECT result_json FROM module_imports WHERE id=?', (batch['id'],)).fetchone()[0]
+        with self.core.db.transaction() as conn:
+            conn.execute('UPDATE module_imports SET result_json=? WHERE id=?', (saved_json + ' ' * 1000, batch['id']))
+        before_text_query = self.database_hash()
+        with self.core.db.read(snapshot=True) as conn:
+            self.assertEqual(text_size + 1000, _limit_source_text(conn, self.a['id'], '2025-12-31'))
+        with patch('app.prosoft_balances.MAX_SOURCE_TEXT_BYTES', text_size + 999), patch('app.prosoft_balances._snapshot') as reader:
+            self.assertEqual(413, self.get().status_code)
+            reader.assert_not_called()
+        self.assertEqual(before_text_query, self.database_hash())
         with self.core.db.transaction() as conn:
             conn.execute('UPDATE journals SET period=?, total_cents=124 WHERE id=?', ('2025-02', journal['id']))
         s = self.snapshot(end='2025-01-31')
@@ -286,3 +299,79 @@ class ProsoftBalancesTests(unittest.TestCase):
             self.assertEqual(413, response.status_code)
             self.assertNotIn('snapshot', response.json())
             self.assertEqual(before, self.database_hash())
+
+    def test_large_history_fails_before_reader_with_few_rows(self):
+        from app.prosoft_balances import MAX_SOURCE_TEXT_BYTES
+        journal = self.create('large-history', '2025-01-01')
+        with self.core.db.transaction() as conn:
+            conn.execute('UPDATE journals SET history=? WHERE id=?', ('á' * (MAX_SOURCE_TEXT_BYTES + 1), journal['id']))
+        before = self.database_hash()
+        with patch('app.prosoft_balances._snapshot') as reader:
+            response = self.get()
+            self.assertEqual(413, response.status_code)
+            self.assertEqual('preparation_volume_limit', response.json()['code'])
+            self.assertNotIn('snapshot', response.json())
+            reader.assert_not_called()
+        self.assertEqual(before, self.database_hash())
+
+    def test_text_budget_utf8_bytes_boundary_and_master_fields(self):
+        from app.prosoft_balances import _limit_source_text
+        journal = self.create('unicode', '2025-01-01')
+        center = self.core.save_cost_center(self.a['id'], {'code': 'TXT', 'name': 'Centro'}, 'teste')['id']
+        with self.core.db.transaction() as conn:
+            conn.execute('UPDATE journals SET history=? WHERE id=?', ('á\x00😀', journal['id']))
+        with self.core.db.read(snapshot=True) as conn:
+            size = _limit_source_text(conn, self.a['id'], '2025-12-31')
+        with self.core.db.transaction() as conn:
+            conn.execute('UPDATE journals SET history=? WHERE id=?', ('abc', journal['id']))
+        with self.core.db.read(snapshot=True) as conn:
+            ascii_size = _limit_source_text(conn, self.a['id'], '2025-12-31')
+            self.assertEqual(len('á\x00😀'.encode('utf-8')) - len(b'abc'), size - ascii_size)
+            size = ascii_size
+        before = self.database_hash()
+        for limit, status in [(size - 1, 413), (size, 200), (size + 1, 200)]:
+            with patch('app.prosoft_balances.MAX_SOURCE_TEXT_BYTES', limit):
+                self.assertEqual(status, self.get().status_code)
+            self.assertEqual(before, self.database_hash())
+        for table, column, identity in [('accounts', 'name', self.aid['3']),
+                                        ('cost_centers', 'name', center),
+                                        ('companies', 'profile_json', self.a['id'])]:
+            with self.core.db.transaction() as conn:
+                old = conn.execute(f'SELECT {column} FROM {table} WHERE id=?', (identity,)).fetchone()[0]
+                value = 'x' * (size + 1)
+                if column == 'profile_json':
+                    value = json.dumps({'synthetic_note': value})
+                conn.execute(f'UPDATE {table} SET {column}=? WHERE id=?', (value, identity))
+            before = self.database_hash()
+            with patch('app.prosoft_balances.MAX_SOURCE_TEXT_BYTES', size), patch('app.prosoft_balances._snapshot') as reader:
+                self.assertEqual(413, self.get().status_code)
+                reader.assert_not_called()
+            self.assertEqual(before, self.database_hash())
+            with self.core.db.transaction() as conn:
+                conn.execute(f'UPDATE {table} SET {column}=? WHERE id=?', (old, identity))
+
+    def test_shared_reader_omits_balances_and_default_ecd_is_equivalent(self):
+        from app.sped_generator.ecd_snapshot import _snapshot
+        import copy
+        self.create('prior-ecd', '2024-12-31', '1.00')
+        self.create('selected-ecd', '2025-01-01', '2.00')
+        before = self.database_hash()
+        with self.core.db.read(snapshot=True) as conn:
+            full = _snapshot(conn, self.a['id'], '2025-01-01', '2025-12-31')
+            self.assertEqual(full, _snapshot(conn, self.a['id'], '2025-01-01', '2025-12-31', include_balances=True))
+            with patch('app.sped_generator.ecd_snapshot.months', side_effect=AssertionError('unused ECD months')), \
+                 patch('app.sped_generator.ecd_snapshot.balance_row', side_effect=AssertionError('unused ECD balances')):
+                lean = _snapshot(conn, self.a['id'], '2025-01-01', '2025-12-31', include_balances=False)
+        expected = copy.deepcopy(full)
+        del expected['monthly_balances']
+        del expected['opening_history']['recorded_balances']
+        expected['derived_balances_omitted'] = True
+        self.assertEqual(expected, lean)  # Includes identical journal origin hashes.
+        self.assertEqual(12, len(full['monthly_balances']))
+        self.assertTrue(full['opening_history']['recorded_balances'])
+        with patch('app.sped_generator.ecd_snapshot.months', side_effect=AssertionError('unused ECD months')), \
+             patch('app.sped_generator.ecd_snapshot.balance_row', side_effect=AssertionError('unused ECD balances')):
+            result = self.snapshot()
+        self.assertEqual(digest(lean), result['source_snapshot_sha256'])
+        self.assertEqual(12, len(result['monthly_balances']))
+        self.assertEqual(before, self.database_hash())

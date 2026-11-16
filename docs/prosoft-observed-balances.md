@@ -11,7 +11,13 @@ orienta a abertura do exercício/sistema de origem e movimentos mensais. Não é
 evidência de reaplicação segura nem de completude dos dados desta aplicação.
 
 A consulta reutiliza o leitor `_snapshot` de `sped_generator/ecd_snapshot.py`
-sob uma única transação de leitura. Reagrupa exclusivamente as partidas por
+sob uma única transação de leitura, com `include_balances=False`. Essa opção
+omite a construção dos resumos ECD `monthly_balances` e
+`opening_history.recorded_balances` e identifica a omissão com
+`derived_balances_omitted=true`; o padrão ECD continua incluindo os resumos.
+Os hashes individuais de lançamentos e suas origens são preservados. O hash do
+snapshot de origem passa a identificar essa variante sem resumos, portanto não
+é igual ao hash da variante completa. Reagrupa exclusivamente as partidas por
 `account_id`, `participant_id` da partida e `cost_center_id`. IDs nulos são
 preservados; códigos iguais não unem entidades. O escopo da empresa faz parte
 da resposta. As permissões de consulta de Prosoft, lançamentos, contas e centros
@@ -48,13 +54,28 @@ que excederia o teto é recusado com HTTP 413 antes da construção desse lote;
 nenhum mês previamente calculado é devolvido como resposta parcial. Exatamente
 20.000 linhas são permitidas, sujeitas aos demais limites.
 
-Esse teto limita a amplificação mensal da projeção Prosoft, mas não estabelece
-um limite rígido de memória ou de bytes do snapshot contábil de origem, que já
-foi construído pelo leitor compartilhado. Campos individuais não têm aqui teto
-geral de bytes, e o snapshot de origem também possui seus próprios saldos
-mensais. O limite de resposta é verificado após a projeção e serialização; não
-há paginação, processamento em streaming ou certificação de volume máximo em
-produção. Não há alterações de schema ou operações de escrita.
+Antes de chamar o leitor compartilhado, há também um orçamento agregado de
+1.000.000 bytes dos campos textuais carregados: cadastro da empresa
+(inclusive `profile_json`), contas efetivas e hashes dos planos, vínculo do plano,
+centros, datas/documento/histórico/autoria dos lançamentos, eventos de auditoria e
+layout/fingerprint/resultados das importações contábeis. A medição usa agregações
+SQL `LENGTH(CAST(... AS BLOB))` na mesma transação; apenas os totais numéricos
+são materializados. A contagem inclui NUL e mede os bytes na codificação do
+banco SQLite (UTF-8 nos bancos criados pela aplicação), não caracteres. O inventário explícito de colunas deve acompanhar mudanças nos SELECTs
+do leitor. Dados fiscais/financeiros não carregados por esse leitor não entram.
+Excesso retorna HTTP 413 antes de chamar `_snapshot`, inclusive com poucas linhas.
+
+O limite anterior de 2.000.000 caracteres de resultados importados é mantido
+separadamente; caracteres não são bytes. Nenhum dos dois representa memória de
+objetos: JSON decodificado, textos repetidos nos candidatos/hash e serialização
+acrescentam custo. Não há garantia rígida de RAM,
+limite de tempo de consulta ou streaming. O teto de 16 MB UTF-8 da resposta ainda
+é verificado depois da projeção e serialização. A via Prosoft já não constrói os
+resumos ECD descartáveis; seu próprio teto incremental de 20.000 linhas continua
+ativo. Não há paginação, certificação de carga de produção, alterações de schema
+ou operações de escrita. O preflight protege a chamada ao leitor contábil; não
+limita leituras anteriores do middleware, como cadastro/configuração da empresa
+na resolução da sessão.
 
 Validação: `PYTHONPATH=tests:. python -m unittest test_prosoft_balances -q`.
 Fixtures exclusivamente sintéticas. A comparação integral do dump do banco
