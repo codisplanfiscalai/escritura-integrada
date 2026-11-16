@@ -65,3 +65,44 @@ class ContributionsCompositionApiTests(unittest.TestCase):
             self.activate(self.a['id'],client=reader)
             response=self.get(client=reader);self.assertEqual(403,response.status_code,response.text)
         with TestClient(self.app) as anonymous:self.assertEqual(401,anonymous.get(CATALOG_PATH).status_code)
+
+    def test_shared_registry_read_does_not_grant_private_declarations_or_other_company(self):
+        marker='PRIVATE-CONTRIBUTIONS-LOCAL-A'
+        other_marker='PRIVATE-CONTRIBUTIONS-LOCAL-B'
+        for cid,value in ((self.a['id'],marker),(self.b['id'],other_marker)):
+            self.core.save_master(cid,'product',{'code':'CONTRIB-LOCAL','name':'Produto sintético',
+                'data':{'contributions_preparation_v1':[{'id':value}]}},'synthetic')
+        shared=self.client.post(self.scope('/registrations/third-party'),json={
+            'name':'GLOBAL-REGISTRY-NOT-FISCAL-EVIDENCE','tax_id':'11222333000181',
+            'code':'GLOBAL-SYNTHETIC','data':{}})
+        self.assertEqual(201,shared.status_code,shared.text)
+        before=self.database_hash()
+        admin=self.get();self.assertEqual(200,admin.status_code,admin.text)
+        self.assertIn(marker,admin.text)
+        self.assertNotIn(other_marker,admin.text)
+        self.assertNotIn(shared.json()['name'],admin.text)
+        self.assertEqual(before,self.database_hash())
+        cid=self.a['id']
+        grants=[{'company_id':cid,'routine':routine,'action':action,'effect':'allow'}
+            for routine,action in [('fiscal.shared_parties','read'),
+                ('fiscal.documents','read'),('fiscal.documents','export')]]
+        user=self.client.post('/api/users',json={'username':'registry-not-private-evidence',
+            'password':'Catalogo-sintetico-123!','role':'custom','company_ids':[cid],
+            'permissions':grants})
+        self.assertEqual(201,user.status_code,user.text)
+        with TestClient(self.app) as reader:
+            login=reader.post('/api/login',json={'username':'registry-not-private-evidence',
+                'password':'Catalogo-sintetico-123!'})
+            self.assertEqual(200,login.status_code,login.text)
+            reader.headers['X-CSRF-Token']=login.json()['csrf_token']
+            self.activate(cid,client=reader)
+            catalog=reader.get(self.scope('/registrations/third-party'))
+            self.assertEqual(200,catalog.status_code,catalog.text)
+            self.assertIn(shared.json()['name'],catalog.text)
+            before=self.database_hash()
+            evidence=self.get(client=reader)
+            self.assertEqual(200,evidence.status_code,evidence.text)
+            self.assertNotIn(marker,evidence.text);self.assertNotIn(other_marker,evidence.text)
+            self.assertIn('MASTERS_READ_PERMISSION_REQUIRED',evidence.text)
+            self.assertEqual(403,self.get(client=reader,cid=self.b['id']).status_code)
+            self.assertEqual(before,self.database_hash())

@@ -97,3 +97,34 @@ e build** passaram novamente nesta composição. AST de 300 arquivos Python e di
 aprovados. Os resultados dev.26 acima não são apresentados como execução do novo head.
 São regressões focadas, não suíte integral, PVA/PGE, PostgreSQL ou navegador. Nenhuma release, imagem,
 instalação ou base DIX foi alterada por esta recomposição local.
+
+## Publicação posterior e compatibilidade com dev.28
+
+Depois da autorização de publicação, a mesma árvore dev.27 foi aberta como
+PR59 em rascunho, head `63feb3e011fa3f02fe38d9c0d639a99d321f835a`. O CI
+`43855334675` desse head concluiu com sucesso. Isso não torna a preparação um
+gerador EFD e não comprova por si o resultado de um head posterior.
+
+A sincronização seguinte recebe `develop`
+`e25da58c9c919415968bdecc4caa9b12450367ca` (`0.9.0-dev.28`), que já inclui a
+PR56 de cadastros compartilhados. Os serviços de Contribuições não foram
+reescritos: as declarações continuam em cadastros locais de estabelecimento,
+produto ou serviço, com `company_id` exato e `fiscal.masters/read`. Terceiros e
+contadores globais não promovem esse namespace nem concedem acesso à escrituração.
+
+Uma regressão adicional cria evidência sintética privada em duas empresas e um
+terceiro global. Confere que o snapshot autorizado contém somente as declarações
+da empresa consultada; leitura global com permissão de exportar documentos não
+libera as declarações sem `fiscal.masters/read`, nem o acesso à outra empresa.
+O hash integral do banco permanece igual durante as consultas. Os 18 testes de
+composição/cadastros passaram e foram repetidos por revisão independente; 180
+testes frontend e build passaram nesta composição, com o aviso de chunk existente.
+A regressão backend focada ampla passou: 354 testes em 153,087 s, sem falhas,
+erros ou skips, incluindo terceiros/cadastros compartilhados além das frentes
+anteriores. AST de 304 arquivos Python, JSON e diff-check aprovados. Continua
+sendo regressão focada local, não homologação fiscal, PostgreSQL ou navegador.
+
+A sincronização deve preservar o head remoto anterior como ancestral, sem rebase
+ou force push, e disparar CI próprio. Não autoriza merge da PR, release ou
+implantação; a publicação concorrente de dev.28 não é alterada. Nenhum dado
+real, transmissão fiscal, PGE/PVA ou implantação do Atlas faz parte desta etapa.
