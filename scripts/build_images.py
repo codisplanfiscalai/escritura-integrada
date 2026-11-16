@@ -3,26 +3,30 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from image_tools import ROOT, IMAGE_NAMES, image_plan, load_catalog, run, write_json
+from image_tools import DIGEST, ROOT, IMAGE_NAMES, image_plan, load_catalog, run, write_json
+from image_handoff import export_handoff, verify_handoff
 
 
 def inspect_image(reference):
     result = run(["docker", "image", "inspect", reference], capture=True)
     data = json.loads(result.stdout)[0]
     digests = data.get("RepoDigests", [])
-    repository = reference.rsplit(":", 1)[0]
+    repository = reference.split("@", 1)[0] if "@" in reference else reference.rsplit(":", 1)[0]
     digest = next((x.split("@", 1)[1] for x in digests if x.startswith(repository + "@")), None)
-    return {"image_id": data["Id"], "digest": digest, "labels": data["Config"].get("Labels") or {}}
+    return {"image_id": data["Id"], "digest": digest, "labels": data["Config"].get("Labels") or {},
+            "platform": data.get("Os", "") + "/" + data.get("Architecture", "")}
 
 
 def remote_exists(reference):
@@ -37,8 +41,12 @@ def remote_exists(reference):
 
 def assert_identity(name, wanted, actual, revision):
     labels = actual["labels"]
+    if actual.get("platform") != "linux/amd64":
+        raise RuntimeError("Plataforma inesperada: " + wanted["reference"])
     if labels.get("io.escritura.content-id") != wanted["content_id"]:
         raise RuntimeError("Tag já publicada com outro conteúdo; incremente a versão: " + wanted["reference"])
+    if name == "app" and labels.get("org.opencontainers.image.version") != wanted["tag"]:
+        raise RuntimeError("Versão da imagem divergente: " + wanted["reference"])
     if name == "app" and labels.get("org.opencontainers.image.revision") != revision:
         raise RuntimeError("A tag da aplicação já pertence a outro commit: " + wanted["reference"])
 
@@ -61,6 +69,27 @@ def public_pull_probe(repository, digest):
     except (OSError, ValueError, KeyError) as exc:
         return {"public_pullable": False, "http_status": None,
                 "note": "Verificação anônima inconclusiva: " + type(exc).__name__}
+
+
+def pinned_remote(reference, *, optional=False):
+    """Resolve once, then pull by digest; never trust an alias or a tag alone."""
+    result = run(["docker", "buildx", "imagetools", "inspect", "--raw", reference], capture=True, check=False)
+    if result.returncode:
+        if optional:
+            print("Cache remoto indisponível; construção e smoke continuam: " + reference, flush=True)
+            return None
+        raise RuntimeError("Falha ao resolver manifesto imutável: " + reference)
+    raw = result.stdout.strip().encode()
+    data = json.loads(raw)
+    if data.get("mediaType") not in ("application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json"):
+        raise ValueError("Cache remoto não é uma imagem de plataforma única: " + reference)
+    # --raw preserves registry bytes, including a possible final newline.
+    # The descriptor's digest is obtained independently, avoiding whitespace normalization.
+    descriptor = run(["docker", "buildx", "imagetools", "inspect", reference, "--format", "{{json .Manifest}}"], capture=True)
+    digest = json.loads(descriptor.stdout)["digest"]
+    if not DIGEST.fullmatch(digest) or digest not in {"sha256:" + hashlib.sha256(result.stdout.encode()).hexdigest(), "sha256:" + hashlib.sha256(raw).hexdigest()}:
+        raise ValueError("Digest do manifesto remoto não confere: " + reference)
+    return digest
 
 
 def build_args(name, manifest, catalog, publish):
@@ -93,7 +122,12 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true", help="Somente plano JSON; não publica nem atesta testes.")
     parser.add_argument("--proxy-ca", type=Path, help="CA adicional via secret BuildKit; não fica na imagem.")
+    parser.add_argument("--export-handoff", type=Path, help="Exporta somente após smoke, no próprio run confiável de release.")
+    parser.add_argument("--handoff", type=Path, help="Importa imagens validadas do mesmo run; erro de prova bloqueia publicação.")
+    parser.add_argument("--run-id", default=os.environ.get("GITHUB_RUN_ID", ""))
     args = parser.parse_args()
+    if (args.handoff and args.action != "publish") or (args.export_handoff and args.action != "validate"):
+        parser.error("Handoff de entrada somente publish; exportação somente validate.")
     manifest = image_plan(args.version, args.channel, args.revision)
     manifest.update(status="planned", generated_at=datetime.now(timezone.utc).isoformat())
     if args.dry_run:
@@ -102,6 +136,9 @@ def main():
         return 0
     if (ROOT / "VERSION").read_text().strip() != args.version:
         raise ValueError("Aplique a versão no checkout antes de construir imagens (VERSION divergente).")
+    actual_revision = run(["git", "rev-parse", "HEAD"], capture=True).stdout.strip()
+    if actual_revision != args.revision:
+        raise ValueError("O checkout não corresponde ao SHA solicitado; nenhuma imagem será construída/publicada.")
     catalog = load_catalog()
     run(["docker", "version"])
     run(["docker", "buildx", "version"])
@@ -110,14 +147,31 @@ def main():
         raise RuntimeError("Use o builder default com driver docker: validate resolve a base no daemon local.")
     publish = args.action == "publish"
     try:
+        handed = None
+        if args.handoff:
+            handed, archive = verify_handoff(args.handoff, manifest, args.run_id, os.environ)
+            run(["docker", "image", "load", "--input", archive.resolve()])
+            for name in IMAGE_NAMES:
+                actual = inspect_image(manifest["images"][name]["reference"])
+                assert_identity(name, manifest["images"][name], actual, args.revision)
+                if actual["image_id"] != handed["images"][name]["image_id"]:
+                    raise ValueError("ID carregado diverge do handoff: " + name)
         for name in IMAGE_NAMES:
+            started = time.monotonic()
             image = manifest["images"][name]
             exists = publish and remote_exists(image["reference"])
-            if exists:
-                run(["docker", "pull", "--platform", "linux/amd64", image["reference"]])
+            digest = pinned_remote(image["reference"]) if exists else (pinned_remote(image["reference"], optional=True) if not publish and name != "app" else None)
+            if digest:
+                pinned = image["repository"] + "@" + digest
+                run(["docker", "pull", "--platform", "linux/amd64", pinned])
+                run(["docker", "tag", pinned, image["reference"]])
                 actual = inspect_image(image["reference"])
                 assert_identity(name, image, actual, args.revision)
-                image.update(reused=True, image_id=actual["image_id"], digest=actual["digest"])
+                image.update(reused=True, image_id=actual["image_id"], digest=digest, reuse_source="registry_digest")
+            elif handed:
+                actual = inspect_image(image["reference"])
+                assert_identity(name, image, actual, args.revision)
+                image.update(reused=True, image_id=actual["image_id"], reuse_source="same_run_handoff")
             else:
                 command = ["docker", "buildx", "build", "--builder", "default", "--load", "--platform", "linux/amd64",
                            "--provenance=false", "--file", image["dockerfile"], "--tag", image["reference"]]
@@ -137,7 +191,8 @@ def main():
                     run(["docker", "push", image["reference"]])
                     actual = inspect_image(image["reference"])
                     image["digest"] = actual["digest"]
-            if publish and name == "base" and not image["digest"]:
+            image["duration_seconds"] = round(time.monotonic() - started, 3)
+            if publish and not handed and name == "base" and not image["digest"]:
                 raise RuntimeError("Push sem digest verificável: " + image["reference"])
         # Smoke executa em validate e novamente nas imagens exatas publicadas/reutilizadas.
         interim = args.output.with_suffix(".pending.json")
@@ -165,6 +220,8 @@ def main():
             manifest["public_pullable"] = all(x["public_pullable"] for x in manifest["images"].values())
         manifest["status"] = "published" if publish else "validated"
         write_json(args.output, manifest)
+        if args.export_handoff:
+            export_handoff(args.export_handoff, manifest, args.run_id, os.environ)
         return 0
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         manifest.update(status="failed", error=str(exc))

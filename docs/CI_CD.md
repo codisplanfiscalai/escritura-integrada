@@ -1,23 +1,33 @@
 # Integração, versões e distribuição
 
-O repositório usa `main` para versões estáveis e `develop` para uma pré-release contínua. A aplicação, o executável Windows e a imagem principal recebem a mesma SemVer. O fluxo publica somente depois dos gates Linux, Windows empacotado e Docker. A existência destes arquivos de automação, por si só, não comprova que uma execução remota terminou: os resultados são registrados nos jobs, nos relatórios e no manifest de cada release.
+O repositório usa `main` para versões estáveis e `develop` para entregas de desenvolvimento. `main` conserva validações e distribuição completas. Temporariamente, `develop` entrega somente GHCR, conforme a política versionada descrita abaixo. A aplicação, os pacotes nativos quando habilitados e a imagem principal recebem a mesma SemVer. A existência destes arquivos de automação, por si só, não comprova que uma execução remota terminou: os resultados são registrados nos jobs, nos relatórios e no manifest de cada release.
 
 ## Workflows e permissões
 
 | Arquivo | Disparo | Resultado | Permissões de escrita |
 |---|---|---|---|
-| `ci.yml` | PR para `main` ou `develop` | Testes, frontend, pacote Windows e validação das seis imagens, sem publicação | Nenhuma permissão de escrita no repositório ou no GHCR |
-| `release.yml` | Push em `main`/`develop` ou execução manual | Commit de versão, gates, GHCR, bundles, release e sincronização de `develop` após `main` | `contents: write` nos jobs que alteram refs/releases; `packages: write` somente em publicação; `actions: write` somente para dispatch |
-| `cache-cleanup.yml` | Domingo às 04:23 UTC ou execução manual em `main` | Plano ou exclusão limitada de caches elegíveis, com relatório | `actions: write`; não exclui releases |
+| `ci.yml` | PR para `main` ou `develop` | Testes, frontend/navegador e validação das seis imagens; Windows/macOS somente fora da pausa de develop; sem publicação | Nenhuma permissão de escrita no repositório ou no GHCR |
+| `release.yml` | Push em `main`/`develop` ou execução manual | Commit de versão, gates e GHCR; bundles/release completos em main ou com desktop retomado; sincronização após main | `contents: write` nos jobs que alteram refs/releases; `packages: write` somente em publicação; `actions: write` somente para dispatch e limpeza de caches em job separado |
+| `cache-cleanup.yml` | Diariamente às 04:23 UTC na branch padrão; manual em `main`/`develop`; também ao terminar release confiável | Plano ou exclusão limitada de caches elegíveis, com relatório | `actions: write`; não exclui releases |
 
 As actions externas estão fixadas por SHA, com a versão correspondente em comentário. Os runners são `ubuntu-24.04` e `windows-2022`; a construção usa Python 3.12 e Node.js 24. PRs usam `pull_request`, sem credenciais de publicação. Não há `pull_request_target` executando código do autor com token de escrita.
+
+## Pausa temporária de desktop em develop
+
+`scripts/ci/delivery_policy.py` mantém `DEVELOP_DESKTOP_ENABLED = False`. PRs cuja **base** é `develop` não iniciam jobs Windows/macOS, não compilam instaladores e não executam seus smokes. PRs para `main` e outras bases continuam com a cobertura nativa completa. Linux, suite Python, testes de frontend/navegador, PostgreSQL de teste e smokes Docker continuam nas PRs conforme seus jobs existentes.
+
+No push de `develop`, o plano grava `delivery_mode=ghcr_only`. A publicação exige Linux e Docker aprovados e os jobs nativos explicitamente `skipped`; falha/cancelamento nativo nunca equivale a sucesso. Não baixa/distribui ZIP, EXE ou PKG, não monta bundles offline e não cria/atualiza a pré-release GitHub. Publica as seis imagens por versão/digest, mantém seus smokes e promove somente o alias OCI `develop`. O recibo `escritura-ghcr-publication/1` identifica versão, SHA, run/tentativa e hash integral do manifesto de imagens. A promoção revalida contexto confiável, gates da mesma execução, head atual, leitura pública/digest/config da imagem e preservação de main/latest. Releases e assets históricos existentes não são removidos por essa pausa; nenhuma nova versão nativa é disponibilizada.
+
+`main` sempre usa `delivery_mode=full`: exige Windows x64 instalado, macOS arm64/x64 instalado/atualizado, Linux e Docker, inventário/hashes, carga offline e publicação estável; a pausa não autoriza pular nenhum desses gates. Retomar develop exige mudar a constante para `True` em PR revisada e validar o fluxo completo. Não há flag de execução manual que contorne essa política.
+
+**Limite temporário de cobertura:** PRs para develop deixam de provar empacotamento, instalação, integração gráfica e encerramento nativos Windows/macOS. Sucesso em Linux/Docker não atesta essas plataformas. As PRs abertas devem integrar esta alteração sequencialmente após sua aprovação/merge, para usar o novo workflow; execuções antigas continuam com o código antigo. Não cancelar nem repetir publicação de resultado incerto.
 
 ## Política SemVer
 
 | Situação | Exemplo | Comportamento |
 |---|---|---|
 | Primeira versão estável | `0.4.0` | Tag `v0.4.0`, release estável e assets com `0.4.0` |
-| Desenvolvimento posterior | `0.4.1-dev.12` | Release e tag móveis `develop`; título e arquivos identificam a SemVer completa |
+| Desenvolvimento posterior | `0.4.1-dev.12` | Durante a pausa, imagens GHCR versionadas e alias OCI `develop`; depois da retomada, também release/tag GitHub |
 | Promoção de desenvolvimento | `0.4.1` | O sufixo é retirado em `main`, gerando nova tag estável |
 | Novo código com versão já reservada | `0.4.1` → `0.4.2` | Incrementa patch; não reutiliza uma tag para outro commit |
 | Incremento explícito maior | `0.5.0-dev.20` | Preserva o novo major/minor quando superior à linha estável |
@@ -29,13 +39,13 @@ O script grava `VERSION`, `app/__init__.py`, `frontend/package.json`, `frontend/
 
 Depois da publicação estável, a sincronização integra `main` em `develop`, prepara uma versão superior e dispara explicitamente o próximo pipeline. Entre o início dessa transição e a conclusão dos novos gates, a pré-release anterior continua disponível; o marcador é atualizado apenas quando a nova distribuição foi conferida.
 
-## Sequência de publicação
+## Sequência de publicação completa (`delivery_mode=full`)
 
 1. **Preparar:** verifica que o evento ainda representa o head da branch, calcula a SemVer e cria somente o commit dos manifests que mudaram. O head avança sem `force`. A execução registra o SHA resultante no plano `ci-plan.json`.
 2. **Linux:** confere todos os manifests, instala o runtime pelo lock com hashes, compila a interface e seus avisos de terceiros, executa os testes de dia civil do frontend, a suite Python e a compilação sintática. O frontend distribuído ao Windows sai deste job.
 3. **Windows:** repete a suite Python com o runtime comum, confere a ausência de alterações rastreadas e gera o pacote x64. O smoke extrai o ZIP em caminho com espaços/Unicode, abre o executável gráfico, verifica a área de trabalho renderizada, versão/API e encerramento. Processos remanescentes ou encerramento forçado reprovam o gate. JSON, captura e logs ficam nos artefatos da execução.
-4. **Docker:** constrói e testa localmente as seis imagens `linux/amd64`, sem login/push. Valida a aplicação e os perfis opcionais, inclusive os arquivos Compose reais. O builder `default`, com driver Docker, permite resolver a base local nesta etapa.
-5. **Reservar e publicar:** após os três gates e nova checagem do SHA, reserva a tag estável imutável, quando aplicável, e autentica no GHCR. Publica/reutiliza imagens por identidade e digest, testa as imagens exatas e verifica pull autenticado. Uma sonda anônima registra `public_pullable` separadamente.
+4. **Docker:** constrói/reutiliza e testa localmente as seis imagens `linux/amd64`, sem login/push. Valida a aplicação e os perfis opcionais, inclusive os arquivos Compose reais. O builder `default`, com driver Docker, permite resolver a base local nesta etapa.
+5. **Reservar e publicar:** após os três gates e nova checagem do SHA, reserva a tag estável imutável, quando aplicável, e autentica no GHCR. Recebe as imagens já validadas do mesmo run, confere identidade/proveniência, publica/reutiliza por digest e testa as imagens exatas e verifica pull autenticado. Uma sonda anônima registra `public_pullable` separadamente.
 6. **Conferir os bundles:** gera os dois pacotes Compose, exporta as imagens, remove somente suas tags no runner isolado e executa `docker load`. Confere os IDs e repete o smoke com `--pull never`. A montagem dos assets exige que todos os relatórios correspondam à versão/commit e verifica hashes.
 7. **Finalizar a release:** envia os arquivos, verifica os uploads e volta a conferir o head antes da publicação final. A release estável publicada nunca tem seus assets substituídos por este fluxo. A pré-release atualiza o marcador `develop` e remove somente assets antigos da própria aplicação nessa release.
 8. **Sincronizar:** quando a origem é `main`, integra a branch em `develop` e executa `workflow_dispatch`. Esse dispatch é necessário porque pushes feitos com `GITHUB_TOKEN` normalmente não iniciam outro workflow de push.
@@ -90,17 +100,34 @@ A publicação autenticada no GHCR não muda automaticamente a visibilidade de u
 
 O backend permanece em SQLite. Redis, PostgreSQL, MySQL e MinIO são perfis opcionais de infraestrutura, com testes de inicialização e credenciais; ativá-los não implementa integração nem migra o banco da aplicação. Os gates de distribuição também não homologam regras fiscais, declarações SPED ou integração Prosoft. O README e a documentação funcional delimitam essas capacidades.
 
-## Retenção de caches
+## Reaproveitamento de imagens e dependências
 
-O script `python -m scripts.ci.cleanup_actions` apresenta o plano sem excluir. `--execute` autoriza a execução do plano e `--max-delete 100` limita a quantidade por rodada. A agenda semanal já usa a opção de execução; o acionamento manual começa em simulação.
+`build_images.py validate` consulta somente as tags derivadas dos inputs da base/serviços. O digest é resolvido e conferido contra os bytes do manifesto; o pull usa `repository@sha256`, nunca `latest`/`develop`. A plataforma e o content ID completo devem coincidir. Cache ausente/inacessível permite construir normalmente, sem mascarar falhas de construção/smoke; manifesto/identidade divergente bloqueia. O app de PR é sempre construído para seu SHA/versão. Não há login nem push GHCR em PR.
 
-- Preserva caches de `main` e de tags estáveis, assim como refs com execuções ativas.
-- Mantém duas variantes recentes por família de cache em `develop`; as demais vencem após 14 dias sem acesso.
-- Caches de PR vencem após 7 dias; outras refs após 30 dias.
-- Datas desconhecidas são preservadas. A atividade e a lista de caches são consultadas novamente antes da exclusão por ID.
-- O script não apaga releases, tags, imagens GHCR ou dados da aplicação. Assets antigos da pré-release são tratados somente após uma nova publicação aprovada do marcador `develop`.
+Base, upstreams e dependências usam o catálogo e `runtime.lock` fixados; alteração da base invalida app e MinIO. O content ID do app cobre recursivamente as fontes SPED e demais arquivos de app efetivamente copiados pelo contexto, incluindo dados JSON e catálogos de auditoria, além do frontend; ignora bytecode e os arquivos excluídos pela política de segurança do contexto. pip/npm mantêm os caches existentes e a chave npm normalizada ignora apenas a SemVer do projeto. BuildKit conserva seu cache de camadas dentro do daemon de cada runner; não adicionamos um exporter externo `gha` ao driver Docker sem o image store containerd exigido pelo Docker. Reutilizar imagens imutáveis prontas evita reconstruir suas dependências entre runners.
 
-A chave npm ignora a versão do projeto e considera o lock de dependências; uma nova SemVer não cria desnecessariamente outro cache de pacotes. A retenção de artefatos temporários Actions é de 7–30 dias conforme sua finalidade. Assets publicados em releases têm ciclo de vida independente.
+Em release, o job Docker salva as seis imagens **somente após** smoke aprovado, em `release-image-handoff` (retenção de dois dias). A exportação usa gzip nível 1, sem comprimir novamente no upload. O job publish baixa exclusivamente o artefato do próprio run (sem `run-id` externo) e recusa SHA/versão/canal/catálogo/inputs/plataforma/run/tentativa/hash/tamanho divergentes, tags extras e configurações inválidas **antes de carregar/push**. IDs carregados são conferidos novamente. Handoff ausente ou inválido falha; o workflow não recompila silenciosamente. O publicador ainda verifica tags existentes sem sobrescrevê-las, repete smokes e pulls por digest; a distribuição completa também repete a carga/smoke offline. Artefatos de PR nunca são fonte de publicação. O bloqueio de head superado continua antes da publicação e na confirmação/promoção; imagens versionadas que já tenham sido enviadas não autorizam promover um commit superado.
+
+A transferência possui custo de serialização/armazenamento/rede e não é um cache global nem substitui os gates. Não se reaproveita binário/app final entre commits distintos; versão/SHA continuam exatos. Não houve atualização de dependências ou alteração dos templates bind.
+
+## Retenção automática de caches
+
+`python -m scripts.ci.cleanup_actions` apresenta o plano; `--execute --max-delete 100` exclui no máximo cem IDs por rodada. Acionamento manual começa em simulação. Há execução automática diária pela branch padrão e após cada execução de release confiável, inclusive develop depois que esta melhoria estiver integrada. Os dois caminhos compartilham `escritura-cache-cleanup`, sem cancelamento concorrente; a limpeza não ocupa a fila de mutações de release. Somente o job de limpeza recebe `actions:write` e leitura de PRs; os jobs de PR mantêm permissões de leitura.
+
+- Preserva refs com workflows ativos/em fila e refs de PRs abertas, mesmo durante revisão sem runner ativo.
+- Preserva duas variantes mais recentemente acessadas por família/OS/runtime em main e develop; variantes extras vencem após 30 e 14 dias, respectivamente. Tags estáveis são preservadas.
+- Caches de PR fechada vencem após sete dias sem acesso; outras refs após trinta dias.
+- Datas desconhecidas e associação de PR desconhecida em execução ativa são protegidas. Falha de leitura interrompe a limpeza.
+- Antes de **cada** DELETE, refaz inventário/atividade/PRs e compara ID, ref, chave, versão, criação, tamanho e acesso. Cache restaurado/substituído ou nova atividade invalida a exclusão. A API não oferece transação com início de runner: resta uma pequena janela entre última leitura e DELETE, limitada pela retenção conservadora e serialização dos limpadores.
+- DELETE usa exclusivamente `/actions/caches/{id}`, sem retry, inclusive quando o resultado é incerto. Registra IDs removidos/preservados/erros no artefato de relatório. Não executa prune Docker nem altera artefatos Actions de release, releases/assets, tags, GHCR ou dados da aplicação.
+
+Retenção de artefatos temporários Actions (incluindo o handoff de dois dias) e assets de release são independentes dos caches de dependências. Para testar a política sem token, execute `PYTHONPATH=tests:. python -m unittest test_ci_artifacts_cache test_ci_delivery_cache -v`; todos os dados desses testes são sintéticos.
+
+## Baseline e limites de medição
+
+A [release develop 43812084887](https://github.com/codisplanfiscalai/escritura-integrada/actions/runs/43812084887), anterior à melhoria, concluiu em 51m31s. Tempos observados de jobs: Linux 9m22s; Windows 30m28s; macOS arm64 5m43s; macOS x64 10m; Docker 5m44s; publicação 10m10s. Dentro deles, build/smoke macOS: 292s/503s; Windows app: 269s, instalador: 272s; construir/validar imagens: 336s; publicar imagens: 216s; exportar/provar carga offline: 261s. São tempos de uma execução e seus runners/filas, não estimativa de economia.
+
+Testes de composição sintéticos demonstram seis comandos build em validate sem cache, um com as cinco imagens auxiliares reutilizáveis e zero reconstruções em publish com handoff válido, mantendo o smoke em todos os caminhos. Medir a próxima release confiável por versão/SHA/run (tempos por imagem registrados no manifesto), custo/tamanho da transferência e tempo total é necessário para quantificar ganho real. Uma PR de leitura não exercita publicação nem os gates nativos de main durante a pausa; não comprova redução de tempo em release estável.
 
 ## Referências oficiais
 
@@ -112,6 +139,7 @@ A chave npm ignora a versão do projeto e considera o lock de dependências; uma
 - [REST: upload e digest dos assets](https://docs.github.com/en/rest/releases/assets).
 - [Limites dos assets de releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 - [REST: caches Actions](https://docs.github.com/en/rest/actions/cache).
+- [Docker: backends de cache e requisito containerd do driver Docker](https://docs.docker.com/build/cache/backends/).
 - [Autenticação e visibilidade do Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
 ## Fluxos no navegador

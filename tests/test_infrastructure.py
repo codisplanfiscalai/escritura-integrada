@@ -130,7 +130,7 @@ class InfrastructureTests(unittest.TestCase):
 
     def test_existing_tag_with_different_content_or_commit_is_rejected(self):
         wanted = image_plan("0.4.0-test.1", "develop", "a" * 40)["images"]["app"]
-        actual = {"labels": {"io.escritura.content-id": wanted["content_id"], "org.opencontainers.image.revision": "a" * 40}}
+        actual = {"platform": "linux/amd64", "labels": {"io.escritura.content-id": wanted["content_id"], "org.opencontainers.image.revision": "a" * 40, "org.opencontainers.image.version": wanted["tag"]}}
         assert_identity("app", wanted, actual, "a" * 40)
         with self.assertRaisesRegex(RuntimeError, "outro commit"):
             assert_identity("app", wanted, actual, "b" * 40)

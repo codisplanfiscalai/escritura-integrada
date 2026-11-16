@@ -25,7 +25,7 @@ def parse_time(value):
 
 def cache_family(key):
     # setup-node/setup-python use a final dependency hash. Keep two variants of
-    # each OS/runtime/tool family on develop, without including app SemVer.
+    # each OS/runtime/tool family on main/develop, without including app SemVer.
     return re.sub(r'(?i)[a-f0-9]{32,}$', '<hash>', str(key))
 
 
@@ -42,19 +42,29 @@ def active_refs(gh):
                     refs.update({'refs/pull/' + str(number) + '/merge', 'refs/pull/' + str(number) + '/head'})
             if run.get('event') == 'pull_request' and not prs:
                 protect_all_pr = True
+    # Open PRs remain useful even while no runner is active. Do not evict them
+    # merely because a review took longer than the retention window.
+    for pr in gh.pages(gh.base + '/pulls', params={'state': 'open'}):
+        number = pr.get('number')
+        if type(number) is not int or number < 1:
+            raise ValueError('PR aberta sem identificação; limpeza bloqueada.')
+        refs.update({'refs/pull/' + str(number) + '/merge', 'refs/pull/' + str(number) + '/head'})
+        head = pr.get('head') or {}
+        if (head.get('repo') or {}).get('full_name') == gh.repository and head.get('ref'):
+            refs.add('refs/heads/' + head['ref'])
     return refs, protect_all_pr
 
 
 def select_caches(caches, refs, *, now=None, protect_all_pr=False, max_delete=100):
     now = now or datetime.now(timezone.utc)
-    keep_develop = set()
+    keep_recent = set()
     groups = defaultdict(list)
     for cache in caches:
-        if cache.get('ref') == 'refs/heads/develop':
-            groups[cache_family(cache.get('key', ''))].append(cache)
+        if cache.get('ref') in ('refs/heads/develop', 'refs/heads/main'):
+            groups[(cache['ref'], cache_family(cache.get('key', '')))].append(cache)
     for group in groups.values():
         ordered = sorted(group, key=lambda item: parse_time(item.get('last_accessed_at')) or datetime.max.replace(tzinfo=timezone.utc), reverse=True)
-        keep_develop.update(item['id'] for item in ordered[:2])
+        keep_recent.update(item['id'] for item in ordered[:2])
     candidates, protected = [], defaultdict(int)
     for cache in caches:
         identifier = cache.get('id')
@@ -62,12 +72,12 @@ def select_caches(caches, refs, *, now=None, protect_all_pr=False, max_delete=10
             raise ValueError('Cache com ID inválido; nenhuma exclusão deve iniciar.')
         ref = cache.get('ref', '')
         last = parse_time(cache.get('last_accessed_at'))
-        if ref == 'refs/heads/main' or STABLE_REF.fullmatch(ref):
-            reason = 'main/estável preservado'
+        if STABLE_REF.fullmatch(ref):
+            reason = 'cache de tag estável preservado'
         elif ref in refs or (protect_all_pr and ref.startswith('refs/pull/')):
             reason = 'execução ativa'
-        elif identifier in keep_develop:
-            reason = 'duas variantes recentes de develop'
+        elif identifier in keep_recent:
+            reason = 'duas variantes recentes da branch principal'
         elif last is None:
             reason = 'data desconhecida'
         else:
@@ -75,7 +85,7 @@ def select_caches(caches, refs, *, now=None, protect_all_pr=False, max_delete=10
             if now - last < timedelta(days=days):
                 reason = 'dentro da retenção'
             else:
-                candidates.append({'id': identifier, 'ref': ref, 'key': cache.get('key', ''), 'size_in_bytes': int(cache.get('size_in_bytes', 0)), 'last_accessed_at': cache.get('last_accessed_at'), 'retention_days': days})
+                candidates.append({'id': identifier, 'ref': ref, 'key': cache.get('key', ''), 'size_in_bytes': int(cache.get('size_in_bytes', 0)), 'last_accessed_at': cache.get('last_accessed_at'), 'created_at': cache.get('created_at'), 'version': cache.get('version'), 'retention_days': days})
                 continue
         protected[reason] += 1
     candidates.sort(key=lambda item: (item['last_accessed_at'], item['id']))
@@ -91,19 +101,22 @@ def cleanup(gh, *, execute=False, max_delete=100, now=None):
     report = {'schema_version': 1, 'repository': gh.repository, 'execute': execute, 'cache_count': len(caches), 'active_refs': sorted(refs), 'protect_all_pr': protect_all_pr, **selected, 'deleted': [], 'skipped_after_refresh': [], 'errors': [], 'stable_releases_touched': False}
     if execute and selected['candidates']:
         # A cache recently restored or a workflow started during planning is kept.
-        refreshed = list(gh.pages(gh.base + '/actions/caches', key='actions_caches'))
-        new_refs, new_pr = active_refs(gh)
-        allowed = {item['id']: item for item in select_caches(refreshed, refs | new_refs, now=now, protect_all_pr=protect_all_pr or new_pr, max_delete=500)['candidates']}
         for cache in selected['candidates']:
+            # Refresh before EACH deletion; a restored cache or a newly active/open
+            # ref invalidates the plan. Read errors abort; DELETE is never retried.
+            refreshed = list(gh.pages(gh.base + '/actions/caches', key='actions_caches'))
+            new_refs, new_pr = active_refs(gh)
+            allowed = {item['id']: item for item in select_caches(refreshed, refs | new_refs, now=now, protect_all_pr=protect_all_pr or new_pr, max_delete=500)['candidates']}
             current = allowed.get(cache['id'])
-            if current is None or current['key'] != cache['key'] or current['ref'] != cache['ref']:
+            if current != cache:
                 report['skipped_after_refresh'].append(cache['id'])
                 continue
             try:
                 gh.request('DELETE', gh.base + '/actions/caches/' + str(cache['id']), missing=True)
                 report['deleted'].append(cache['id'])
             except GitHubError as exc:
-                report['errors'].append({'id': cache['id'], 'error': str(exc)})
+                report['errors'].append({'id': cache['id'], 'error': str(exc),
+                                         'outcome': 'uncertain' if exc.status is None else 'rejected', 'retried': False})
     return report
 
 
