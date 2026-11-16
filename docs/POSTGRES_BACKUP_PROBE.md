@@ -116,3 +116,12 @@ No ambiente atual, pacotes oficiais 17.12 com os SHA-256 documentados acima fora
 Regressões locais: 51 testes de backup/adaptadores executados (50 passaram, um skip Windows); 17 testes simulados/subprocessos PostgreSQL passaram e quatro nativos foram ignorados na descoberta comum, depois executados e aprovados separadamente pelo harness. Frontend: 192 testes e build aprovados. Navegador local permanece bloqueado pelo EPERM já observado no Chromium deste ambiente; não foi contornado. Gate completo e CI do novo head precisam ser avaliados separadamente: estes resultados focados não representam aprovação de pipeline.
 
 O workflow PostgreSQL preparatório existente não equivale ao ensaio de backup: os quatro testes nativos exigem opt-in explícito e são comprovados aqui pelo harness local. Permanecem os limites de POSIX/major17/tabelas permitidas, ausência de cobertura de stack, MinIO, roles/globais, PITR, schema fiscal e homologação cloud/Windows. Não houve ativação de restauração, migração, merge da PR58 ou implantação.
+
+
+## Composição após PR61 (dev.33)
+
+Base atual desta rodada: develop 4f53d1a0b52fc7c0edffd744bc259128863259e2, com a otimização do Razão da PR61. Composição automática; todos os 14 arquivos da PR61 e os workflows preservados integralmente. O runtime continua SQLite e PostgreSQL operacional permanece recusado.
+
+O harness PostgreSQL 17.12 repetiu os quatro testes reais em cluster novo descartável, com hashes, snapshot concorrente, autenticação e proteção contra repetição; bancos, credenciais e cluster removidos. Evidência: docs/evidence/postgres-backup-dev33-native.json. Mesmo escopo pequeno sintético; não homologa limites de capacidade nem schema fiscal.
+
+Regressões: 50 testes backup/adaptadores passaram, um skip Windows; 17 PostgreSQL simulados passaram, quatro nativos ignorados na descoberta comum mas aprovados separadamente; oito testes do Razão passaram; 192 testes frontend e build aprovados. Sintaxe, versões e diff-check aprovados. Navegador local permanece bloqueado pelo EPERM conhecido, sem nova tentativa ou contorno. Gate agregado não repetido nesta rodada. O CI anterior de dev.32 passou, mas não aprova o novo head/base: exigir novo CI e conclusão da publicação anterior antes de integrar. Sem merge, deploy, contas cloud ou dados reais.

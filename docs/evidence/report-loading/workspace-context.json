@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "checks": [
+    "Dashboard fiscal/accounting cards follow suggested August/September and company, without changing operational November",
+    "F8 code with leading zeros, suggested September, table wheel reaches page scrolling",
+    "manual July survives navigation; F8 and F9 are blocked while editing",
+    "sidebar scrolls by keyboard with thin scrollbar",
+    "F9 clears company and persisted year/month without deleting records",
+    "Document, journal, journal-line, title and audit hashes unchanged by context/filter navigation"
+  ],
+  "console_errors": [],
+  "screenshots": [
+    "dashboard-monthly-indicators.png",
+    "workspace-context.png"
+  ],
+  "source_sha": "2bc2051486afeba3612b31fb112c32f213328cc9",
+  "stage": "complete"
+}
