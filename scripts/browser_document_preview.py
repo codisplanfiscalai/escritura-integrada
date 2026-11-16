@@ -50,7 +50,7 @@ def main():
                             r=page.request.get(url+path);assert r.ok,r.text();return r.json()
                         post('/api/context',{'company_id':cid,'module':'fiscal','period':'2026-11'})
                         documents=[]
-                        for fixture,label in [('auditor_demo','DANFE'),('auditor_nfce','DANFC-e'),('auditor_cte','DACTE'),('auditor_long','DANFE')]:
+                        for fixture,label in [('auditor_demo','DANFE'),('auditor_nfce','DANFC-e'),('auditor_cte','DACTE'),('auditor_cte_long','DACTE'),('auditor_long','DANFE')]:
                             raw=synthetic_xml(fixture,company['tax_id'])
                             batch=post(scope+'/imports/preview',{'filename':fixture+'.xml','period':'2026-11','options':{'posting_date':'2026-11-06'},'content_base64':base64.b64encode(raw).decode()})
                             assert batch['can_confirm'],batch['issues']
@@ -76,6 +76,11 @@ def main():
                             expect(modal.locator('canvas')).to_be_visible(timeout=30000)
                             expect(modal.get_by_text('Página 1 de',exact=False)).to_be_visible()
                             expect(modal.get_by_role('alert')).to_have_count(0)
+                            if label == 'DACTE':
+                                for zoom in ('0.75', '1', '1.25', '1.5'):
+                                    modal.get_by_label('Zoom',exact=True).select_option(zoom)
+                                    expect(modal.locator('.document-pdf-pages')).to_have_attribute('aria-busy','false')
+                                    (OUT/(label+'-'+doc['number']+'-zoom-'+zoom+'.png')).write_bytes(base64.b64decode(modal.locator('canvas').evaluate("canvas => canvas.toDataURL('image/png').split(',')[1]")))
                             modal.get_by_label('Zoom',exact=True).select_option('1.25')
                             expect(modal.locator('canvas')).to_be_visible()
                             if doc['number']=='81':
@@ -85,6 +90,13 @@ def main():
                             expect(modal.locator('.document-pdf-pages')).to_have_attribute('aria-busy','false')
                             (OUT/(label+'-'+doc['number']+'-canvas.png')).write_bytes(base64.b64decode(modal.locator('canvas').evaluate("canvas => canvas.toDataURL('image/png').split(',')[1]")))
                             page.screenshot(path=str(OUT/(label+'-'+doc['number']+'.png')),full_page=True)
+                            if doc['number']=='99203224':
+                                modal.get_by_role('button',name='Próxima página',exact=True).click()
+                                expect(modal.locator('canvas')).to_have_attribute('aria-label',re.compile('página 2 de'))
+                                expect(modal.locator('.document-pdf-pages')).to_have_attribute('aria-busy','false')
+                                (OUT/'DACTE-long-page-2-canvas.png').write_bytes(base64.b64decode(modal.locator('canvas').evaluate("canvas => canvas.toDataURL('image/png').split(',')[1]")))
+                                page.screenshot(path=str(OUT/'DACTE-long-page-2-ui.png'),full_page=True)
+
                             page.keyboard.press('Escape');expect(page.get_by_role('dialog')).to_have_count(0)
                             expect(trigger).to_be_focused()
                         report['checks'].append('DANFE, DANFC-e and DACTE: canvas rendered locally; zoom, Esc and focus return')

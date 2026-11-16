@@ -17,9 +17,9 @@ def render_danfe(raw):
     try:
         from brazilfiscalreport.danfe import Danfe
         from brazilfiscalreport.danfce import Danfce
-        from brazilfiscalreport.dacte import Dacte
+        from .dacte_preview import PreviewDacte
         from brazilfiscalreport.damdfe import Damdfe
-        renderer={'55':Danfe,'65':Danfce,'57':Dacte,'58':Damdfe}[model]
+        renderer={'55':Danfe,'65':Danfce,'57':PreviewDacte,'58':Damdfe}[model]
         doc=renderer(xml=etree.tostring(root,encoding='unicode'))
         return bytes(doc.output()),RENDERER+'/'+type(doc).__name__
     except Exception as exc:

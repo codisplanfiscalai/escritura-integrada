@@ -4,6 +4,7 @@ Run after browser_document_preview.py. Decodes symbols locally; never opens URLs
 Keeps high-resolution page PNGs for human review, including pagination.
 """
 import json
+from lxml import etree
 from pathlib import Path
 import re
 import fitz
@@ -12,12 +13,12 @@ import zxingcpp
 
 OUT=Path(__file__).resolve().parents[1]/'artifacts/document-preview'
 results={}
-for fixture,canvas in [('auditor_demo','DANFE-1'),('auditor_nfce','DANFC-e-2'),('auditor_cte','DACTE-99203223'),('auditor_long','DANFE-81')]:
+for fixture,canvas in [('auditor_demo','DANFE-1'),('auditor_nfce','DANFC-e-2'),('auditor_cte','DACTE-99203223'),('auditor_cte_long','DACTE-99203224'),('auditor_long','DANFE-81')]:
     raw=(OUT/(fixture+'.xml')).read_bytes()
     key=re.search(br'Id="(?:NFe|CTe)([0-9]+)"',raw)[1].decode()
-    qr=re.search(br'<(?:qrCode|qrCodCTe)>([^<]+)',raw)
+    qr=etree.fromstring(raw).xpath('string(.//*[local-name()="qrCode" or local-name()="qrCodCTe"])')
     expected={key} if fixture!='auditor_nfce' else set()
-    if qr:expected.add(qr[1].decode())
+    if qr:expected.add(qr)
     pdf=fitz.open(OUT/(fixture+'.pdf'));codes=[]
     for index,page in enumerate(pdf):
         pix=page.get_pixmap(matrix=fitz.Matrix(4,4))
@@ -26,9 +27,21 @@ for fixture,canvas in [('auditor_demo','DANFE-1'),('auditor_nfce','DANFC-e-2'),(
     pdf_values={code.text for code in codes}
     browser_codes=zxingcpp.read_barcodes(Image.open(OUT/(canvas+'-canvas.png')))
     browser_values={code.text for code in browser_codes}
-    # Homologation watermark can cross the CT-e QR. Preserve the defect;
-    # no deletion of watermarks or XML rewriting to make the assertion pass.
     results[fixture]={'pages':len(pdf),'expected':sorted(expected),'pdf_codes':sorted(pdf_values),
         'canvas_codes':sorted(browser_values),'pdf_match':expected<=pdf_values,'canvas_match':expected<=browser_values}
+    if fixture.startswith('auditor_cte'):
+        variants = {}
+        for scale in (1.25, 2, 4):
+            pix = pdf[0].get_pixmap(matrix=fitz.Matrix(scale, scale))
+            values = {c.text for c in zxingcpp.read_barcodes(Image.frombytes('RGB', (pix.width, pix.height), pix.samples))}
+            variants['pdf_scale_'+str(scale)] = {'match': expected <= values, 'codes': sorted(values)}
+        for zoom in ('0.75', '1', '1.25', '1.5'):
+            values = {c.text for c in zxingcpp.read_barcodes(Image.open(OUT/(canvas+'-zoom-'+zoom+'.png')))}
+            variants['canvas_zoom_'+zoom] = {'match': expected <= values, 'codes': sorted(values)}
+        results[fixture]['decoding_variants'] = variants
+        # Keep layout failure independently visible, even when all QR checks pass.
+        results[fixture]['layout_status'] = 'FAIL: upstream long text overlap/truncation remains; QR correction only'
 (OUT/'pdf-qa.json').write_text(json.dumps(results,indent=2,ensure_ascii=False))
 print(json.dumps(results,indent=2,ensure_ascii=False))
+
+assert all(r['pdf_match'] and r['canvas_match'] and all(v['match'] for v in r.get('decoding_variants',{}).values()) for r in results.values()), 'Symbol decoding regression; see pdf-qa.json (layout status reported separately)'

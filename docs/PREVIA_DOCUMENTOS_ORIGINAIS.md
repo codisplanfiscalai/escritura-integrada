@@ -8,7 +8,7 @@ Incremento local sobre `develop` 67a5e2e0b3c65fe7948827d6d66da5361970bfb1 (0.9.0
 | --- | --- | --- |
 | NF-e 55, XML 4.00 | BrazilFiscalReport 1.3.1 / DanfeMoc70 | Prévia na escrituração; amostras sintéticas A4 de 1 e 3 páginas inspecionadas, 80 itens preservados. |
 | NFC-e 65, XML 4.00 | BrazilFiscalReport 1.3.1 / Danfce | Prévia na escrituração; bobina sintética inspecionada, QR decodificado para o valor original `example.invalid`, sem navegar. |
-| CT-e 57, XML 4.00 | BrazilFiscalReport 1.3.1 / Dacte | Prévia implementada e testada, mas fidelidade visual ainda pendente: textos longos sobrepostos nos quadros de partes/tomador e QR sob marca de homologação na fixture rodoviária. Aviso explícito na prévia. |
+| CT-e 57, XML 4.00 | BrazilFiscalReport 1.3.1 / Dacte | Prévia implementada e testada, mas fidelidade visual ainda pendente: textos longos sobrepostos nos quadros de partes/tomador e cortes na biblioteca. QR com área protegida nesta revisão; limites abaixo. Aviso explícito na prévia. |
 | MDF-e 58, XML 3.00 | BrazilFiscalReport 1.3.1 / Damdfe, já usado na auditoria | Não integrado à escrituração: o importador fiscal não aceita esse leiaute. Não se cria documento fiscal para habilitar a prévia. |
 | CT-e OS 67 | Espelho próprio de conferência na auditoria | Não equivale a DACTE OS; recusado nesta prévia de leiaute. |
 | NFS-e | `Danfse` existe na dependência 1.3.1 | Não integrado ao fluxo fiscal/registro e não validado contra NT 008/2026; perfis municipais/nacional e vínculo ao XML exigem trabalho específico. Recepção ADN não implica renderização/escrituração. |
@@ -60,3 +60,14 @@ O script do navegador usa banco descartável, fixtures `auditor_*` existentes e 
 - [Portal NFS-e: NT 008/2026, padrão DANFSe](https://www.gov.br/nfse/pt-br/noticias/se-cgnfs-e-publica-nota-tecnica-no-008-2026-com-regras-para-emissao-do-danfse).
 - [BrazilFiscalReport, projeto oficial](https://github.com/Engenere/BrazilFiscalReport); a versão utilizada continua fixada em 1.3.1, sem atualizar para a versão mais recente do projeto.
 - [PDF.js: uso de worker, renderização e paginação](https://mozilla.github.io/pdf.js/examples/). Licenças das dependências e codecs preservadas no build.
+
+
+## Continuação PR50: correção parcial de QR, layout ainda reprovado
+
+Correção local `PreviewDacte` sobre BrazilFiscalReport 1.3.1: redesenha apenas o QR e sua área branca depois da marca d'água, com margem de pelo menos 10% da dimensão total e conteúdo extraído do XML. Preserva a marca diagonal e acrescenta identificação explícita de homologação no espaço variável do cabeçalho. Restaura a posição de desenho, sem alterar bytes XML, dados fiscais ou dependência instalada. Aplica-se também aos cabeçalhos de continuação. Referência: MOC CT-e 4.00 Anexo II §§2.18, 2.20 e 2.21.1 (link acima); marca d'água não pode impedir leitura. Não é certificação do leiaute.
+
+Causas ainda **não corrigidas**: `_draw_recipient_sender`/`_draw_service_recipient` usam `multi_cell(w=0)` com alturas e posições fixas; logradouro/bairro/município atravessam outras colunas. `limit_text` e `long_field` cortam nomes na biblioteca; a altura do endereço do emitente também desloca o título DACTE. Uma correção completa exige medir quebras e redistribuir/paginar os quadros sem omitir campos. Não foi substituído por espelho inventado nem reduzido o XML para disfarçar esses defeitos. O aviso da interface os identifica expressamente. Esta continuação **não conclui** a exigência de fidelidade de textos longos.
+
+Evidência final local: 65 testes backend, 181 frontend e build passaram; navegador passou com abertura/fechamento, troca de empresa/seleção, zoom e continuação DACTE. `auditor_cte_long` deriva exclusivamente da fixture sintética: nomes/endereço ampliados, 30 documentos originários, URL de teste com parâmetros XML escapados, homologação. PDFs/XMLs/canvases permanecem em `artifacts/document-preview`; falhas anteriores em `artifacts/dacte-before-qr-fix`. Nenhum endereço QR é acessado.
+
+O QR dos dois DACTEs coincide exatamente com o conteúdo XML no PDF rasterizado a 1,25x/2x/4x e no canvas a 75/100/125/150%. Entretanto, Code128 não decodifica nas rasterizações 1,25x/2x nem no canvas 75%; decodifica a 4x e no canvas 100/125/150%. **O comando `scripts/check_document_preview_pdfs.py` retorna falha**, pois conserva a exigência de leitura de todos os códigos em todos esses tamanhos. Os resultados negativos e `layout_status: FAIL` permanecem em `pdf-qa.json`; não foram transformados em sucesso. A inspeção visual confirma sobreposições/cortes, embora o QR e a identificação de homologação estejam legíveis. Não interpretar testes funcionais aprovados como aceite visual integral.

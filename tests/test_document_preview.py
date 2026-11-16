@@ -16,7 +16,7 @@ FIXTURES = Path(__file__).parent / 'fixtures'
 
 
 def synthetic_xml(name, company_tax_id):
-    raw = (FIXTURES / (('auditor_demo' if name == 'auditor_long' else name) + '.xml')).read_bytes()
+    raw = (FIXTURES / (('auditor_demo' if name == 'auditor_long' else 'auditor_cte' if name == 'auditor_cte_long' else name) + '.xml')).read_bytes()
     if name == 'auditor_long':
         item = re.search(br'<det nItem="1">.*?</det>', raw, re.S)[0]
         raw = raw.replace(item, b''.join(item.replace(b'nItem="1"', f'nItem="{i}"'.encode()) for i in range(1,81)))
@@ -24,11 +24,18 @@ def synthetic_xml(name, company_tax_id):
         raw = re.sub(br'<total>.*?</total>', lambda m: m[0].replace(b'65000.00',b'5200000.00'),raw,flags=re.S)
     # Only the emitter becomes this synthetic company. Other parties remain
     # fictitious and distinct, including fixtures reusing the same tax ID.
-    model = {'auditor_demo':'55','auditor_nfce':'65','auditor_cte':'57','auditor_long':'55'}[name]
+    model = {'auditor_demo':'55','auditor_nfce':'65','auditor_cte':'57','auditor_long':'55','auditor_cte_long':'57'}[name]
     # Structured, deliberately non-fiscal key (zero CNPJ); no real identity.
     key = ('352601' + '0'*14 + model + '0010000000011000000010').encode()
     if name == 'auditor_long':
         key = key[:-2] + b'81'
+    if name == 'auditor_cte_long':
+        key = key[:-2] + b'82'
+        raw = raw.replace(b'<nCT>99203223</nCT>', b'<nCT>99203224</nCT>')
+        raw = raw.replace(b'DADOS SINTETICOS SEM VALOR FISCAL', b'EMPRESA SINTETICA DE TRANSPORTES E LOGISTICA SEM VALOR FISCAL')
+        raw = raw.replace(b'</qrCodCTe>', b'&amp;ambiente=homologacao&amp;teste=sem-valor-fiscal</qrCodCTe>')
+        source = re.search(br'<infNFe>.*?</infNFe>', raw, re.S)[0]
+        raw = raw.replace(source, b''.join(b'<infNFe><chave>' + ('352601'+'0'*14+'55001'+str(i).zfill(19)).encode() + b'</chave></infNFe>' for i in range(1,31)))
     raw = raw.replace(b'9'*44, key)
     if model == '57':
         raw = re.sub(br'<chCTe>[^<]+</chCTe>', b'<chCTe>'+key+b'</chCTe>', raw)
@@ -90,6 +97,23 @@ class DocumentPreviewTests(unittest.TestCase):
                     self.assertIn(renderer, response.headers['x-document-renderer'])
                     self.assertEqual(hashlib.sha256(raw).hexdigest(), response.headers['x-source-sha256'])
                     self.assertGreaterEqual(len(PdfReader(io.BytesIO(response.content)).pages),1)
+                self.assertEqual(before, self.snapshot())
+
+    def test_dacte_qr_repair_preserves_xml_and_environment(self):
+        for fixture in ('auditor_cte', 'auditor_cte_long'):
+            with self.subTest(fixture=fixture):
+                doc, raw, _ = self.imported(fixture)
+                before = self.snapshot()
+                response = self.client.get(self.url(doc))
+                self.assertEqual(200, response.status_code)
+                text = ' '.join(p.extract_text() for p in PdfReader(io.BytesIO(response.content)).pages)
+                self.assertIn('EMITIDO EM AMBIENTE DE', text)
+                self.assertIn('HOMOLOGAÇÃO - SEM VALOR FISCAL', text)
+                if fixture == 'auditor_cte_long':
+                    self.assertEqual(2, len(PdfReader(io.BytesIO(response.content)).pages))
+                    for key in re.findall(br'<chave>([0-9]+)</chave>', raw):
+                        self.assertIn(key.decode(), text)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), response.headers['x-source-sha256'])
                 self.assertEqual(before, self.snapshot())
 
     def test_multipage_danfe_preserves_all_items(self):
