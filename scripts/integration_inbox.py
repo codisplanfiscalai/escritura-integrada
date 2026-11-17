@@ -16,7 +16,7 @@ def initialize(conn):
     conn.commit()
 
 
-def accept(conn, secret, timestamp, supplied_signature, body, expected_company_id, apply):
+def accept(conn, secret, timestamp, supplied_signature, body, expected_company_id, apply, *, event_types=frozenset({'cost-center.changed.v1'})):
     """Return True once, False for a duplicate; apply(conn,event) commits atomically.
 
     Any exception rolls back inbox and business changes together. Return HTTP 2xx
@@ -28,7 +28,7 @@ def accept(conn, secret, timestamp, supplied_signature, body, expected_company_i
         raise ValueError('invalid_signature')
     event = json.loads(body)
     if (not isinstance(event,dict) or event.get('specversion') != '1.0'
-            or event.get('type') != 'cost-center.changed.v1'
+            or event.get('type') not in event_types
             or event.get('company_id') != expected_company_id
             or not isinstance(event.get('id'),str)
             or not re.fullmatch('[a-f0-9]{32}',event['id'])):

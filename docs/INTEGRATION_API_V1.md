@@ -1,5 +1,7 @@
 # Integrações v1 — corte de centros de custo
 
+Este documento registra o corte inicial do PR #69. A [expansão de domínios](INTEGRATION_DOMAINS_V1.md) acrescenta recursos e recuperação, preservando os contratos abaixo.
+
 ## Inventário e alcance
 
 Base verificada: `develop` dev.40, `a31f717f3e037cc4e33fddabcdd2f6fc3f3ee5cc`.
