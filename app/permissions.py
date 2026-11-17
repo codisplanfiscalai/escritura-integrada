@@ -8,6 +8,7 @@ ACTIONS = {'read': 'Consultar', 'create': 'Incluir', 'edit': 'Editar', 'delete':
            'import': 'Importar', 'export': 'Exportar', 'print': 'Imprimir', 'book': 'Escriturar',
            'settle': 'Realizar baixas', 'reverse': 'Estornar', 'close': 'Fechar', 'reopen': 'Reabrir'}
 ROUTINES = {
+    'system.integrations': ('Integrações por empresa', 'read create delete'),
     'fiscal.documents': ('Escrituração e documentos', 'read create edit delete book reverse export print'),
     'fiscal.imports': ('Importações fiscais', 'read import export delete'),
     'fiscal.shared_parties': ('Catálogo global de terceiros', 'read create edit delete'),
@@ -18,7 +19,7 @@ ROUTINES = {
     'accounting.journals': ('Lançamentos e saldos iniciais', 'read create edit delete book reverse export print'),
     'accounting.accounts': ('Plano de contas', 'read create edit delete'),
     'accounting.histories': ('Históricos e modelos contábeis', 'read create edit delete'),
-    'accounting.cost_centers': ('Centros de custo', 'read create edit delete'),
+    'accounting.cost_centers': ('Centros de custo', 'read create edit delete export'),
     'accounting.reports': ('Livros e demonstrações', 'read export print'),
     'accounting.imports': ('Importações contábeis', 'read import export'),
     'financial.imports': ('Importação de títulos', 'read import export'),
@@ -147,6 +148,8 @@ def route_policy(path, method, query, payload, session):
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
+    if root == 'integrations':
+        return 'system.integrations', action, False
     if root in {'fiscal-sales-accounting', 'fiscal-purchases-accounting'}:
         if tail.endswith('/settings'):
             return 'accounting.accounts', 'edit' if write else 'read', False
@@ -211,6 +214,8 @@ def route_policy(path, method, query, payload, session):
         return 'fiscal.parameters', 'edit' if write else 'read', False
     if root == 'fiscal-import-mappings':
         return 'fiscal.parameters', action, False
+    if root == 'documents' and tail.endswith('/auxiliary'):
+        return 'fiscal.documents', 'export', False
     if root == 'documents' and tail.endswith('/account'):
         return 'accounting.journals', 'create', False
     if tail == '/prosoft/observed-balances' and method == 'GET':
