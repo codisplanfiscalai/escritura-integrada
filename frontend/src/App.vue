@@ -14,6 +14,7 @@ import CfopView from './views/CfopView.vue';
 import AuditorView from './views/AuditorView.vue';
 import ModuleImportView from './views/ModuleImportView.vue';
 import DfeView from './views/DfeView.vue';
+import SpedGeneratorView from './views/SpedGeneratorView.vue';
 import NfseNationalView from './views/NfseNationalView.vue';
 import GroupsView from './views/GroupsView.vue';
 import MastersView from './views/MastersView.vue';
@@ -28,6 +29,7 @@ const menus=[
 {id:'sales-accounting',label:'Integração Contábil',icon:'journal',component:FiscalSalesAccountingView,module:'fiscal',routine:'fiscal.documents'},
 {id:'dfe',label:'DF-e',icon:'download',component:DfeView,module:'fiscal',routine:'fiscal.imports'},
 {id:'nfse-national',label:'NFS-e Nacional',icon:'download',component:NfseNationalView,module:'fiscal',routine:'fiscal.imports'},
+{id:'sped-generator',label:'Gerador SPED',icon:'book',component:SpedGeneratorView,module:'fiscal',routine:'fiscal.documents'},
 {id:'imports',label:'Importações fiscais',icon:'import',component:ImportView,module:'fiscal',routine:'fiscal.imports'},
 {id:'companies',label:'Empresas',icon:'building',component:CompaniesView,module:'registrations'},
 {id:'third-parties',label:'Terceiros',icon:'building',component:SharedRegistrationsView,module:'registrations',routine:'fiscal.shared_parties',props:{kind:'third-party'}},

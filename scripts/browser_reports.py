@@ -482,6 +482,33 @@ def main():
                         expect(kind).to_be_visible()
                         shot('mobile-controls.png')
                         assert page.evaluate('document.documentElement.scrollWidth') <= 391
+                        page.set_viewport_size({'width':1440,'height':1000})
+                        navigate('Gerador SPED')
+                        sped=page.locator('.sped-generator-view')
+                        expect(sped.get_by_role('heading',name='Gerador SPED',exact=True)).to_be_visible()
+                        sped.get_by_role('combobox',name='Perfil da EFD',exact=True).select_option('A')
+                        sped.get_by_role('combobox',name='Atividade',exact=True).select_option('1')
+                        sped.get_by_role('combobox',name='Finalidade',exact=True).select_option('0')
+                        with page.expect_response(lambda r: '/sped-generator/bookkeeping-block-c' in r.url) as generated:
+                            sped.get_by_role('button',name='Gerar recorte',exact=True).click()
+                        assert generated.value.ok,generated.value.text()
+                        evidence=generated.value.json()
+                        assert evidence['complete_efd'] is False and evidence['transmitted'] is False
+                        with page.expect_download() as download:
+                            sped.get_by_role('button',name='Baixar TXT parcial',exact=True).click()
+                        import base64
+                        assert Path(download.value.path()).read_bytes()==base64.b64decode(evidence['content_base64'])
+                        with page.expect_download() as download:
+                            sped.get_by_role('button',name='Baixar rastreabilidade JSON',exact=True).click()
+                        trace=json.loads(Path(download.value.path()).read_text())
+                        assert trace['result_sha256']==evidence['result_sha256'] and 'content_base64' not in trace
+                        shot('sped-partial-generator.png')
+                        page.set_viewport_size({'width':390,'height':844})
+                        assert page.evaluate('document.documentElement.scrollWidth') <= 391
+                        shot('sped-partial-mobile.png')
+                        sped.get_by_role('combobox',name='Finalidade',exact=True).select_option('1')
+                        expect(sped.get_by_role('button',name='Baixar TXT parcial',exact=True)).to_have_count(0)
+                        report['checks'].append('SPED partial generation: explicit options, exact TXT/trace downloads and stale result cleared')
                         assert not report['console_errors'], report['console_errors']
                         assert not page.evaluate('window.reportPolicyViolations'), page.evaluate('window.reportPolicyViolations')
                         report['browser_version'] = browser.version
