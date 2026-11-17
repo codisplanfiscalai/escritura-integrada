@@ -288,7 +288,7 @@ class BookkeepingBlockCApiTests(unittest.TestCase):
         self.assertEqual(409, self.export(period='2025-11').status_code)
         header = generate([])['payload'].decode('latin-1').splitlines()[0]
         self.assertEqual(409, self.export(header_0000=header).status_code)
-        self.assertEqual(400, self.export(consolidate_nfce=True).status_code)
+        self.assertEqual(400, self.export(consolidate_nfce='true').status_code)
         self.activate(self.b['id'])
         self.assertEqual(409, self.export().status_code)
         r = self.client.post('/api/context', json={'company_id': self.a['id'], 'period': '2026-11', 'module': 'accounting'})
