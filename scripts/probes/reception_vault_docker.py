@@ -38,7 +38,7 @@ def main():
     images = []
     try:
         config = json.loads(docker('compose', '--project-name', prefix, '-f', 'compose.yaml',
-                                  '-f', 'deploy/compose.reception-vault.yaml', 'config', '--format', 'json',
+                                  'config', '--format', 'json',
                                   env=dict(os.environ, ESCRITURA_IMAGE=runtime,
                                            ESCRITURA_APP_DATA_BIND='/tmp/' + prefix + '/configuration-only')))
         app = config['services']['app']

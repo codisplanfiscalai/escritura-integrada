@@ -213,7 +213,7 @@ class PlanTests(unittest.TestCase):
             with mock.patch.object(storage, "image_id", return_value="sha256:" + "a" * 64), \
                     mock.patch.object(storage, "docker", return_value=json.dumps(config)), \
                     mock.patch.object(storage, "volume_info") as volumes, mock.patch.object(storage, "worker") as worker, \
-                    self.assertRaisesRegex(storage.StorageError, "compose.existing-bind.yaml"):
+                    self.assertRaisesRegex(storage.StorageError, "ESCRITURA_APP_DATA_BIND"):
                 storage.make_plan(root, "develop", "synthetic", compose)
             volumes.assert_not_called()
             worker.assert_not_called()
@@ -265,6 +265,8 @@ class PlanTests(unittest.TestCase):
                 config["services"][name] = {"image": "registry.invalid/tag-that-moved", "environment": {"PASSWORD": "SYNTHETIC_SECRET"},
                                              "volumes": [{"type": "volume", "source": logical, "target": target}]}
                 config["volumes"][logical] = {"name": "actual-prefix_" + logical}
+            config['services']['app']['volumes'].append({'type':'volume','source':'reception_vault','target':'/run/escritura/reception-vault'})
+            config['volumes']['reception_vault']={'name':'actual-prefix_reception_vault'}
             selected = []
             def docker(*args, **kwargs):
                 if args[0] == "compose": return json.dumps(config)
@@ -273,12 +275,15 @@ class PlanTests(unittest.TestCase):
                     return "existing"
                 name = selected[0]
                 return json.dumps([{"Image": "sha256:" + "b" * 64,
-                                    "Mounts": [{"Type": "volume", "Destination": storage.TARGETS[name], "Name": "actual-prefix_" + name + "-data"}]}])
+                                    "Mounts": [{"Type": "volume", "Destination": storage.TARGETS[name], "Name": "actual-prefix_" + name + "-data"}] +
+                                    ([{'Type':'volume','Destination':'/run/escritura/reception-vault','Name':'actual-prefix_reception_vault'}] if name=='app' else [])}])
             with mock.patch.object(storage, "image_id", side_effect=lambda value: value if storage.IMAGE_ID.fullmatch(value) else "sha256:" + "a" * 64) as images, \
                     mock.patch.object(storage, "docker", side_effect=docker), \
                     mock.patch.object(storage, "volume_info", side_effect=lambda n, p, l: {"name": n, "logical": l, "created_at": "test"}):
                 plan = storage.make_plan(root, "develop", "synthetic", compose)
             self.assertEqual(plan["sources"]["app"]["name"], "actual-prefix_app-data")
+            self.assertEqual('actual-prefix_reception_vault',plan['preserved_volumes']['reception_vault']['name'])
+            self.assertNotIn('reception_vault',plan['sources'])
             self.assertNotIn("SYNTHETIC_SECRET", json.dumps(plan))
             self.assertNotIn("environment", json.dumps(plan))
             lock = storage.image_lock(plan)
@@ -287,6 +292,7 @@ class PlanTests(unittest.TestCase):
                                 for value in lock["services"].values()))
             self.assertFalse(any(call.args[0] == "registry.invalid/tag-that-moved" for call in images.call_args_list))
             # The right project label alone does not permit swapping app and Redis volumes.
+            config["services"]["app"]["volumes"].pop()  # Test original cross-service guard independently.
             config["services"]["app"]["volumes"][0]["source"] = "redis-data"
             with mock.patch.object(storage, "image_id", return_value="sha256:" + "a" * 64), \
                     mock.patch.object(storage, "docker", return_value=json.dumps(config)), self.assertRaisesRegex(storage.StorageError, "entre serviços"):
@@ -571,6 +577,43 @@ class BindSelectionTests(unittest.TestCase):
                 storage.prepare_app(root,'develop','local')
             self.assertEqual(env.read_text(),'ESCRITURA_APP_DATA_BIND=\n')
             self.assertTrue(all(c.args[0]=='ps' for c in docker.call_args_list))
+
+
+class SingleComposePlanTests(unittest.TestCase):
+    def test_new_plan_writes_only_json_and_retains_installed_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'plan.json'
+            plan={'schema':storage.SCHEMA,'project':'fixture','directory':tmp,
+                  'compose_file':str(Path(tmp)/'compose.yaml'),'helper_image':'sha256:'+'a'*64,
+                  'sources':{},'images':{'app':'sha256:'+'b'*64}}
+            args=['deploy_storage.py','plan','--project','fixture','--helper-image','local',
+                  '--compose-file',plan['compose_file'],'--output',str(path)]
+            with mock.patch.object(sys,'argv',args),mock.patch.object(storage,'local_daemon'), \
+                    mock.patch.object(storage,'make_plan',return_value=plan),mock.patch('builtins.print'):
+                storage.main()
+                self.assertEqual(plan,json.loads(path.read_text()))
+                self.assertFalse(path.with_suffix('.images.yaml').exists())
+                with self.assertRaises(FileExistsError):storage.main()
+                self.assertEqual(plan,json.loads(path.read_text()))
+            for action in ('migrate','verify'):
+                with mock.patch.object(sys,'argv',['deploy_storage.py',action,'--plan',str(path)]), \
+                        mock.patch.object(storage,'local_daemon'),mock.patch.object(storage,'make_plan',return_value=plan), \
+                        mock.patch.object(storage,'execute',return_value={'ok':True}) as execute,mock.patch('builtins.print'):
+                    storage.main()
+                    execute.assert_called_once_with(plan,verify=action=='verify')
+
+    def test_legacy_image_lock_still_rejects_changes_before_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'plan.json';lock=path.with_suffix('.images.yaml')
+            base={'schema':storage.SCHEMA,'project':'fixture','directory':tmp,
+                  'compose_file':str(Path(tmp)/'compose.yaml'),'helper_image':'sha256:'+'a'*64,
+                  'sources':{},'images':{'app':'sha256:'+'b'*64}}
+            path.write_text(json.dumps(base|{'image_lock':str(lock)}));lock.write_text('{}')
+            with mock.patch.object(sys,'argv',['deploy_storage.py','migrate','--plan',str(path)]), \
+                    mock.patch.object(storage,'local_daemon'),mock.patch.object(storage,'make_plan',return_value=base), \
+                    mock.patch.object(storage,'execute') as execute:
+                with self.assertRaisesRegex(storage.StorageError,'lock legado'):storage.main()
+                execute.assert_not_called()
 
 
 if __name__ == "__main__":

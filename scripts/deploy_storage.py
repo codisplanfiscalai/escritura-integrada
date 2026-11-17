@@ -355,8 +355,24 @@ def make_plan(directory, project, reference, compose_file=None):
     plan["compose_file"] = str(compose)
     for name, target in TARGETS.items():
         mounts = config["services"][name].get("volumes", [])
+        vault = None
+        if name == 'app':
+            extras = [m for m in mounts if m.get('target') != target]
+            if extras:
+                if (len(extras) != 1 or extras[0].get('type') != 'volume' or
+                        extras[0].get('source') != 'reception_vault' or
+                        extras[0].get('target') != '/run/escritura/reception-vault'):
+                    raise StorageError('Mount adicional do app desconhecido; cofre não será migrado por inferência.')
+                spec = config.get('volumes', {}).get('reception_vault', {})
+                if spec.get('external') or not spec.get('name'):
+                    raise StorageError('Identidade do volume do cofre não comprovada.')
+                vault = volume_info(spec['name'], project, 'reception_vault')
+                if not vault:
+                    raise StorageError('Volume do cofre existente não localizado; preserve sua chave antes de migrar.')
+                plan['preserved_volumes'] = {'reception_vault': vault}
+                mounts = [m for m in mounts if m.get('target') == target]
         if name == "app" and len(mounts) == 1 and mounts[0].get("type") == "bind":
-            raise StorageError("O app já usa bind mount. Preserve o caminho atual; para ./data/app use compose.existing-bind.yaml conforme STORAGE.md. Não execute init nem recopie o volume de backup.")
+            raise StorageError("O app já usa bind mount. Preserve o caminho atual; para ./data/app configure ESCRITURA_APP_DATA_BIND no .env e preserve o mount no compose.yaml conforme STORAGE.md. Não execute init nem recopie o volume de backup.")
         if len(mounts) != 1 or mounts[0].get("type") != "volume" or mounts[0].get("target") != target:
             raise StorageError("O Compose antigo precisa usar os volumes nomeados originais: " + name)
         logical = mounts[0]["source"]
@@ -376,6 +392,11 @@ def make_plan(directory, project, reference, compose_file=None):
                 actual = [m for m in container.get("Mounts", []) if m.get("Destination") == target]
                 if len(actual) != 1 or actual[0].get("Type") != "volume" or actual[0].get("Name") != info["name"]:
                     raise StorageError("Compose antigo diverge do mount do container existente: " + name)
+                if vault:
+                    actual_vault = [m for m in container.get('Mounts', []) if m.get('Destination') == '/run/escritura/reception-vault']
+                    if (len(actual_vault) != 1 or actual_vault[0].get('Type') != 'volume' or
+                            actual_vault[0].get('Name') != vault['name']):
+                        raise StorageError('Compose diverge do volume do cofre instalado; nenhuma chave será movida.')
                 installed.add(container["Image"])
             if len(installed) != 1 or not IMAGE_ID.fullmatch(next(iter(installed))):
                 raise StorageError("Imagens divergentes para o mesmo serviço; confira os containers: " + name)
@@ -392,6 +413,9 @@ def image_lock(plan):
 
 
 def assert_stopped(plan):
+    for info in plan.get('preserved_volumes', {}).values():
+        if volume_info(info['name'], plan['project'], info['logical']) != info:
+            raise StorageError('A identidade do cofre preservado mudou; nenhum dado será copiado.')
     for info in plan["sources"].values():
         ids = docker("ps", "-aq", "--filter", "volume=" + info["name"]).split()
         if ids:
@@ -858,14 +882,16 @@ def main():
         current = make_plan(plan["directory"], plan["project"], plan["helper_image"], plan["compose_file"])
         if current != {key: value for key, value in plan.items() if key != "image_lock"}:
             raise StorageError("Configuração/volumes mudaram; gere e confira outro plano.")
-        lock = args.plan.resolve().with_suffix(".images.yaml")
-        if plan.get("image_lock") != str(lock) or json.loads(lock.read_text(encoding="utf-8")) != image_lock(plan):
-            raise StorageError("O override de imagens diverge do plano; nenhum dado foi copiado.")
+        # Legacy plans retain their original lock validation. New plans keep
+        # installed IDs in plan["images"] and never need another Compose file.
+        if "image_lock" in plan:
+            lock = args.plan.resolve().with_suffix(".images.yaml")
+            if plan["image_lock"] != str(lock) or json.loads(lock.read_text(encoding="utf-8")) != image_lock(plan):
+                raise StorageError("O lock legado de imagens diverge do plano; nenhum dado foi copiado.")
     if args.action == "plan":
-        plan["image_lock"] = str(args.output.resolve().with_suffix(".images.yaml"))
         created = []
         try:
-            for path, data in ((args.output, plan), (Path(plan["image_lock"]), image_lock(plan))):
+            for path, data in ((args.output, plan),):
                 fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 created.append(path)
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -876,7 +902,7 @@ def main():
                 path.unlink()  # Only files exclusively created by this attempt, never existing plans.
             raise
         result = {"plan": str(args.output), "project": plan["project"], "sources": plan["sources"],
-                  "image_lock": plan["image_lock"], "destination": "./data/" + plan["project"], "data_copied": False}
+                  "images": plan["images"], "destination": "./data/" + plan["project"], "data_copied": False}
     else:
         if args.action == 'init' and (args.directory / 'compose.yaml').is_file():
             prepare_app(args.directory, args.project, args.helper_image, fresh=True)

@@ -162,6 +162,9 @@ class InfrastructureTests(unittest.TestCase):
                 self.assertEqual(service["pull_policy"], "always" if name == "app" else "missing")
                 self.assertIn("healthcheck", service)
                 for mount in service.get("volumes", []):
+                    if name == "app" and mount["target"] == "/run/escritura/reception-vault":
+                        self.assertEqual(mount, {"type":"volume", "source":"reception_vault", "target":"/run/escritura/reception-vault"})
+                        continue
                     self.assertEqual(mount["type"], "bind")
                     expected = "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name
                     if name == "app":
@@ -185,7 +188,7 @@ class InfrastructureTests(unittest.TestCase):
         self.assertNotEqual(prod["name"], dev["name"])
         self.assertNotEqual(prod["services"]["app"]["ports"], dev["services"]["app"]["ports"])
         for data in (prod, dev):
-            self.assertNotIn("volumes", data)
+            self.assertEqual({"reception_vault": {}}, data["volumes"])
         self.assertNotEqual(prod["services"]["redis"]["volumes"], dev["services"]["redis"]["volumes"])
         self.assertEqual((ROOT / "compose.yaml").read_bytes(), (ROOT / "deploy/production/compose.yaml").read_bytes())
 
@@ -307,8 +310,18 @@ class InfrastructureTests(unittest.TestCase):
             calls.append(command)
             if command[-2:] == ["config", "--quiet"]:
                 files = [Path(command[i + 1]) for i, arg in enumerate(command) if arg == "--file"]
-                if len(files) == 2:
-                    self.assertEqual(json.loads(files[1].read_text()), release_compose(manifest))
+                self.assertEqual(1,len(files))
+                self.assertEqual('compose.yaml',files[0].name)
+                env_path = Path(command[command.index('--env-file')+1])
+                values = dict(line.split('=',1) for line in env_path.read_text().splitlines() if '=' in line and not line.startswith('#'))
+                if '-fixed.env' in env_path.name:
+                    for name in ('app', *OPTIONAL_NAMES):
+                        key = 'ESCRITURA_IMAGE' if name=='app' else name.upper()+'_IMAGE'
+                        self.assertEqual(manifest['images'][name]['reference'],values[key])
+                elif env_path.name.startswith('develop-'):
+                    self.assertEqual(manifest['images']['app']['repository']+':develop',values['ESCRITURA_IMAGE'])
+                self.assertEqual('',values['POSTGRES_PASSWORD'])
+                self.assertEqual('',values['REDIS_PASSWORD'])
                 self.assertNotIn("up", command)  # Configuration check never deploys the moving alias.
             return subprocess.CompletedProcess(command, 0, "", "")
         with mock.patch("smoke_images.run", side_effect=fake_run):
@@ -316,7 +329,7 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(calls[0], ["docker", "compose", "version"])
         configs = calls[1:]
         self.assertEqual(len(configs), 20)  # 2 environments x 2 modes x (app + 4 profiles).
-        self.assertEqual(sum(command.count("--file") == 2 for command in configs), 10)
+        self.assertTrue(all(command.count("--file") == 1 for command in configs))
         for profile in OPTIONAL_NAMES:
             self.assertEqual(sum(profile in command for command in configs), 4)
 
@@ -355,36 +368,42 @@ class InfrastructureTests(unittest.TestCase):
             for entry in result["packages"]:
                 with zipfile.ZipFile(output / entry["file"]) as archive:
                     self.assertEqual({Path(n).name for n in archive.namelist()},
-                                     {"compose.yaml", "compose.release.yaml", "compose.existing-bind.yaml", "compose.reception-vault.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "STORAGE.md", "COFRE_A1.md", "deploy_storage.py", "THIRD-PARTY.md"})
+                                     {"compose.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "STORAGE.md", "COFRE_A1.md", "deploy_storage.py", "THIRD-PARTY.md"})
                     for name in archive.namelist():
                         self.assertNotIn(poison, archive.read(name))
                     compose_name = next(name for name in archive.namelist() if Path(name).name == "compose.yaml")
                     bundled_compose = json.loads(archive.read(compose_name))
                     template = json.loads((root / "deploy" / entry["environment"] / "compose.yaml").read_text())
                     self.assertEqual(bundled_compose, template)
-                    existing_name = next(name for name in archive.namelist() if Path(name).name == "compose.existing-bind.yaml")
-                    existing = json.loads(archive.read(existing_name))
-                    self.assertEqual(set(existing), {"services"})
-                    self.assertEqual(set(existing["services"]), {"app"})
-                    self.assertEqual(existing["services"]["app"], {"volumes": [{"type": "bind", "source": "./data/app", "target": "/data", "bind": {"create_host_path": False}}]})
-                    vault_name = next(name for name in archive.namelist() if Path(name).name == "compose.reception-vault.yaml")
-                    vault = json.loads(archive.read(vault_name))
-                    self.assertEqual(vault['volumes'], {'reception_vault': {}})
-                    self.assertNotIn('name', vault['volumes']['reception_vault'])
-                    self.assertEqual(vault['services']['app']['volumes'], [{'type': 'volume', 'source': 'reception_vault', 'target': '/run/escritura/reception-vault'}])
+                    self.assertEqual(bundled_compose['volumes'], {'reception_vault': {}})
+                    self.assertNotIn('name', bundled_compose['volumes']['reception_vault'])
+                    vault_mounts = [m for m in bundled_compose['services']['app']['volumes'] if m['target']=='/run/escritura/reception-vault']
+                    self.assertEqual(vault_mounts, [{'type': 'volume', 'source': 'reception_vault', 'target': '/run/escritura/reception-vault'}])
+                    self.assertEqual('/run/escritura/reception-vault', bundled_compose['services']['app']['environment']['ESCRITURA_RECEPTION_VAULT_DIR'])
                     self.assertIn(b'COFRE A1', archive.read(next(n for n in archive.namelist() if Path(n).name == 'LEIA-ME.txt')))
                     # Assert the shipped bytes, not just equality to a possibly stale template.
                     for service_name, service in bundled_compose["services"].items():
                         self.assertEqual(service["pull_policy"], "always" if service_name == "app" else "missing")
-                    release_name = next(name for name in archive.namelist() if Path(name).name == "compose.release.yaml")
-                    self.assertEqual(json.loads(archive.read(release_name)), release_compose(data))
+                    self.assertEqual(['compose.yaml'], sorted(Path(n).name for n in archive.namelist() if Path(n).suffix in {'.yaml','.yml'}))
+                    env_text = archive.read(next(n for n in archive.namelist() if Path(n).name == '.env')).decode()
+                    env_values = dict(line.split('=',1) for line in env_text.splitlines() if line and not line.startswith('#'))
+                    expected_app = data['images']['app']['reference'] if entry['environment']=='production' else data['images']['app']['repository']+':develop'
+                    self.assertEqual(expected_app, env_values['ESCRITURA_IMAGE'])
+                    for service_name in OPTIONAL_NAMES:
+                        self.assertEqual(data['images'][service_name]['reference'], env_values[service_name.upper()+'_IMAGE'])
+                    # The same Compose interpolates the verified pinned reference
+                    # from .env, with no second file and no data/mount replacement.
+                    self.assertTrue(bundled_compose['services']['app']['image'].startswith('${ESCRITURA_IMAGE:'))
+                    self.assertEqual(data, json.loads(archive.read(next(n for n in archive.namelist() if Path(n).name=='images.json'))))
                     deploy_doc = archive.read(next(name for name in archive.namelist() if Path(name).name == "DEPLOY.md")).decode()
                     self.assertIn("(STORAGE.md)", deploy_doc)
                     self.assertNotIn("(DOCKER_STORAGE.md", deploy_doc)
                     readme_name = next(name for name in archive.namelist() if Path(name).name == "LEIA-ME.txt")
                     readme = archive.read(readme_name).decode()
-                    self.assertIn("-f compose.yaml -f compose.release.yaml up -d --pull never", readme)
-                    self.assertIn("-f compose.yaml -f compose.release.yaml --profile redis up -d --pull never", readme)
+                    self.assertIn("docker compose up -d --pull never", readme)
+                    self.assertIn("fixe no .env ESCRITURA_IMAGE", readme)
+                    self.assertNotIn("-f compose.", readme)
+                    self.assertIn("docker compose --profile redis up -d --pull never", readme)
                     self.assertIsInstance(bundled_compose["services"]["app"]["ports"][0], str)
                 self.assertTrue((output / (entry["file"] + ".sha256")).is_file())
             self.assertEqual(result, package(data, output, root=root))

@@ -19,7 +19,7 @@ def sync(root=ROOT, check=False):
         path = folder / "compose.yaml"
         data = json.loads(path.read_text())
         # ESCRITURA_IMAGE pode apontar para os aliases mutáveis develop/latest.
-        # O override compose.release.yaml preserva a política offline/fixada.
+        # Referências fixadas no .env e --pull never preservam o fluxo offline.
         data["services"]["app"]["pull_policy"] = "always"
         for name, target in TARGETS.items():
             source = "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name
@@ -31,7 +31,14 @@ def sync(root=ROOT, check=False):
                 "target": target,
                 "bind": {"create_host_path": False},
             }]
-        data.pop("volumes", None)
+        # Shared with the former A1 override: same project + source + target
+        # preserves an existing vault on upgrades, without rotating its key.
+        data["services"]["app"]["environment"]["ESCRITURA_RECEPTION_VAULT_DIR"] = "/run/escritura/reception-vault"
+        data["services"]["app"]["volumes"].append({
+            "type": "volume", "source": "reception_vault",
+            "target": "/run/escritura/reception-vault",
+        })
+        data["volumes"] = {"reception_vault": {}}
         for name in OPTIONAL_NAMES:
             data["services"][name]["image"] = "${" + name.upper() + "_IMAGE:-" + plan["images"][name]["reference"] + "}"
         wanted = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
