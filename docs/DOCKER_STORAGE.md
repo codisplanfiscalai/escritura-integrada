@@ -96,55 +96,29 @@ ela não seleciona mais um diretório por projeto. Ela configura o caminho **no 
 privado pelo exemplo do ZIP. Um Compose antigo com `./data/app:/data` literal já
 preserva esse caminho; adicionar a variável sozinha não altera esse Compose.
 
-Para explicitar a preservação de `./data/app`, o pacote traz o override opcional
-`compose.existing-bind.yaml` (no checkout: `deploy/compose.existing-bind.yaml`).
-Ele altera somente o mount `/data` do app para `./data/app`, com
-`create_host_path: false`. Não copia arquivos, muda permissões, escolhe volumes
-de backup, altera imagens/pull policies ou é carregado automaticamente.
+Para preservar ./data/app, use ESCRITURA_APP_DATA_BIND=./data/app no .env e
+mantenha o mount /data no próprio compose.yaml, em forma longa com
+create_host_path: false. Nenhum override Compose é necessário.
 
-1. Faça backup e confira o mount efetivo do app. O `Source` deve ser a pasta
-   `data/app` da stack atual, não um volume nomeado nem a pasta de outra stack.
-   Confira também o ID da imagem instalada. Use saída filtrada de `docker
-   inspect` para mounts/imagem; não divulgue o inspect/config completo com senhas.
-2. Conserve o primeiro arquivo abaixo como o **Compose atual da instalação**,
-   não o template novo do ZIP. Coloque o override ao lado dele e valide:
-
-   ```sh
-   storage_app_container=$(docker compose -f compose.yaml ps --all --quiet app)
-   docker inspect --format '{{json .Mounts}}' "$storage_app_container"
-   storage_app_image=$(docker inspect --format '{{.Image}}' "$storage_app_container")
-   docker compose -f compose.yaml -f compose.existing-bind.yaml config --quiet
-   ```
-
-   Confira que há exatamente um container app e o Source esperado antes do up.
-   O exemplo usa a variável `ESCRITURA_IMAGE` dos templates Escritura para fixar
-   temporariamente o ID efetivamente instalado, sem regravar o `.env`. Se o seu
-   Compose tiver uma referência de imagem personalizada, preserve explicitamente
-   esse mesmo ID. Não atualize a tag em paralelo. No Dockge, pode manter o mount já existente
-   ou incorporar somente a forma longa desse override no serviço app; não troque
-   os mounts dos demais serviços nem o nome da stack. O caminho relativo é
-   resolvido junto ao primeiro Compose. O override precisa continuar sendo
-   incluído se o arquivo base ainda apontar para outro diretório.
-3. Execute a pré-validação de permissões descrita abaixo antes de recriar o app.
-   Somente após sua aprovação, se houver necessidade de aplicar o override:
+1. Faça backup e confira o mount efetivo e ID da imagem instalada. Preserve o
+   nome do projeto, a pasta real e mounts dos demais serviços. Não divulgue
+   inspect/config completo, pois pode conter senhas.
+2. Execute prepare-app e check-app antes de recriar o app. O prepare-app recusa
+   caminhos ambíguos, valida a imagem instalada e grava somente a variável do
+   bind, preservando as demais linhas do .env. Um Compose antigo com bind literal
+   pode continuar usando esse mesmo mount; a variável não muda um literal.
+3. Para uma recriação sem upgrade, registre o ID local atual em ESCRITURA_IMAGE
+   no .env, confira docker compose config --quiet e use:
 
    ```sh
-   ESCRITURA_IMAGE="$storage_app_image" docker compose -f compose.yaml -f compose.existing-bind.yaml up -d --pull never app
+   docker compose up -d --pull never app
    ```
 
-   Confira novamente `Mounts.Source`, saúde, login, empresas, documentos e
-   contagens de controle. Não deve haver nova instalação ou solicitação de criar
-   administrador. Preserve a pasta atual e o volume original de backup. Não
-   execute limpeza ou uma nova cópia durante essa validação. Se as permissões
-   falharem, siga a correção específica abaixo; não aplique chown indiscriminado.
-
-`./data/app` não inclui o nome do projeto: use diretórios de stack separados
-para develop e produção. O override é específico dessa instalação existente;
-instalações novas continuam com o isolamento por projeto dos templates padrão.
-Se houver outros perfis ativos, mantenha seus mounts reais no Compose atual.
-Trocar esses perfis para pastas novas exige um plano próprio, não esta operação
-do app. Uma futura cópia do bind para outro diretório também requer uma
-manutenção explícita e verificada; esta rota mantém o caminho já utilizado.
+Confira novamente Mounts.Source, saúde, login, empresas, documentos e contagens.
+Não deve aparecer uma instalação vazia ou pedido de criar administrador.
+Não recopie backup antigo nem corrija ownership indiscriminadamente.
+./data/app exige diretórios de stack separados para develop e produção. Os
+outros perfis mantêm seus mounts reais; movê-los requer plano próprio.
 
 ### Pré-validação e incidente de permissões no bind do app
 
@@ -245,17 +219,17 @@ drivers de volume externos/NFS não são suportados pela ferramenta.
 ### Offline
 
 Carregue o tar verificado antes de `init`, passe a **tag versionada local** do app
-em `--helper-image` e use os dois arquivos:
+em `--helper-image`. Fixe no .env as imagens versionadas do images.json:
 
 ```sh
 docker load -i EscrituraIntegrada-<versão>-linux-amd64-images.tar.gz
 python3 deploy_storage.py init --project escritura-develop --helper-image ghcr.io/codisplanfiscalai/escritura-integrada:<versão>
-docker compose -f compose.yaml -f compose.release.yaml up -d --pull never
+docker compose up -d --pull never
 ```
 
 A ferramenta resolve a imagem local para seu ID e sempre usa `--pull never` e
-`--network none`. Não baixa utilitários. O override fixa somente imagens/políticas,
-preservando os mesmos binds. Binários desktop/offline continuam com seu próprio
+`--network none`. Não baixa utilitários. As referências fixadas no .env e --pull never
+preservam as imagens locais e os mesmos binds. Binários desktop/offline continuam com seu próprio
 armazenamento e não usam esta ferramenta.
 
 ## Migrar uma stack existente com volumes nomeados
@@ -269,37 +243,36 @@ Ele é uma cópia fria de arquivos, não uma migração de SQLite para PostgreSQ
    cópia completa e seus backups. Registre nome do projeto, versões/IDs das
    imagens, empresas e contagens de controle. Durante esta operação mantenha as
    **mesmas imagens e versões dos bancos**; faça upgrades em outra manutenção.
-2. Antes de editar os mounts, guarde uma cópia do Compose com volumes nomeados
-   como `compose.named.yaml`, **no mesmo diretório**, sem sobrescrever backup
-   anterior. Preserve o `.env` privado, permissões e `COMPOSE_PROJECT_NAME`.
+2. Antes de editar os mounts, guarde uma cópia de segurança do compose.yaml
+   atual, sem sobrescrever backup anterior. Essa cópia é para recuperação, não
+   é outro arquivo Compose usado na operação. Continue usando compose.yaml
+   original até concluir migrate e verify. Preserve o `.env` privado, permissões e `COMPOSE_PROJECT_NAME`.
    Não extraia um ZIP sobre o `.env` atual. A cópia deve representar a configuração
    real; volumes externos, links/tablespaces e montagens personalizadas exigem
    um plano próprio, não uma adaptação improvisada deste comando.
-3. Gere um plano novo e confira os nomes dos volumes e o projeto. O arquivo de
-   saída e o override `storage-plan.images.yaml` são criados exclusivamente e não
-   podem já existir. Mantenha os containers originais, mesmo parados: a ferramenta
+3. Gere um plano novo e confira os nomes dos volumes e o projeto. O JSON de
+   saída é criado exclusivamente e não pode já existir. Ele guarda os IDs das
+   imagens instaladas em images, sem gerar um override Compose. Mantenha os containers originais, mesmo parados: a ferramenta
    confere seus mounts e IDs de imagens; use `stop`, não `down`:
 
    ```sh
-   python3 deploy_storage.py plan --project escritura-develop --compose-file compose.named.yaml --helper-image ghcr.io/codisplanfiscalai/escritura-integrada:<versão-local> --output storage-plan.json
+   python3 deploy_storage.py plan --project escritura-develop --compose-file compose.yaml --helper-image ghcr.io/codisplanfiscalai/escritura-integrada:<versão-local> --output storage-plan.json
    ```
 
    O plano não copia dados e não inclui senhas ou a configuração completa. Ele
    resolve os nomes reais pelo Compose e confere os labels de propriedade dos
    volumes. O volume do app deve existir; perfis nunca usados, sem volume,
    receberão pastas novas. Não adivinha nomes por prefixo nem aceita volumes de
-   outra stack. O override fixa os **IDs locais efetivamente instalados**, com
-   pull `never`, para um alias develop/latest não provocar upgrade durante a
-   mudança de armazenamento. Preserve essas imagens locais; não execute prune.
-   Confira o plano e o override antes de continuar.
+   outra stack. O plano fixa os **IDs locais efetivamente instalados** para comparação
+   durante migrate/verify. Preserve essas imagens locais; não execute prune.
+   Confira o plano antes de continuar; não troque imagens em paralelo.
 4. Coloque a stack em manutenção, pare todos os serviços/escritores e impeça
    reinícios pelo painel, automações, jobs de backup ou outros operadores:
 
    ```sh
-   docker compose -f compose.named.yaml --profile '*' stop
+   docker compose --profile '*' stop
    python3 deploy_storage.py migrate --plan storage-plan.json
    python3 deploy_storage.py verify --plan storage-plan.json
-   python3 deploy_storage.py prepare-app --project escritura-develop --helper-image ghcr.io/codisplanfiscalai/escritura-integrada:<versão-local>
    ```
 
    A ferramenta não para serviços automaticamente. Recusa containers ativos,
@@ -323,22 +296,33 @@ Ele é uma cópia fria de arquivos, não uma migração de SQLite para PostgreSQ
    sondas temporárias são removidas e os mtimes de diretórios do staging são
    restaurados antes da comparação final. Ajustes de dados existentes exigem
    diagnóstico próprio; não rode init por cima nem use chown global.
-5. Somente após `migrate` e `verify` aprovados, incorpore os mounts do Compose
-   novo. Preserve projeto, portas, credenciais e demais ajustes locais. Confira e
-   suba com os IDs congelados, mantendo o override **por último**:
+5. Somente após migrate e verify aprovados, incorpore os mounts no próprio
+   compose.yaml. Preserve projeto, portas, credenciais e demais ajustes locais.
+   No .env, registre os IDs sha256 exatos de storage-plan.json em:
+
+   - images.app → ESCRITURA_IMAGE
+   - images.redis → REDIS_IMAGE
+   - images.postgres → POSTGRES_IMAGE
+   - images.mysql → MYSQL_IMAGE
+   - images.minio → MINIO_IMAGE
+
+   Atualize somente serviços presentes no plano. Perfis nunca instalados não
+   devem ser ativados no corte. Não substitua o .env inteiro nem publique seus
+   segredos. Caso o Compose tenha imagens literais, substitua esses valores
+   pelos mesmos IDs no próprio compose.yaml. Confirme os IDs efetivos antes de
+   subir, sem divulgar a configuração completa:
 
    ```sh
-   docker compose -f compose.yaml -f storage-plan.images.yaml config --quiet
-   docker compose -f compose.yaml -f storage-plan.images.yaml --profile '*' up -d --pull never
+   python3 deploy_storage.py prepare-app --project escritura-develop --helper-image <ID-local-app-do-plano>
+   docker compose config --images
+   docker compose config --quiet
+   docker compose up -d --pull never
    ```
 
-   Ative somente os perfis que já usava; substitua `--profile '*'` pela lista
-   correspondente. Se também usar `compose.release.yaml`, coloque-o antes do
-   override de IDs, nunca depois. No Dockge, mantenha a stack em manutenção e
-   faça esse primeiro corte pelo CLI com os dois arquivos, ou incorpore
-   temporariamente os mesmos IDs/pull `never` nos serviços do Compose do painel.
-   Não execute um deploy pelo painel que descarte esse congelamento. Não crie
-   outra stack ou troque o nome do projeto para isso.
+   Acrescente somente os perfis já usados. --pull never impede que o alias
+   remoto atualize um banco durante a migração. No Dockge, preserve os mesmos
+   IDs no .env/compose.yaml e faça o primeiro corte com --pull never; não execute
+   atualização/pull simultaneamente. Não crie outra stack ou troque seu nome.
 6. Execute `check-app --compose-file compose.yaml --project <projeto> --require-health --wait-health-seconds 120`.
    Confira saúde, login, empresas, documentos, contagens/saldos de controle e os
    dados dos perfis ativados **antes de liberar gravações**. O manifesto privado
@@ -350,9 +334,10 @@ Ele é uma cópia fria de arquivos, não uma migração de SQLite para PostgreSQ
    volumes originais, nunca troca mounts e nunca executa limpeza de volumes.
 
 Depois de homologar o armazenamento, planeje a atualização de imagem em uma
-manutenção separada. Usar somente `compose.yaml` retoma as referências do `.env`
-e `pull_policy: always` do app da PR 32. O override de IDs não é carregado
-automaticamente e não modifica o `compose.release.yaml` do pacote offline.
+manutenção separada. Os IDs permanecem fixados no .env até você escolher
+explicitamente novas referências. Planos antigos com image_lock continuam
+exigindo a conferência de seu arquivo legado durante migrate/verify; novos
+planos não criam esse arquivo nem o exigem na operação Docker.
 
 ### Falha, repetição e retorno ao armazenamento anterior
 

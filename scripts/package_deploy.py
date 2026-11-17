@@ -18,7 +18,7 @@ def deployment_env(manifest, environment):
     app_reference = (manifest["images"]["app"]["repository"] + ":develop"
                      if environment == "develop" else manifest["images"]["app"]["reference"])
     rows = ["# Gerado da publicação verificada. Não contém usuários/senhas predefinidos.",
-            "# Develop segue :develop online; compose.release.yaml fixa a publicação para offline/rollback.",
+            "# Develop segue :develop online; para fixar release, use tags de images.json nas variáveis *_IMAGE.",
             "COMPOSE_PROJECT_NAME=escritura-" + environment,
             "# Preparação obrigatória: init (nova) ou prepare-app (existente) grava o bind detectado. Vazio bloqueia Compose.",
             "ESCRITURA_APP_DATA_BIND=",
@@ -53,7 +53,7 @@ Plataforma publicada: linux/amd64. Nenhum build ou código da aplicação no hos
 INICIAR
 Stack já usando ./data/app:/data: preserve esse caminho. Não execute init ou
 migrate nem recopie o volume antigo. Leia a seção de bind existente em STORAGE.md.
-compose.existing-bind.yaml é um override explícito para esse caminho, sem cópia
+Configure ESCRITURA_APP_DATA_BIND no .env para esse caminho, sem cópia
 ou alteração de permissões. Não substitua mounts dos demais serviços sem revisão.
 Não substitua seu .env privado pelo exemplo. Antes de atualizar uma stack existente:
    python3 deploy_storage.py prepare-app --project <projeto-atual> --helper-image <imagem-local-do-app>
@@ -77,13 +77,13 @@ impedir UID 10001 de abrir SQLite mesmo quando a cópia preservou todos os bytes
    python3 deploy_storage.py check-app --compose-file compose.yaml --project escritura-{environment} --require-health --wait-health-seconds 120
 6. Abra http://127.0.0.1:{port} e crie o administrador no primeiro acesso.
 
-COFRE A1 (OPCIONAL)
-Antes de cadastrar um A1, leia COFRE_A1.md. O override compose.reception-vault.yaml
-mantém a chave em volume separado, privado e isolado por COMPOSE_PROJECT_NAME.
-Use a mesma combinação de arquivos em todas as recriações futuras. Não ative
-um volume vazio em instalação que já cadastrou A1 sem recuperar a chave anterior.
+COFRE A1 PERSISTENTE
+O compose.yaml já inclui volume privado separado por COMPOSE_PROJECT_NAME.
+Nenhum override ou variável adicional é necessário para novo cadastro A1.
+Leia COFRE_A1.md antes de atualizar uma instalação com chave em outro local.
+O nome do volume anterior da configuração A1 foi preservado; mantenha o projeto.
 O backup .eibk do banco NÃO contém essa chave. Nunca use down -v na instalação.
-O override não é ativado automaticamente e não modifica stacks em execução.
+Uma chave ausente jamais é regenerada para abrir um cofre já existente.
 
 Apenas a porta da aplicação é publicada, com bind loopback por padrão.
 Produção mantém a tag versionada; develop segue :develop. O app consulta o
@@ -104,11 +104,12 @@ Baixe também EscrituraIntegrada-{version}-linux-amd64-images.tar.gz e os hashes
 Confira o SHA-256 antes de carregar. Docker já deve estar instalado.
 docker load -i /caminho/EscrituraIntegrada-{version}-linux-amd64-images.tar.gz
 Em instalação nova, execute init com a tag versionada local presente no tar.
-docker compose -f compose.yaml -f compose.release.yaml up -d --pull never
+docker compose up -d --pull never
 
 O bundle contém app, base Python, Redis, PostgreSQL, MySQL e MinIO.
-O override compose.release.yaml usa tags imutáveis presentes no tar;
-images.json guarda digests e IDs para conferência.
+Antes do up offline, fixe no .env ESCRITURA_IMAGE e as variáveis *_IMAGE dos
+serviços opcionais nas tags reference correspondentes de images.json. Preserve
+todas as demais linhas/credenciais. images.json guarda digests e IDs para conferência.
 Não depende de RepoDigests serem preservados por docker save/load.
 
 PERFIS OPCIONAIS
@@ -120,7 +121,7 @@ PostgreSQL: POSTGRES_PASSWORD (usuário/banco configuráveis).
 MySQL: MYSQL_ROOT_PASSWORD e MYSQL_PASSWORD (usuário/banco configuráveis).
 MinIO: MINIO_ROOT_USER (mínimo 3) e MINIO_ROOT_PASSWORD.
 Exemplo: docker compose --profile redis up -d
-Offline: docker compose -f compose.yaml -f compose.release.yaml --profile redis up -d --pull never
+Offline: docker compose --profile redis up -d --pull never
 As próprias imagens rejeitam credenciais ausentes com mensagem explícita.
 Nenhuma porta de banco, S3 ou console MinIO é publicada no host.
 
@@ -139,8 +140,9 @@ Depois de health e API, confira login, empresas e documentos na interface.
 STACK EXISTENTE: trocar mounts por pastas vazias NÃO transfere os dados antigos.
 Siga STORAGE.md: salve o Compose antigo, planeje, pare todos os escritores,
 copie/verifique os volumes para destino novo e só então aplique o Compose novo.
-A ferramenta gera também um override com os IDs das imagens instaladas; use-o
-no primeiro corte para não atualizar imagens e armazenamento ao mesmo tempo.
+O plano registra os IDs das imagens instaladas; fixe somente as variáveis de
+imagem no .env nesses IDs e use up --pull never no primeiro corte, conforme
+STORAGE.md, para não atualizar imagens e armazenamento ao mesmo tempo.
 A ferramenta recusa destinos existentes, mantém os volumes originais e não altera
 os arquivos Compose. Não execute nenhuma cópia com bancos/serviços em execução.
 Faça backup consistente e testado antes de atualizar. Nunca use down -v em dados
@@ -158,9 +160,10 @@ Código/ZIP novo não modifica automaticamente stacks ou pacotes já publicados.
 Não há atualização contínua em segundo plano: execute pull/up ou a ação Dockge.
 Falhas de rede/autenticação precisam ser resolvidas antes de atualizar.
 Preserve COMPOSE_PROJECT_NAME, .env, credenciais, bind, portas e dados existentes.
-Para fixar/voltar à release deste pacote, use sempre os dois arquivos Compose:
-docker compose -f compose.yaml -f compose.release.yaml up -d
-Para voltar ao canal móvel configurado no .env, use apenas docker compose up -d.
+Para fixar/voltar à release, revise compatibilidade e backup; copie somente as
+referências de imagens de images.json para as variáveis *_IMAGE no .env e execute
+docker compose up -d (offline: acrescente --pull never). Para retomar o canal,
+altere ESCRITURA_IMAGE no mesmo .env e execute docker compose up -d.
 Atualizar somente a imagem não exige down prévio; a migração de armazenamento
 exige parar todos os escritores conforme STORAGE.md.
 As instruções completas estão em DEPLOY.md, STORAGE.md e THIRD-PARTY.md neste pacote.
@@ -176,9 +179,6 @@ def package(manifest, output_dir, root=ROOT):
         stem = "EscrituraIntegrada-" + manifest["version"] + "-" + environment + "-deploy"
         files = {
             "compose.yaml": (root / "deploy" / environment / "compose.yaml").read_bytes(),
-            "compose.release.yaml": (json.dumps(release_compose(manifest), ensure_ascii=False, indent=2) + "\n").encode(),
-            "compose.existing-bind.yaml": (root / "deploy/compose.existing-bind.yaml").read_bytes(),
-            "compose.reception-vault.yaml": (root / "deploy/compose.reception-vault.yaml").read_bytes(),
             ".env": deployment_env(manifest, environment).encode(),
             ".env.example": deployment_env(manifest, environment).encode(),
             "images.json": (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(),

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from image_tools import OPTIONAL_NAMES, read_json, run, validate_manifest, write_json
 from image_tools import ROOT
-from package_deploy import deployment_env, release_compose
+from package_deploy import deployment_env
 
 
 def validate_compose_templates(manifest):
@@ -26,15 +26,22 @@ def validate_compose_templates(manifest):
     run(["docker", "compose", "version"])
     with tempfile.TemporaryDirectory(prefix="escritura-compose-check-") as temporary:
         for environment in ("production", "develop"):
-            env_file = Path(temporary) / (environment + ".env")
-            # Config-only fixture: production selection is done by prepare-app/init on its host.
-            env_file.write_text(deployment_env(manifest, environment).replace('ESCRITURA_APP_DATA_BIND=\n',
-                'ESCRITURA_APP_DATA_BIND=./data/escritura-' + environment + '/app\n'), encoding="utf-8")
-            base = ["docker", "compose", "--env-file", env_file,
-                    "--file", ROOT / "deploy" / environment / "compose.yaml"]
-            release_file = Path(temporary) / (environment + ".release.yaml")
-            release_file.write_text(json.dumps(release_compose(manifest)), encoding="utf-8")
-            for config in (base, [*base, "--file", release_file]):
+            # Config-only fixtures: the same main Compose uses online or pinned
+            # image references from .env, never a generated override YAML.
+            original = deployment_env(manifest, environment).replace('ESCRITURA_APP_DATA_BIND=\n',
+                'ESCRITURA_APP_DATA_BIND=./data/escritura-' + environment + '/app\n')
+            for mode in ('online', 'fixed'):
+                contents = original
+                if mode == 'fixed':
+                    pins = {('ESCRITURA_IMAGE' if name == 'app' else name.upper() + '_IMAGE'):manifest['images'][name]['reference']
+                            for name in ('app', *OPTIONAL_NAMES)}
+                    contents = '\n'.join(line.split('=',1)[0]+'='+pins[line.split('=',1)[0]]
+                                           if line.split('=',1)[0] in pins else line
+                                           for line in original.splitlines())+'\n'
+                env_file = Path(temporary) / (environment + '-' + mode + '.env')
+                env_file.write_text(contents, encoding='utf-8')
+                config = ["docker", "compose", "--env-file", env_file,
+                          "--file", ROOT / "deploy" / environment / "compose.yaml"]
                 run([*config, "config", "--quiet"])
                 for profile in OPTIONAL_NAMES:
                     run([*config, "--profile", profile, "config", "--quiet"])

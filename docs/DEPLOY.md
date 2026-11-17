@@ -19,11 +19,11 @@ As imagens e o bundle desta entrega são `linux/amd64`. Windows usa Docker Deskt
 
 ## Instalar a partir da release
 
-Baixe `EscrituraIntegrada-<versão>-production-deploy.zip` ou `EscrituraIntegrada-<versão>-develop-deploy.zip`. Cada pacote contém `compose.yaml`, `compose.release.yaml` (override fixado), `.env` preenchido com imagens publicadas, manifesto de imagens e instruções. Não contém código da aplicação, banco, senha de administrador nem material recuperado dos sistemas de referência.
+Baixe `EscrituraIntegrada-<versão>-production-deploy.zip` ou `EscrituraIntegrada-<versão>-develop-deploy.zip`. Cada pacote contém `compose.yaml`, `.env` preenchido com imagens publicadas, manifesto de imagens e instruções. Não contém código da aplicação, banco, senha de administrador nem material recuperado dos sistemas de referência.
 
 **Stack existente com volumes nomeados:** siga primeiro [STORAGE.md](DOCKER_STORAGE.md). Trocar o mount por uma pasta vazia não copia os dados e pode apresentar uma instalação nova.
 
-**Stack já usando `./data/app:/data`:** mantenha esse mount e seu Compose atual; não execute `init` nem recopie o volume guardado. O caminho padrão novo inclui o nome do projeto e é diferente. A [rota de bind existente](DOCKER_STORAGE.md#stack-já-usando-dataappdata) usa o override explícito `compose.existing-bind.yaml` para preservar a pasta, sem mover dados ou mudar outros serviços.
+**Stack já usando `./data/app:/data`:** mantenha esse mount e seu Compose atual; não execute `init` nem recopie o volume guardado. O caminho padrão novo inclui o nome do projeto e é diferente. A [rota de bind existente](DOCKER_STORAGE.md#stack-já-usando-dataappdata) usa ESCRITURA_APP_DATA_BIND no .env e o mount no próprio compose.yaml para preservar a pasta, sem mover dados ou mudar outros serviços.
 
 Antes de atualizar execute `python3 deploy_storage.py prepare-app --project <projeto-atual> --helper-image <imagem-local-do-app>` no host. O helper seleciona automaticamente o único bind existente plano ou por projeto e grava a escolha no `.env`, preservando credenciais. Override explícito válido tem prioridade. Dois diretórios, banco ausente ou permissões incompatíveis bloqueiam sem copiar/criar dados; o acesso é testado com o USER real da imagem instalada. Campo vazio agora bloqueia o Compose/Dockge: apenas copiar arquivos/clicar em implantar não executa a preparação no host. Leia [o fluxo e seus limites](DOCKER_STORAGE.md#resolver-o-bind-antes-de-atualizar). Depois de subir, `deploy_storage.py check-app --compose-file compose.yaml --project <projeto> --require-health --wait-health-seconds 120` verifica health/API; confira também os dados na interface.
 
@@ -90,15 +90,16 @@ Confira a integridade:
 ```sh
 sha256sum -c EscrituraIntegrada-<versão>-linux-amd64-images.tar.gz.sha256
 docker load -i EscrituraIntegrada-<versão>-linux-amd64-images.tar.gz
+# Antes do up: fixe as variáveis de imagens no .env nas referências de images.json.
 # Em instalação nova, execute init com o nome do projeto e a tag versionada local do app.
-docker compose -f compose.yaml -f compose.release.yaml up -d --pull never
+docker compose up -d --pull never
 ```
 
-No PowerShell, `Get-FileHash -Algorithm SHA256 <arquivo>` permite comparar o hash com o manifesto. `docker load` aceita o arquivo comprimido. O override explícito `compose.release.yaml` fixa todas as imagens à publicação do pacote, mesmo se o `.env` apontar para `:develop`. `images.json` guarda digests e IDs dessa publicação, não o estado corrente do canal móvel. O override não altera projeto, portas, segredos, perfis ou volumes. Essa separação evita depender da preservação de `RepoDigests` por `docker save/load`.
+No PowerShell, `Get-FileHash -Algorithm SHA256 <arquivo>` permite comparar o hash com o manifesto. `docker load` aceita o arquivo comprimido. Para fixar a publicação offline, altere somente ESCRITURA_IMAGE e REDIS_IMAGE, POSTGRES_IMAGE, MYSQL_IMAGE e MINIO_IMAGE no .env para os campos reference correspondentes de images.json. Preserve projeto, portas, dados e credenciais. O manifesto guarda digests e IDs para conferência; o tar contém as tags versionadas, não os canais móveis. Não é necessário outro Compose e não se depende da preservação de RepoDigests por docker save/load.
 
 O exportador grava o tar comprimido por streaming. No runner isolado, `--verify-load` recusa containers em uso, remove somente as tags do manifesto, carrega o bundle, confere os IDs e executa novamente o smoke com `--pull never`. `offline_load_verified: true` só é escrito depois desse teste real. A ausência dessa marca significa que a carga ainda não foi demonstrada por esse artefato.
 
-O app usa `pull_policy: always` nos três templates online (raiz, produção e develop), inclusive quando `ESCRITURA_IMAGE` aponta para `:develop` ou `:latest`. Isso consulta o registro durante pull/up mesmo com a tag em cache; uma referência versionada continua escolhendo a mesma release. Serviços opcionais e o override `compose.release.yaml` mantêm `missing`. Offline, use os dois arquivos Compose e `--pull never`: o tar contém a tag versionada, não os aliases móveis. Falhas de pull online não devem ser ocultadas usando silenciosamente imagens antigas.
+O app usa `pull_policy: always` nos três templates online (raiz, produção e develop), inclusive quando `ESCRITURA_IMAGE` aponta para `:develop` ou `:latest`. Isso consulta o registro durante pull/up mesmo com a tag em cache; uma referência versionada continua escolhendo a mesma release. Serviços opcionais mantêm `missing`. Offline, fixe as tags no .env e use `--pull never`: o tar contém a tag versionada, não os aliases móveis. Falhas de pull online não devem ser ocultadas usando silenciosamente imagens antigas.
 
 ## Ativar um serviço opcional
 
@@ -118,7 +119,7 @@ docker compose --profile redis up -d
 docker compose --profile redis ps
 ```
 
-Para iniciar mais de um perfil, repita `--profile`. Para uso offline, use `docker compose -f compose.yaml -f compose.release.yaml --profile redis up -d --pull never` (substitua/repita o perfil desejado). Gere senhas próprias, longas e aleatórias; os pacotes entregues deixam esses campos vazios. Caracteres especiais devem seguir a [sintaxe de `.env` do Compose](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/); aspas simples evitam interpolar `$` na senha.
+Para iniciar mais de um perfil, repita `--profile`. Para uso offline, use `docker compose --profile redis up -d --pull never` (substitua/repita o perfil desejado). Gere senhas próprias, longas e aleatórias; os pacotes entregues deixam esses campos vazios. Caracteres especiais devem seguir a [sintaxe de `.env` do Compose](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/); aspas simples evitam interpolar `$` na senha.
 
 A validação fica no entrypoint de cada imagem e é executada apenas quando o serviço é iniciado. Assim, a configuração de app-only não exige segredos de perfis inativos. Isso evita exigir `${VAR:?}` para credenciais opcionais durante a fase global de interpolação. As senhas não são passadas por build args e não entram nas camadas das imagens.
 
@@ -155,9 +156,9 @@ Aguarde também esse job final ficar verde antes de atualizar uma instalação p
 
 ### Fixar uma release ou fazer rollback
 
-Guarde o pacote e o bundle da release desejada. Após verificar backup/compatibilidade de banco, use `docker compose -f compose.yaml -f compose.release.yaml up -d`. O override escolhe todas as tags exatas do manifesto, independentemente do canal no `.env`. Offline, carregue o tar correspondente e acrescente `--pull never`. Continue incluindo o override enquanto quiser permanecer fixado. Uma tag antiga no `.env` não prevalece sobre esse override.
+Guarde o pacote e o bundle da release desejada. Após verificar backup e compatibilidade do banco, copie somente as referências de images.json para as variáveis de imagens no .env. Execute docker compose up -d. Offline, carregue o tar correspondente e acrescente --pull never. Não substitua o .env inteiro nem altere projeto, credenciais, portas e volumes.
 
-Para retomar o canal configurado no `.env`, execute `docker compose up -d` sem o override. `compose.release.yaml` não é carregado automaticamente e não muda credenciais nem armazenamento. Não é necessário executar `down` antes de atualizar. `docker compose down` preserva volumes; `down -v` os remove e não é parte do procedimento normal. Um rollback de imagem não desfaz uma migração de dados. Os perfis opcionais usam backups nativos de cada produto, conforme sua configuração; o backup SQLite não os inclui.
+Para retomar o canal, altere ESCRITURA_IMAGE no .env para :develop ou :latest e execute docker compose up -d. Não é necessário down para atualizar. Nunca use down -v para atualizar: ele remove volumes, inclusive a chave separada do A1. Um rollback de imagem não desfaz migração de dados. Os perfis opcionais exigem seus backups nativos; backup SQLite não os inclui.
 
 ## Build, versões e verificações
 

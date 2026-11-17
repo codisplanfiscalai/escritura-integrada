@@ -7,23 +7,31 @@ mesmos. Não há login/senha do portal implementado como autenticação da API A
 
 ## Instalação nova ou instalação sem A1 cadastrado
 
-O pacote de deploy inclui `compose.reception-vault.yaml`. Ative-o explicitamente,
-com uma imagem que contenha esta alteração, e mantenha o mesmo nome de projeto:
+O compose.yaml principal já inclui o volume reception_vault e a configuração
+interna do diretório. Para novos cadastros, bastam compose.yaml e .env existentes:
 
 ```sh
-docker compose -f compose.yaml -f compose.reception-vault.yaml config
-docker compose -f compose.yaml -f compose.reception-vault.yaml up -d
+docker compose config --quiet
+docker compose up -d
 ```
 
-No checkout, o segundo caminho é `deploy/compose.reception-vault.yaml`. Na
-combinação offline acrescente também `-f compose.release.yaml` antes do comando.
-Os exemplos são instruções administrativas; esta alteração não executa deploy.
+Não há override A1 para acrescentar. A mesma configuração está na raiz e nos
+pacotes production/develop. O volume mantém exatamente o nome lógico
+reception_vault e o destino usados anteriormente pelo override, permitindo
+reutilizar a chave sem cópia ao manter COMPOSE_PROJECT_NAME. O arquivo legado
+continua no repositório somente para compatibilidade, não é necessário nem
+incluído nos novos pacotes. Não altere o nome do projeto durante a atualização.
 
-O override acrescenta um volume nomeado `reception_vault`, cujo nome efetivo é
-isolado por projeto pelo Compose. Não use `name:` fixo nem compartilhe o volume
-entre stacks. `/data`, demais serviços, root filesystem somente leitura, UID
-10001, capabilities e configuração de rede não são modificados pelo override.
-Nenhum segredo é colocado no `.env`, imagem, relatório ou log.
+A inclusão não migra uma chave de outro diretório. Antes de substituir o Compose
+de instalação existente, identifique o armazenamento atual: se usava o volume
+anterior no mesmo projeto, ele será reutilizado; se a chave está em outro local,
+preserve o original e migre por procedimento administrativo protegido antes de
+qualquer recriação. Não apague o contêiner antigo se ele for a única cópia.
+Sem a chave vinculada, o aplicativo continua recusando o acesso, sem gerar outra.
+
+O volume é isolado por projeto pelo Compose. /data e os demais serviços não
+mudam; root somente leitura, UID 10001 e capabilities mínimas permanecem.
+Nenhum segredo é colocado no .env, imagem, relatório ou log.
 
 Na imagem, o diretório vazio `/run/escritura/reception-vault` pertence a
 10001:10001 e tem modo 0700. Ao inicializar um volume vazio, o Docker copia os
@@ -33,7 +41,7 @@ Os arquivos não devem estar em `/tmp`, tmpfs ou no filesystem efêmero do cont�
 Veja [volumes Docker](https://docs.docker.com/engine/storage/volumes/) e
 [merge por destino de volumes no Compose](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/).
 
-Use o override em **todas** as recriações futuras. Remover o contêiner mantém o
+Mantenha o compose.yaml e o projeto nas recriações futuras. Remover o contêiner mantém o
 volume; remover o volume perde a chave. **Não execute `down -v`**, nem remova o
 volume ao atualizar. Mantenha backup protegido e separado da chave, com controle
 de acesso equivalente ao do certificado. Persistência não substitui backup.

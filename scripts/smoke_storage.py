@@ -79,9 +79,13 @@ def smoke_storage(manifest):
         legacy["volumes"] = {name + "-data": {} for name in TARGETS}
         for name, target in TARGETS.items():
             legacy["services"][name]["volumes"] = [name + "-data:" + target]
+        # Each synthetic layout is a complete standalone Compose, never a
+        # runtime overlay. The legacy fixture is kept only to exercise rollback.
+        for layout in (new, legacy):
+            for service, pin in release_compose(manifest)['services'].items():
+                layout['services'][service].update(pin)
         (root / "compose.yaml").write_text(json.dumps(new))
         (root / "compose.named.yaml").write_text(json.dumps(legacy))
-        (root / "compose.release.yaml").write_text(json.dumps(release_compose(manifest)))
         plan = root / "storage-plan.json"
 
         def run(command, expected=0, stdin=None):
@@ -96,10 +100,7 @@ def smoke_storage(manifest):
 
         def compose(legacy_mode=False, fresh_mode=False):
             command = ["docker", "compose", "-p", fresh if fresh_mode else project, "-f",
-                       root / ("compose.named.yaml" if legacy_mode else "compose.yaml"),
-                       "-f", root / "compose.release.yaml"]
-            if not legacy_mode and not fresh_mode and plan.exists():
-                command += ["-f", plan.with_suffix(".images.yaml")]
+                       root / ("compose.named.yaml" if legacy_mode else "compose.yaml")]
             return [*command, "--profile", "*"]
 
         def cli(*args, expected=0):
@@ -160,11 +161,11 @@ def smoke_storage(manifest):
             cli("plan", "--directory", root, "--project", project, "--compose-file", root / "compose.named.yaml",
                 "--helper-image", helper, "--output", plan)
             original_plan = plan.read_bytes()
-            original_lock = plan.with_suffix(".images.yaml").read_bytes()
+            assert not plan.with_suffix(".images.yaml").exists()
             cli("plan", "--directory", root, "--project", project, "--compose-file", root / "compose.named.yaml",
                 "--helper-image", helper, "--output", plan, expected=1)
             assert plan.read_bytes() == original_plan
-            assert plan.with_suffix(".images.yaml").read_bytes() == original_lock
+            assert not plan.with_suffix(".images.yaml").exists()
             cli("migrate", "--plan", plan, expected=1)  # Active writers must block before any copying.
             fs_probe("from pathlib import Path; assert not Path('/test/data/" + project + "').exists()")
             record("five real services seeded; active writers and init on existing stack refused")
@@ -173,6 +174,11 @@ def smoke_storage(manifest):
             cli("verify", "--plan", plan)
             cli("migrate", "--plan", plan, expected=1)
             cli('prepare-app', '--directory', root, '--project', project, '--helper-image', helper)
+            # Pin installed IDs in the single operational Compose before cutover.
+            planned = json.loads(plan.read_text())
+            for service, image in planned['images'].items():
+                new['services'][service].update(image=image, pull_policy='never')
+            (root / 'compose.yaml').write_text(json.dumps(new))
             # Verify every resolved mount, no extra anonymous/persistent volume paths.
             config = json.loads(run([*compose(), "config", "--format", "json"]))
             planned = json.loads(plan.read_text())
@@ -183,7 +189,7 @@ def smoke_storage(manifest):
                 assert mount["type"] == "bind"
                 assert mount["source"] == str(root / "data" / project / name)
                 assert not mount.get("bind", {}).get("create_host_path", False)
-            record("cold-copy verified all files/metadata; repetition refused; installed image IDs locked; overrides preserved bind mounts")
+            record("cold-copy verified all files/metadata; repetition refused; installed image IDs pinned in single Compose; bind mounts preserved")
             run([*compose(), "up", "-d", "--pull", "never", "--wait", "--wait-timeout", "300"])
             probe()
             run([*compose(), "stop"])

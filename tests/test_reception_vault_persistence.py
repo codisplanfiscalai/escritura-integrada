@@ -152,20 +152,25 @@ except DomainError as error:
         self.addCleanup(link.unlink)
         with self.assertRaises(DomainError):CompanyA1Vault(self.core.db,directory=link).load(self.a['id'],MATRIX,'nfe_distribution','homologation')
 
-    def test_optional_compose_contract_keeps_existing_data_and_security_defaults(self):
-        override=json.loads((ROOT/'deploy/compose.reception-vault.yaml').read_text())
-        self.assertEqual({'services','volumes'},set(override));self.assertEqual({'app'},set(override['services']))
-        app=override['services']['app'];self.assertEqual({'environment','volumes'},set(app))
-        target=app['environment']['ESCRITURA_RECEPTION_VAULT_DIR'];self.assertEqual('/run/escritura/reception-vault',target)
-        mount,=app['volumes'];self.assertEqual('volume',mount['type']);self.assertEqual(target,mount['target'])
-        self.assertEqual('reception_vault',mount['source'])
-        self.assertEqual({'reception_vault':{}},override['volumes'])  # Compose namespaces by project.
+    def test_main_compose_contract_keeps_existing_data_and_security_defaults(self):
+        target='/run/escritura/reception-vault'
+        # Keep the exact legacy override identity: an upgrade with the same
+        # project reuses its existing key volume instead of masking it anew.
+        legacy_mount={'type':'volume','source':'reception_vault','target':target}
         for relative in ['compose.yaml','deploy/develop/compose.yaml','deploy/production/compose.yaml']:
             with self.subTest(template=relative):
-                original=json.loads((ROOT/relative).read_text())['services']['app']
-                self.assertTrue(original['read_only']);self.assertIn('ALL',original['cap_drop'])
-                self.assertNotIn('ESCRITURA_RECEPTION_VAULT_DIR',original['environment'])
-                self.assertTrue(all(v['target']!=target for v in original['volumes']))
-                self.assertTrue(any(v['target']=='/data' for v in original['volumes']))
+                config=json.loads((ROOT/relative).read_text())
+                app=config['services']['app']
+                self.assertTrue(app['read_only']);self.assertIn('ALL',app['cap_drop'])
+                self.assertEqual(target,app['environment']['ESCRITURA_RECEPTION_VAULT_DIR'])
+                self.assertEqual([legacy_mount],[v for v in app['volumes'] if v['target']==target])
+                self.assertEqual({'reception_vault':{}},config['volumes'])
+                self.assertNotIn('name',config['volumes']['reception_vault'])
+                data_mount,=[v for v in app['volumes'] if v['target']=='/data']
+                self.assertEqual('bind',data_mount['type'])
+                self.assertEqual({'create_host_path':False},data_mount['bind'])
+                self.assertNotIn(target,app.get('tmpfs',[]))
+                self.assertNotIn('user',app)  # Image's unprivileged UID remains authoritative.
+
 
 if __name__=='__main__':unittest.main()
