@@ -37,11 +37,14 @@ def create_app(data_dir=None, demo=False):
             application.state.backups.start()
         from .import_package_cleanup import scheduler
         cleanup_task = asyncio.create_task(scheduler(database))
+        integration_task = asyncio.create_task(application.state.integrations.run())
         try: yield
         finally:
             cleanup_task.cancel()
+            integration_task.cancel()
             import contextlib
             with contextlib.suppress(asyncio.CancelledError): await cleanup_task
+            with contextlib.suppress(asyncio.CancelledError): await integration_task
             await asyncio.to_thread(worker.close)
             await asyncio.to_thread(application.state.backups.close)
     application = FastAPI(lifespan=lifespan, title="Escritura Integrada", version=__version__, docs_url=None, redoc_url=None)
@@ -81,6 +84,8 @@ def create_app(data_dir=None, demo=False):
     register_docker_updates(application, core)
     from .backups import register as register_backups
     register_backups(application, core)
+    from .integrations import register as register_integrations
+    register_integrations(application, database)
     frontend = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
     @application.exception_handler(DomainError)
