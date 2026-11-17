@@ -30,10 +30,14 @@ def cents(value):
     return int(Decimal(value) * 100)
 
 
-def payment_evidence(doc):
+def payment_evidence(doc, *, retained=None):
     if doc['direction'] != 'outgoing' or doc['model'] not in {'55', '65'}:
         raise DomainError('Rateio por pagamento aceita somente saídas NF-e/NFC-e com pagamentos declarados.')
-    groups = children(doc.get('declared_document_fields'), 'pag')
+    fields = doc.get('declared_document_fields')
+    recovered = fields is None and retained is not None
+    if recovered:
+        fields = retained.snapshot(doc)
+    groups = children(fields, 'pag')
     if len(groups) != 1:
         raise DomainError('Nota sem grupo único de pagamentos declarado. Use contas diretas ou confira a origem.')
     rows = children(groups[0], 'detPag')
@@ -50,11 +54,12 @@ def payment_evidence(doc):
     change = cents('0.00' if declared_change is None else declared_change)
     if sum(p['amount_cents'] for p in payments) - change != doc['total_cents']:
         raise DomainError('Pagamentos menos troco divergem do total escriturado. Confira a nota antes do rateio.')
-    return dict(payments=payments, change_cents=change, total_cents=doc['total_cents'])
+    return dict(payments=payments, change_cents=change, total_cents=doc['total_cents']) | (
+        {'evidence_origin': 'retained_xml', 'source_hash': doc['source_hash']} if recovered else {})
 
 
-def payment_lines(conn, cid, doc, entry):
-    evidence = payment_evidence(doc)
+def payment_lines(conn, cid, doc, entry, *, retained=None):
+    evidence = payment_evidence(doc, retained=retained)
     mappings = entry['payment_accounts']
     if not isinstance(mappings, list) or not 1 <= len(mappings) <= 100:
         raise DomainError('Informe as contas explícitas por meio de pagamento.')

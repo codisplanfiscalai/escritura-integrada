@@ -438,6 +438,59 @@ def main():
                         assert get(f'/companies/{d}/titles')==[]
                         report['payment_split_journal_count']=len(journals(d));report['payment_split_total_cents']=1703
                         report['checks'].append('Native cash/card splits: declared payments and explicit change, cancellation/retry, subguide retention, read-only preview, responsive controls, daily consolidation, three source traces and lost-response replay create one balanced journal without settlement')
+                        # Pre-snapshot legacy notes: exact retained originals, no backfill.
+                        import base64,io,zipfile
+                        from xml.etree import ElementTree as ET
+                        legacy_tax='TEST00050001'+cnpj_digits('TEST00050001')
+                        e=post('/companies',{'code':'SYN-PAY-LEGACY-E','name':'Notas antigas exclusivamente sintéticas','tax_id':legacy_tax,'regime':'outros','state':'SP','create_default_accounts':True})['id']
+                        post('/context',{'company_id':e,'module':'fiscal','period':year+'-11'})
+                        legacy_raw=[];ns='{http://www.portalfiscal.inf.br/nfe}'
+                        for number,rows in [(201,[('01','100.00'),('03','165.75')]),(202,[('01','265.75')])]:
+                            xml=ET.fromstring((ROOT/'tests/fixtures/auditor_nfce.xml').read_bytes());info=xml.find('.//'+ns+'infNFe')
+                            key='35'+year[2:]+'01'+'0'*14+'65001'+str(number).zfill(19)
+                            info.set('Id','NFe'+key);info.find(ns+'emit/'+ns+'CNPJ').text=legacy_tax;info.find(ns+'ide/'+ns+'nNF').text=str(number);info.find(ns+'ide/'+ns+'dhEmi').text=year+'-01-15T10:00:00-03:00'
+                            xml.find('.//'+ns+'chNFe').text=key
+                            for cfop in info.findall('.//'+ns+'CFOP'):cfop.text='5102'
+                            pag=info.find(ns+'pag')
+                            for child in list(pag):pag.remove(child)
+                            for method,value in rows:
+                                detail=ET.SubElement(pag,ns+'detPag');ET.SubElement(detail,ns+'tPag').text=method;ET.SubElement(detail,ns+'vPag').text=value
+                            legacy_raw.append(ET.tostring(xml,encoding='utf-8'))
+                        packed=io.BytesIO()
+                        with zipfile.ZipFile(packed,'w',compression=zipfile.ZIP_DEFLATED) as z:
+                            for i,raw in enumerate(legacy_raw):z.writestr(f'folder-{i}/nota.xml',raw)
+                        original_pack=packed.getvalue()
+                        imported=post(f'/companies/{e}/imports/preview',{'filename':'legacy-synthetic.zip','period':year+'-11','options':{'posting_date':year+'-11-06'},'content_base64':base64.b64encode(original_pack).decode()})
+                        assert imported['can_confirm'],imported['issues']
+                        post(f'/companies/{e}/imports/{imported["id"]}/confirm',{'preview_hash':imported['preview_hash'],'posting_mode':'pending'})
+                        for note in documents(e):
+                            reviewed=post(f'/companies/{e}/documents/{note["id"]}/review',{'version':note['version'],'reason':'Revisão sintética anterior preservada'})
+                            post(f'/companies/{e}/documents/{note["id"]}/book',{'version':reviewed['version'],'reason':'Escrituração anterior sintética'})
+                        with sqlite3.connect(Path(folder)/'escritura.sqlite3') as conn:
+                            for ident,extra in conn.execute('SELECT id,extra_json FROM documents WHERE company_id=?',(e,)).fetchall():
+                                data=json.loads(extra);data.pop('declared_document_fields',None);data.pop('declared_xml',None);conn.execute('UPDATE documents SET extra_json=? WHERE company_id=? AND id=?',(json.dumps(data),e,ident))
+                        old_docs=documents(e);assert len(old_docs)==2 and all('declared_document_fields' not in n for n in old_docs)
+                        page.reload();enter();context(e);save_mode('daily');page.get_by_label('Situação contábil').select_option('eligible')
+                        expect(page.locator('.sales-notes tbody tr')).to_have_count(2);page.get_by_role('button',name='Selecionar aptas da consulta',exact=True).click();section('Contabilizar');page.get_by_label('Forma de débito',exact=True).select_option('payments')
+                        expect(page.get_by_label('Conta do meio 03',exact=True)).to_be_visible()
+                        refs_e={a['access_code']:a['id'] for a in get(f'/companies/{e}/accounts')}
+                        page.get_by_label('Conta do meio 01',exact=True).select_option(str(refs_e['3']));page.get_by_label('Conta do meio 03',exact=True).select_option(str(refs_e['6']));page.get_by_label('Conta a creditar na integração',exact=True).select_option(str(refs_e['5']))
+                        old_snapshot=snapshot(folder,e)
+                        with page.expect_response(lambda r:r.url.endswith('/fiscal-sales-accounting/preview') and r.status==200) as legacy_preview:
+                            page.get_by_role('button',name='Consultar prévia contábil',exact=True).click()
+                        expect(page.get_by_role('heading',name='Prévia contábil · somente leitura',exact=True)).to_be_visible()
+                        assert old_snapshot==snapshot(folder,e);assert legacy_preview.value.json()['created_count']==1
+                        assert all(s['payment_snapshot']['evidence_origin']=='retained_xml' for s in legacy_preview.value.json()['sources'])
+                        page.screenshot(path=str(OUT/'legacy-payment-preview.png'),full_page=True);page.get_by_role('button',name='Fechar prévia',exact=True).click()
+                        page.route('**/fiscal-sales-accounting/generate',commit_then_drop,times=1);page.get_by_role('button',name='Gerar lançamentos da seleção',exact=True).click();expect(page.get_by_role('button',name='Repetir a mesma solicitação',exact=True)).to_be_visible()
+                        legacy_committed=snapshot(folder,e);assert len(journals(e))==1
+                        page.get_by_role('button',name='Repetir a mesma solicitação',exact=True).click();expect(page.get_by_role('heading',name='Solicitação já processada',exact=True)).to_be_visible();assert legacy_committed==snapshot(folder,e)
+                        legacy_journal=journals(e)[0];assert legacy_journal['total_cents']==53150 and len(legacy_journal['lines'])==3
+                        for before,after in zip(sorted(old_docs,key=lambda n:n['id']),sorted(documents(e),key=lambda n:n['id'])):assert after==before|{'journal_id':legacy_journal['id']}
+                        sources=get(f'/companies/{e}/fiscal-sales-accounting/journals/{legacy_journal["id"]}/sources')['sources'];assert len(sources)==2 and all(s['payment_snapshot']['evidence_origin']=='retained_xml' for s in sources)
+                        with sqlite3.connect(Path(folder)/'escritura.sqlite3') as conn:assert conn.execute('SELECT original FROM imports WHERE company_id=? AND id=?',(e,imported['id'])).fetchone()[0]==original_pack
+                        report['legacy_payment_total_cents']=53150;report['legacy_payment_journals']=1
+                        report['checks'].append('Legacy imported/booked NFC-e without stored snapshots recover exact retained ZIP payments, preserve revisions/IDs/fields/original bytes, preview read-only and consolidate mixed/cash sources with lost-response replay without duplicates')
                         assert not report['console_errors'],report['console_errors']
                         report['final_journals']={'A':len(journals(a)),'B':len(journals(b)),'C':len(journals(c))}
                         report['ok']=True

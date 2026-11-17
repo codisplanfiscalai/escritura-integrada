@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -17,6 +18,35 @@ from pathlib import Path
 
 from image_tools import DIGEST, ROOT, IMAGE_NAMES, image_plan, load_catalog, run, write_json
 from image_handoff import archive_names, export_handoff, verify_handoff
+
+
+def remote_failure_diagnostic(stage, result):
+    """Classify command-reported evidence, never print registry output/secrets.
+
+    The labels are hints, not a diagnosis of the incident. No retry, fallback,
+    credential change or permission to overwrite follows from this information.
+    """
+    stdout, stderr = result.stdout or "", result.stderr or ""
+    output = stdout + "\n" + stderr
+    # Inspect only a bounded prefix. The digest still identifies the entire
+    # captured output for comparison without persisting its possibly private text.
+    message = output[:16384].lower()
+    statuses = sorted(set(re.findall(r"(?:http(?:/\d(?:\.\d)?)?\s+|status(?:\s+code)?\s*[:=]?\s+)([45]\d\d)\b", message)))
+    if any(value in message for value in ("unauthorized", "authentication required", "access denied", "forbidden", "failed to authorize")) or set(statuses) & {"401", "403"}:
+        category = "authorization-reported"
+    elif "429" in statuses or "too many requests" in message or "rate limit" in message:
+        category = "rate-limit-reported"
+    elif any(value in message for value in ("timed out", "timeout", "connection reset", "connection refused", "no such host", "temporary failure in name resolution", "context deadline exceeded")):
+        category = "transport-reported"
+    elif any(value.startswith("5") for value in statuses):
+        category = "server-error-reported"
+    elif any(value in message for value in ("manifest unknown", "no such manifest", "manifest_unknown", "not found")) or "404" in statuses:
+        category = "not-found-reported"
+    else:
+        category = "unclassified"
+    return json.dumps({"stage": stage, "returncode": result.returncode,
+                       "category": category, "reported_http_statuses": statuses,
+                       "output_sha256": hashlib.sha256(output.encode()).hexdigest()}, sort_keys=True)
 
 
 def inspect_image(reference):
@@ -36,7 +66,7 @@ def remote_exists(reference):
     message = (result.stderr + result.stdout).lower()
     if any(x in message for x in ("manifest unknown", "no such manifest", "manifest_unknown", "not found")):
         return False
-    raise RuntimeError("Não foi possível verificar a imutabilidade de " + reference + ". Confira autenticação/permissões GHCR e conectividade. Nenhuma tag será sobrescrita sem essa verificação.")
+    raise RuntimeError("Não foi possível verificar a imutabilidade de " + reference + ". Confira autenticação/permissões GHCR e conectividade. Nenhuma tag será sobrescrita sem essa verificação. " + remote_failure_diagnostic("check-immutable-tag", result))
 
 
 def assert_identity(name, wanted, actual, revision):
@@ -78,14 +108,16 @@ def pinned_remote(reference, *, optional=False):
         if optional:
             print("Cache remoto indisponível; construção e smoke continuam: " + reference, flush=True)
             return None
-        raise RuntimeError("Falha ao resolver manifesto imutável: " + reference)
+        raise RuntimeError("Falha ao resolver manifesto imutável: " + reference + ". " + remote_failure_diagnostic("resolve-manifest", result))
     raw = result.stdout.strip().encode()
     data = json.loads(raw)
     if data.get("mediaType") not in ("application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json"):
         raise ValueError("Cache remoto não é uma imagem de plataforma única: " + reference)
     # --raw preserves registry bytes, including a possible final newline.
     # The descriptor's digest is obtained independently, avoiding whitespace normalization.
-    descriptor = run(["docker", "buildx", "imagetools", "inspect", reference, "--format", "{{json .Manifest}}"], capture=True)
+    descriptor = run(["docker", "buildx", "imagetools", "inspect", reference, "--format", "{{json .Manifest}}"], capture=True, check=False)
+    if descriptor.returncode:
+        raise RuntimeError("Falha ao resolver descritor imutável: " + reference + ". " + remote_failure_diagnostic("resolve-descriptor", descriptor))
     digest = json.loads(descriptor.stdout)["digest"]
     if not DIGEST.fullmatch(digest) or digest not in {"sha256:" + hashlib.sha256(result.stdout.encode()).hexdigest(), "sha256:" + hashlib.sha256(raw).hexdigest()}:
         raise ValueError("Digest do manifesto remoto não confere: " + reference)

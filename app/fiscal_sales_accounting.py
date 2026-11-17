@@ -101,6 +101,8 @@ class FiscalSalesAccountingMixin:
         with self.db.read(snapshot=True) as conn:
             effect(conn, cid, 'fiscal.documents', 'read')
             effect(conn, cid, 'accounting.accounts', 'read')
+            from .fiscal_payment_sources import RetainedPaymentSources
+            retained = RetainedPaymentSources(conn, cid)
             result = []
             for entry in entries:
                 if not isinstance(entry, dict) or set(entry) != {'document_id', 'version'}:
@@ -111,7 +113,7 @@ class FiscalSalesAccountingMixin:
                 if ctx.get('year') and doc['period'][:4] != ctx['year']:
                     raise DomainError('Selecione o exercício da escrituração.', 409, 'stale_context')
                 try:
-                    evidence = payment_evidence(doc)
+                    evidence = payment_evidence(doc, retained=retained)
                     result.append({'document_id': doc['id'], 'version': doc['version'], **evidence, 'issue': ''})
                 except DomainError as exc:
                     result.append({'document_id': doc['id'], 'version': doc['version'], 'payments': [], 'issue': str(exc)})
@@ -161,6 +163,8 @@ class FiscalSalesAccountingMixin:
                 raise DomainError('O modo de integração mudou. Atualize os parâmetros antes de gerar.', 409, 'stale_version')
             cfg = cfg | {'mode': 'individual'} if incoming else cfg
             reason = text(payload.get('reason') or ('Integração contábil de entradas fiscais.' if incoming else 'Integração contábil de saídas fiscais.'), 'Histórico', True, 1000)
+            from .fiscal_payment_sources import RetainedPaymentSources
+            retained = RetainedPaymentSources(conn, cid)
             groups, skipped = {}, []
             ctx = request_context.get() or {}
             for entry, item_id in zip(entries, ids):
@@ -186,7 +190,7 @@ class FiscalSalesAccountingMixin:
                     lines = self._model_lines(conn, cid, model_id, doc)
                 elif 'payment_accounts' in entry:
                     from .fiscal_payment_allocations import payment_lines
-                    lines, payment_snapshot, payment_dimensions = payment_lines(conn, cid, doc, entry)
+                    lines, payment_snapshot, payment_dimensions = payment_lines(conn, cid, doc, entry, retained=retained)
                 else:
                     # Values come from the booked note, never from a client total.
                     value = decimal_text(doc['total_cents'])
