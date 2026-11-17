@@ -1,9 +1,10 @@
 # Integrações v1 — expansão de domínios sobre o PR #69
 
-Esta frente depende do commit `a89549ea26d235e0abf491efb11d2f2a352acf2d`
-do PR #69. A branch e o PR anteriores permanecem preservados. A nova branch é
-empilhada para revisão somente do delta. Não houve merge, implantação, acesso a
-bases reais ou alteração de workflows.
+Esta frente usa a fundação do PR #69, integrado em develop no commit
+`4dc688152eca4026a1a0750db9d6c04e46c64182`. A PR #71 foi sincronizada com
+develop `5d53aaefc1b50f303e86f4988d66de5387eacdd2` (dev.42) para revisão
+somente do delta. A PR #71 permanece em rascunho, sem merge, implantação, acesso
+a bases reais ou alteração de workflows.
 
 A API interna da aplicação continua sendo o contrato de operações de negócio.
 A expansão acrescenta **projeções de leitura de 37 recursos**, **35 fontes de
@@ -232,9 +233,9 @@ não são reativadas por essa rota.
 
 - Fundamentação: PR #69; o CI `43993473044` do head `a89549e` foi concluído com
   sucesso. Esse resultado valida a base, **não** este delta.
-- O workflow atual filtra bases de PR e não inclui a branch do PR #69. O PR empilhado
-  não terá automaticamente esse CI; não se alterou o workflow nem se simulou sucesso.
-  Depois de integrar a base, a coordenação poderá retargetar o delta para develop.
+- A sincronização da PR #71 com develop permite CI próprio pelo filtro existente.
+  O resultado deve ser conferido no SHA exato da PR; o CI da fundação não o substitui.
+  Nenhum workflow foi alterado.
 - Consultas completas de itens/tributos, anexos, resultados detalhados do Auditor,
   relatórios, parametrizações não listadas, recepção DF-e/NFS-e, certificados,
   armazenamento, Prosoft e SPED ainda precisam de contratos específicos. Não houve
@@ -277,3 +278,10 @@ fluxos internos existentes são verificados também pela regressão da aplicaç�
 - Logs locais não versionados: `artifacts/domains-regression.log` e
   `artifacts/domains-frontend.log`. As primeiras rodadas focadas registraram erros
   de fixture corrigidos; o resultado final está na regressão completa.
+
+### Verificação após sincronização com develop dev.42
+
+- 30 testes de integração, 19 do núcleo e nove de prévias aprovados.
+- 206 testes frontend aprovados; instalação e build concluídos.
+- A regressão completa acima pertence ao incremento anterior à sincronização;
+  não foi repetida integralmente nesta etapa. O CI próprio verifica o novo head.
