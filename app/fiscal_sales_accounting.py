@@ -93,6 +93,30 @@ class FiscalSalesAccountingMixin:
             audit(conn, cid, actor, 'configure', SCOPE, cid, {'before': old, 'after': saved})
             return saved | {'notice': NOTICE}
 
+    def fiscal_accounting_payments(self, cid, payload):
+        from .fiscal_payment_allocations import payment_evidence
+        entries = payload.get('entries')
+        if set(payload) != {'entries'} or not isinstance(entries, list) or not 1 <= len(entries) <= 1000:
+            raise DomainError('Selecione de 1 a 1000 notas para consultar pagamentos.')
+        with self.db.read(snapshot=True) as conn:
+            effect(conn, cid, 'fiscal.documents', 'read')
+            effect(conn, cid, 'accounting.accounts', 'read')
+            result = []
+            for entry in entries:
+                if not isinstance(entry, dict) or set(entry) != {'document_id', 'version'}:
+                    raise DomainError('Seleção de nota inválida.')
+                doc = self._document(conn, cid, integer(entry.get('document_id'), 'Documento'))
+                check_version(doc, entry)
+                ctx = request_context.get() or {}
+                if ctx.get('year') and doc['period'][:4] != ctx['year']:
+                    raise DomainError('Selecione o exercício da escrituração.', 409, 'stale_context')
+                try:
+                    evidence = payment_evidence(doc)
+                    result.append({'document_id': doc['id'], 'version': doc['version'], **evidence, 'issue': ''})
+                except DomainError as exc:
+                    result.append({'document_id': doc['id'], 'version': doc['version'], 'payments': [], 'issue': str(exc)})
+            return {'documents': result}
+
     def generate_sales_accounting(self, cid, payload, actor):
         return self._integrate_fiscal_accounting(cid, payload, actor)
 
@@ -112,8 +136,12 @@ class FiscalSalesAccountingMixin:
             raise DomainError('Selecione de 1 a 1000 notas com as contas ou modelos contábeis opcionais.')
         ids = []
         for entry in entries:
-            if not isinstance(entry, dict) or set(entry) - {'document_id', 'version', 'model_id', 'debit_account_id', 'credit_account_id', 'cost_center_id'}:
+            if not isinstance(entry, dict) or set(entry) - {'document_id', 'version', 'model_id', 'debit_account_id', 'credit_account_id', 'cost_center_id', 'payment_accounts', 'change_allocations'}:
                 raise DomainError('Seleção de nota inválida.')
+            if 'change_allocations' in entry and 'payment_accounts' not in entry:
+                raise DomainError('Troco exige rateio por pagamentos.')
+            if 'payment_accounts' in entry and (incoming or 'debit_account_id' in entry or entry.get('model_id') is not None):
+                raise DomainError('Rateio por pagamentos é exclusivo de saídas, sem débito único ou modelo na mesma nota.')
             if entry.get('model_id') is not None and {'debit_account_id', 'credit_account_id', 'cost_center_id'} & set(entry):
                 raise DomainError('Escolha contas diretas ou modelo para cada nota, sem misturar as duas formas.')
             ids.append(integer(entry.get('document_id'), 'Documento'))
@@ -151,11 +179,14 @@ class FiscalSalesAccountingMixin:
                 ensure_sales_open(conn, cid, doc['period'], 'fiscal')
                 ensure_sales_open(conn, cid, doc['period'], 'accounting')
                 self._validate_document_links(conn, cid, doc, _existing_document_id=item_id)
-                model = None
+                model, payment_snapshot, payment_dimensions = None, None, None
                 if entry.get('model_id') is not None:
                     model_id = integer(entry['model_id'], 'Modelo contábil configurado')
                     model = self._master(conn, cid, model_id, 'accounting_model', True)
                     lines = self._model_lines(conn, cid, model_id, doc)
+                elif 'payment_accounts' in entry:
+                    from .fiscal_payment_allocations import payment_lines
+                    lines, payment_snapshot, payment_dimensions = payment_lines(conn, cid, doc, entry)
                 else:
                     # Values come from the booked note, never from a client total.
                     value = decimal_text(doc['total_cents'])
@@ -164,19 +195,28 @@ class FiscalSalesAccountingMixin:
                              {'account_id': entry.get('credit_account_id'), 'debit': '0.00', 'credit': value, 'cost_center_id': center}]
                 lines = self._document_accounting_lines(conn, cid, doc, lines)
                 normalized, total = self._normalize_lines(conn, cid, lines, materialize=not preview, actor=actor)
-                if model is None and normalized[0]['account_id'] == normalized[1]['account_id']:
+                if model is None and any(x['debit_cents'] and x['account_id'] == normalized[-1]['account_id'] for x in normalized):
                     raise DomainError('Selecione contas diferentes para débito e crédito.')
                 if total != doc['total_cents']:
                     raise DomainError('O valor contabilizado deve corresponder ao total do documento.')
                 dimensions = [(x['account_id'], bool(x['debit_cents']), x['cost_center_id'], x.get('participant_id')) for x in normalized]
                 cls = classification(doc)
+                if payment_snapshot is not None:
+                    from .account_refs import resolve_account
+                    credit = resolve_account(conn, cid, entry['credit_account_id'])
+                    credit_ref = -credit['shared_entry_id'] if credit['shared_entry_id'] else credit['id']
+                    # Identical explicit mapping consolidates cash-only and mixed
+                    # notes together; participants, classification and centers stay separate.
+                    dimensions = ['payments', payment_dimensions, credit_ref, entry.get('cost_center_id'),
+                                  sorted({x.get('participant_id') or 0 for x in normalized})]
                 signature = pack([doc['posting_date'], cls, dimensions])
                 group_key = str(item_id) if cfg['mode'] == 'individual' else signature
                 group = groups.setdefault(group_key, {'date': doc['posting_date'], 'classification': cls, 'sources': []})
                 group['sources'].append({'document_id': item_id, 'document_number': doc['number'], 'document_key': doc['key'],
                     'document_series': doc['series'], 'participant_id': doc.get('participant_id'),
                     'document_version': doc['version'], 'posting_date': doc['posting_date'], 'issue_date': doc['issue_date'],
-                    'direction': direction, 'source_hash': doc['source_hash'], 'total_cents': total, 'lines': normalized, 'model_snapshot': model, 'entry_method': 'model' if model else 'direct'})
+                    'direction': direction, 'source_hash': doc['source_hash'], 'total_cents': total, 'lines': normalized, 'model_snapshot': model, 'entry_method': 'payments' if payment_snapshot else 'model' if model else 'direct',
+                    **({'payment_snapshot': payment_snapshot} if payment_snapshot else {})})
             journals, sources = [], []
             for group_key, group in groups.items():
                 combined = {}
@@ -278,6 +318,10 @@ def register(app, core, actor):
     @app.put(root + '/settings')
     def save_settings(cid: int, request: Request, payload: dict = Body(...)):
         return core.save_fiscal_sales_accounting_settings(cid, payload, actor(request))
+
+    @app.post(root + '/payments')
+    def payments(cid: int, payload: dict = Body(...)):
+        return core.fiscal_accounting_payments(cid, payload)
 
     @app.post(root + '/generate')
     def generate(cid: int, request: Request, payload: dict = Body(...)):

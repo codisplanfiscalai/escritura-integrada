@@ -99,16 +99,34 @@ def scenario(page, url, fixture, report, baseline=False):
     from playwright.sync_api import expect
 
     requests = report['requests']
-    started = {}
+    started, pending_metrics = {}, set()
 
     def finished(request):
         if '/api/' not in request.url:
             return
-        response = request.response()
-        requests.append({'path': urlparse(request.url).path, 'url': request.url,
-                         'method': request.method, 'status': response.status if response else None,
-                         'decoded_bytes': len(response.body()) if response else 0,
-                         'elapsed_ms': round((time.perf_counter() - started.pop(request, time.perf_counter())) * 1000, 2)})
+        # Response.body() yields to Playwright. The UI may become ready while
+        # this callback is still collecting decoded-byte metrics.
+        pending_metrics.add(request)
+        try:
+            response = request.response()
+            requests.append({'path': urlparse(request.url).path, 'url': request.url,
+                             'method': request.method, 'status': response.status if response else None,
+                             'decoded_bytes': len(response.body()) if response else 0,
+                             'elapsed_ms': round((time.perf_counter() - started.pop(request, time.perf_counter())) * 1000, 2)})
+        finally:
+            pending_metrics.remove(request)
+
+    def settle_metrics():
+        deadline = time.perf_counter() + 20
+        waiting = len(pending_metrics)
+        while pending_metrics:
+            if time.perf_counter() >= deadline:
+                raise AssertionError(f'Request metrics did not finish: {[r.url for r in pending_metrics]}')
+            # Pump events until the actual collector finishes; no timing guess
+            # and no acceptance of an absent request or unknown byte size.
+            page.wait_for_timeout(10)
+        if waiting:
+            report.setdefault('metric_waits', []).append(waiting)
 
     page.on('request', lambda request: started.__setitem__(request, time.perf_counter()))
     page.on('requestfinished', finished)
@@ -133,6 +151,7 @@ def scenario(page, url, fixture, report, baseline=False):
         expect(page.get_by_role('tab', name=label, exact=True)).to_have_attribute('aria-selected', 'true')
 
     def measure(name, label, ready, response_suffix=None):
+        settle_metrics()
         offset = len(requests)
         begin = time.perf_counter()
         if response_suffix:
@@ -145,6 +164,7 @@ def scenario(page, url, fixture, report, baseline=False):
         ready()
         elapsed = round((time.perf_counter() - begin) * 1000, 2)
         page.wait_for_load_state('networkidle')
+        settle_metrics()
         current = requests[offset:]
         report['measurements'][name] = {'ready_ms': elapsed, 'requests': current}
         return current
@@ -198,7 +218,13 @@ def scenario(page, url, fixture, report, baseline=False):
     dialog.get_by_role('button', name='Cancelar', exact=True).click()
     expect(dialog).to_have_count(0)
 
-    current = measure('accounts', 'Plano de contas', lambda: expect(main.locator('table tbody tr')).to_have_count(50))
+    def accounts_ready():
+        if not baseline:
+            expect(main.get_by_role('heading', name='Plano de contas', exact=True)).to_be_visible()
+            expect(main.get_by_role('columnheader', name='Acesso', exact=True)).to_be_visible()
+        expect(main.locator('table tbody tr')).to_have_count(50)
+
+    current = measure('accounts', 'Plano de contas', accounts_ready, None if baseline else '/accounts')
     if not baseline:
         account_reads = [r for r in current if r['path'].endswith('/accounts')]
         assert len(account_reads) == 1 and 'page=1' in account_reads[0]['url'], current
