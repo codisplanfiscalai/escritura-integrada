@@ -21,7 +21,14 @@ export function createPdfOutput({urlApi=URL,doc=globalThis.document,nav=globalTh
    target.onload=()=>{
     if(frame!==target)return;
     clearTimeout(timer);timer=null;target.onload=null;
-    try{target.contentWindow.addEventListener('afterprint',()=>{if(frame===target)cancelPrint();},{once:true});target.contentWindow.focus();target.contentWindow.print();finish=null;resolve();}
+    try{
+     // Never focus the invisible PDF frame: its key events cannot reach BaseModal.
+     // Do not detach Chromium's PDF frame inside its native afterprint callback.
+     target.contentWindow.addEventListener('afterprint',()=>{setTimeout(()=>{if(frame===target)cancelPrint();},0);},{once:true});
+     target.contentWindow.print();finish=null;resolve();
+     // Vue enables the trigger after the promise settles; restore on the next task.
+     setTimeout(()=>{if(frame===target&&trigger?.isConnected)trigger.focus();},0);
+    }
     catch{finish=null;cancelPrint();reject(new Error('Não foi possível abrir a impressão. Use Baixar PDF e imprima no seu leitor.'));}
    };
    target.src=source;doc.body.appendChild(target);

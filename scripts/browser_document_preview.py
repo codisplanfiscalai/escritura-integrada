@@ -1,5 +1,7 @@
 """Synthetic acceptance of original PDF preview; disposable local DB only."""
 import base64
+import io
+from pypdf import PdfReader
 import json
 import os
 import re
@@ -23,7 +25,8 @@ OUT = ROOT/'artifacts/document-preview'
 
 def main():
     OUT.mkdir(parents=True,exist_ok=True)
-    report={'ok':False,'checks':[],'console_errors':[],'console_warnings':[]}
+    report={'ok':False,'checks':[],'console_errors':[],'console_warnings':[],'crashes':[],'before_escape':[]}
+    native_print=os.environ.get('ESCRITURA_NATIVE_PRINT')=='1'
     with tempfile.TemporaryDirectory(prefix='escritura-pdf-ui-') as folder:
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
@@ -37,8 +40,17 @@ def main():
                     except OSError:time.sleep(.2)
                 else:raise RuntimeError('Local preview unavailable')
                 with sync_playwright() as pw:
-                    browser=pw.chromium.launch(headless=True,executable_path=os.environ.get('ESCRITURA_TEST_BROWSER','/usr/bin/chromium'),args=['--no-sandbox'])
-                    page=browser.new_page(viewport={'width':1440,'height':1050})
+                    print_dir=Path(folder)/'printed';print_dir.mkdir()
+                    if native_print:
+                        profile=Path(folder)/'chromium-profile';(profile/'Default').mkdir(parents=True)
+                        preferences={'printing':{'print_preview_sticky_settings':{'appState':json.dumps({'version':2,'recentDestinations':[{'id':'Save as PDF','origin':'local','account':''}],'selectedDestinationId':'Save as PDF','isHeaderFooterEnabled':False})}},'savefile':{'default_directory':str(print_dir)}}
+                        (profile/'Default'/'Preferences').write_text(json.dumps(preferences))
+                        browser=pw.chromium.launch_persistent_context(str(profile),headless=False,executable_path=os.environ.get('ESCRITURA_TEST_BROWSER','/usr/bin/chromium'),args=['--no-sandbox','--kiosk-printing'],viewport={'width':1440,'height':1050},accept_downloads=True)
+                        page=browser.new_page()
+                    else:
+                        browser=pw.chromium.launch(headless=True,executable_path=os.environ.get('ESCRITURA_TEST_BROWSER','/usr/bin/chromium'),args=['--no-sandbox'])
+                        page=browser.new_page(viewport={'width':1440,'height':1050})
+                    page.on('crash',lambda _:report['crashes'].append('page crashed'))
                     page.on('pageerror',lambda e:report['console_errors'].append(str(e)))
                     page.on('console',lambda msg:report['console_warnings'].append(msg.text) if msg.type in ('warning','error') else None)
                     try:
@@ -51,7 +63,7 @@ def main():
                         def get(path):
                             r=page.request.get(url+path);assert r.ok,r.text();return r.json()
                         post('/api/context',{'company_id':cid,'module':'fiscal','period':'2026-11'})
-                        documents=[]
+                        documents=[];document_keys={}
                         for fixture,label in [('auditor_demo','DANFE'),('auditor_nfce','DANFC-e'),('auditor_cte','DACTE'),('auditor_cte_long','DACTE'),('auditor_cte_stress','DACTE'),('auditor_long','DANFE')]:
                             raw=synthetic_xml(fixture,company['tax_id'])
                             batch=post(scope+'/imports/preview',{'filename':fixture+'.xml','period':'2026-11','options':{'posting_date':'2026-11-06'},'content_base64':base64.b64encode(raw).decode()})
@@ -59,6 +71,7 @@ def main():
                             result=post(scope+f"/imports/{batch['id']}/confirm",{'preview_hash':batch['preview_hash'],'posting_mode':'pending'})
                             document=next(d for d in get(scope+'/documents') if d['id']==result['document_ids'][0])
                             documents.append((document,label))
+                            document_keys[document['id']]=re.search(br'Id="(?:NFe|CTe)([0-9]{44})"',raw)[1].decode()
                             response=page.request.get(url+scope+f"/documents/{document['id']}/auxiliary")
                             assert response.ok,response.text()
                             (OUT/(fixture+'.pdf')).write_bytes(response.body())
@@ -94,11 +107,34 @@ def main():
                                 modal.get_by_role('link',name='Baixar PDF',exact=True).click()
                             assert Path(download.value.path()).read_bytes()==original_pdf
                             assert modal.get_by_role('link',name='Baixar PDF').get_attribute('href').startswith('blob:')
+                            printed_before=set(print_dir.glob('*.pdf'))
+                            if native_print:assert page.evaluate('navigator.pdfViewerEnabled'), 'Native print requires the actual PDF viewer'
                             modal.get_by_role('button',name='Imprimir PDF',exact=True).click()
                             if page.evaluate('navigator.pdfViewerEnabled'):
                                 expect(page.get_by_role('button',name='Imprimir PDF',exact=True)).to_be_enabled(timeout=20000)
                                 expect(modal.get_by_role('alert')).to_have_count(0)
-                                assert page.locator('iframe[title="Impressão do documento original"]').count()==1
+                                if native_print:
+                                    # Kiosk mode accepts the native print dialog into an isolated Save-as-PDF destination.
+                                    # This is not page.pdf(), a mocked print(), or the download link.
+                                    deadline=time.monotonic()+30;printed=None
+                                    while time.monotonic()<deadline:
+                                        candidates=set(print_dir.glob('*.pdf'))-printed_before
+                                        if candidates:
+                                            try:
+                                                printed=PdfReader(str(next(iter(candidates))))
+                                                if printed.pages:break
+                                            except Exception:pass
+                                        page.wait_for_timeout(200)
+                                    assert printed is not None and printed.pages,'Native print produced no readable PDF'
+                                    original=PdfReader(io.BytesIO(original_pdf))
+                                    assert len(printed.pages)==len(original.pages),'Native print lost pages'
+                                    printed_text=''.join(p.extract_text() or '' for p in printed.pages)
+                                    assert document_keys[doc['id']] in re.sub(r'\s+','',printed_text),'Native print lost XML access key'
+                                    assert 'SEM VALOR FISCAL' in printed_text,'Native print lost environment identification'
+                                    report.setdefault('native_prints',[]).append({'model':label,'pages':len(printed.pages),'document_number':doc['number'],'identity_and_environment':True})
+                                    (OUT/(label+'-'+doc['number']+'-native-print.pdf')).write_bytes(next(iter(candidates)).read_bytes())
+                                else:
+                                    assert page.locator('iframe[title="Impressão do documento original"]').count()==1
                             else:
                                 expect(modal.get_by_role('alert')).to_contain_text('Use Baixar PDF')
                             report.setdefault('output_checks',[]).append({'model':label,'download_identical':True,'native_pdf_viewer':page.evaluate('navigator.pdfViewerEnabled')})
@@ -137,6 +173,7 @@ def main():
                                 (OUT/'DACTE-long-page-2-canvas.png').write_bytes(base64.b64decode(modal.locator('canvas').evaluate("canvas => canvas.toDataURL('image/png').split(',')[1]")))
                                 page.screenshot(path=str(OUT/'DACTE-long-page-2-ui.png'),full_page=True)
 
+                            report['before_escape'].append(page.evaluate("({tag:document.activeElement?.tagName,label:document.activeElement?.getAttribute('aria-label'),title:document.activeElement?.getAttribute('title')})"))
                             page.keyboard.press('Escape');expect(page.get_by_role('dialog')).to_have_count(0)
                             expect(trigger).to_be_focused()
                             expect(page.locator('iframe[title="Impressão do documento original"]')).to_have_count(0)

@@ -46,3 +46,13 @@ test('old afterprint cannot cancel a new document and timeout reports failure',a
  frames[0].contentWindow.afterprint();assert.equal(frames[1].removed,undefined);
  t.mock.timers.tick(15000);await failed;assert.equal(frames[1].removed,true);out.dispose();
 });
+
+test('native print never focuses a hidden frame and detaches only after afterprint unwinds',async(t)=>{
+ t.mock.timers.enable({apis:['setTimeout']});let focus=0,printed=0;const frames=[];
+ const trigger={isConnected:true,focus(){focus++;}};
+ const out=createPdfOutput({nav:{pdfViewerEnabled:true},urlApi:{createObjectURL:()=> 'blob:fixture',revokeObjectURL(){}},doc:{activeElement:trigger,body:{appendChild:f=>frames.push(f)},createElement:()=>({style:{},setAttribute(){},remove(){this.removed=true;},contentWindow:{focus(){throw Error('hidden frame stole focus');},print(){printed++;},addEventListener(_,fn){this.afterprint=fn;}}})}});
+ out.set(new Uint8Array([1]));const result=out.print();frames[0].onload();await result;assert.equal(printed,1);
+ t.mock.timers.tick(0);assert.equal(focus,1);
+ frames[0].contentWindow.afterprint();assert.equal(frames[0].removed,undefined);
+ t.mock.timers.tick(0);assert.equal(frames[0].removed,true);assert.equal(focus,2);out.dispose();
+});

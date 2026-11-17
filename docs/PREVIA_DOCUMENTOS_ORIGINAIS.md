@@ -103,3 +103,11 @@ Download e impressão usam um Blob privado dos mesmos bytes recebidos pela prév
 Fechar, trocar documento/contexto ou repetir a carga cancela a preparação de impressão, remove o iframe privado e revoga o Blob. ESC e foco continuam sob BaseModal; não há mudanças em ReportPdfPreview.vue nem na persistência de guias. A imagem de referência real não integra o repositório ou as fixtures.
 
 Reprodução sintética: testes Node de document-preview (bytes, falha, cancelamento e revogação), `scripts/browser_document_preview.py` (grid/editor, ampliar/restaurar, PDF baixado idêntico à resposta, impressão ou diagnóstico conforme capacidade real, móvel, Esc/foco, erro/retry e contexto). O cenário roda também na CI com Chromium completo. Resultados efetivos e limites do ambiente são registrados na PR.
+
+### Diagnóstico de impressão da PR72
+
+A execução 44001239899 falhou no Esc após invocar a impressão; houve também crash do Chromium. O artefato confirmou download idêntico e leitor PDF presente, mas não comprovou conclusão da impressão. O helper focava um iframe invisível (cujos eventos de teclado não chegam ao modal) e removia esse iframe dentro do callback `afterprint`. A correção evita o foco invisível, devolve foco após a reativação do controle e adia a remoção para a próxima tarefa. A causa exata do crash não foi estabelecida apenas por esses artefatos.
+
+A CI usa `xvfb-run -a env ESCRITURA_NATIVE_PRINT=1 python scripts/browser_document_preview.py`: Chromium com interface e perfil temporário, impressão nativa em modo kiosk para o destino Save as PDF. Exige arquivo produzido pela impressão, mesma quantidade de páginas, chave do XML e identificação SEM VALOR FISCAL; depois mantém as assertivas de Esc, fechamento e retorno do foco. O PDF baixado continua comparado byte a byte à resposta original. O modo sem leitor PDF valida somente o diagnóstico/fallback, nunca serve como evidência de impressão nativa. O resultado da CI deve ser consultado: adicionar esse cenário não significa que ele passou. Impressoras físicas e seus drivers permanecem fora dessa prova.
+
+Referência de ciclo de impressão: [Window.print (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/Window/print). O comportamento real do leitor PDF incorporado é validado separadamente no Chromium.
