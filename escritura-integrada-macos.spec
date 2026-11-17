@@ -18,7 +18,7 @@ datas += collect_data_files('brazilfiscalreport')
 datas += collect_data_files('fpdf')
 a=Analysis([str(root/'app/desktop.py')],pathex=[str(root)],binaries=[],datas=datas,
     hiddenimports=['app.api','uvicorn.logging','uvicorn.loops.asyncio','uvicorn.protocols.http.h11_impl',
-      'uvicorn.protocols.websockets.auto','uvicorn.lifespan.on','PySide6.QtSvg','PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets'],
+      'uvicorn.protocols.websockets.auto','uvicorn.protocols.websockets.websockets_sansio_impl','uvicorn.lifespan.on','PySide6.QtSvg','PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets'],
     excludes=['PyQt5','PyQt6','PySide2','tkinter'],noarchive=False)
 pyz=PYZ(a.pure)
 exe=EXE(pyz,a.scripts,[],exclude_binaries=True,name='EscrituraIntegrada',console=False,strip=False,upx=False,
