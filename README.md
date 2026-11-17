@@ -112,6 +112,10 @@ As guias compartilham a empresa e preservam o exercício de cada módulo. **Fixa
 
 Em **Empresas → Operação**, configure restrições opcionais e modelos reutilizáveis. Todas começam desligadas. O reenvio do mesmo original recupera lotes limpos sem duplicar movimentos. Limpar lote nunca exclui lançamentos. [Opções, recuperação e proteções técnicas](docs/PARAMETROS_OPERACIONAIS.md).
 
+## API externa e eventos
+
+O corte v1 oferece consulta de centros de custo, eventos persistidos, webhooks assinados e WebSocket com cursor, credenciais revogáveis e permissões por empresa. Gestão via API interna; os demais domínios ainda não estão expostos externamente. Consulte [contratos, configuração, testes e lacunas](docs/INTEGRATION_API_V1.md).
+
 ## Limites que permanecem explícitos
 
 - Regras tributárias da empresa começam vazias. A referência global de CFOP e suas alíquotas declaradas são informativas; importar um padrão cria rascunhos inativos. A simulação matemática não constitui apuração legal automática nem aprovação tributária.

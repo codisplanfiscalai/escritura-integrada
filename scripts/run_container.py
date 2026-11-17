@@ -16,7 +16,7 @@ def main():
         demo=os.environ.get("ESCRITURA_DEMO", "0") == "1",
     )
     uvicorn.run(application, host="0.0.0.0", port=8000, workers=1,
-                access_log=False, timeout_graceful_shutdown=20)
+                access_log=False, ws_max_size=2048, ws_max_queue=4, ws_per_message_deflate=False, timeout_graceful_shutdown=20)
 
 
 if __name__ == "__main__":
