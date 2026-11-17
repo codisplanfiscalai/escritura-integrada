@@ -1,4 +1,4 @@
-"""Exportação CTBLCTOS CTA/LC1/LC2 conforme o PDF fornecido, sem escrita no destino."""
+"""Exportação CTBLCTOS CTA/TRC PJ/LC1/LC2 conforme o PDF fornecido, sem escrita no destino."""
 import base64
 import json
 import re
@@ -140,6 +140,11 @@ def encode_journals(journals,mappings,centers,batch,allow_ascii=False,participan
     record_types=selected_types('accounting',record_types)
     changes=[]
     records,account_trace=encode_account_registrations(journals,mappings,changes) if 'CTA' in record_types else ([],[])
+    third_trace=[]
+    if 'TRC' in record_types:
+        from .prosoft_trc import encode_registrations
+        third_records,third_trace=encode_registrations(journals,mappings,participants,changes)
+        records.extend(third_records)
     trace=[]
     if not journals or len(journals)>99999:raise DomainError('Selecione de 1 a 99999 lançamentos.')
     references = document_references(journals)
@@ -199,10 +204,15 @@ def encode_journals(journals,mappings,centers,batch,allow_ascii=False,participan
                                          'scheme':'sha256-base32-10','original_sha256':digest(original.encode('utf-8'))}
         trace.append(entry)
     raw=('\r\n'.join(records)+'\r\n').encode('ascii')
-    return raw,{'layout':LAYOUT,'selected_record_types':record_types,'records':len(records),'journals':len(journals),'trace':trace,'text_changes':changes,
+    manifest={'layout':LAYOUT,'selected_record_types':record_types,'records':len(records),'journals':len(journals),'trace':trace,'text_changes':changes,
         'account_registrations':account_trace,'record_counts':{kind:sum(r.startswith(kind) for r in records) for kind in ('CTA','LC1','LC2')},
         'debit_cents':sum(j['total_cents'] for j in journals),'credit_cents':sum(j['total_cents'] for j in journals),
         'needs_ascii_review':bool(changes) and not allow_ascii,'homologated_in_destination':False}
+    if 'TRC' in record_types:
+        from .prosoft_trc import PROFILE
+        manifest.update(third_registration_profile=PROFILE,third_registrations=third_trace)
+        manifest['record_counts']['TRC']=sum(r.startswith('TRC') for r in records)
+    return raw,manifest
 
 class ProsoftMixin:
     def export_prosoft(self,cid,payload,actor,confirm=False):
@@ -242,8 +252,13 @@ class ProsoftMixin:
             raw,manifest=encode_journals(journals,canonical,payload.get('centers',{}),payload.get('batch','1'),payload.get('allow_ascii') is True,participants=payload.get('participants',{}),record_types=payload.get('record_types'))
             manifest['plan_code']=plan_code
             manifest['limitations']=['Plano é parâmetro de conferência no destino, não campo do CTBLCTOS.','CTA opcional somente para contas movimentadas ausentes no destino. TRC e SLD não gerados.','Idempotência local não impede duplicação ao reimportar o arquivo no Prosoft.']
+            if 'TRC' in manifest['selected_record_types']:
+                manifest['limitations'][1]='CTA e TRC PJ opcionais somente para contas/terceiros movimentados declarados ausentes. TRC PF/livre e SLD não gerados; campos opcionais TRC em branco.'
             fingerprint_data={'content_sha256':digest(raw),'configuration':canonical,
                 'participants':payload.get('participants',{}),'centers':payload.get('centers'),'company_code':code,'period':competence,'journals':journals}
+            if 'TRC' in manifest['selected_record_types']:
+                fingerprint_data['third_registration_profile']=manifest['third_registration_profile']
+                fingerprint_data['record_types']=manifest['selected_record_types']
             # Preserve the historical identity for the default office plan, including old persisted batches.
             if plan_code!='0050':fingerprint_data['plan_code']=plan_code
             fingerprint=digest(fingerprint_data)

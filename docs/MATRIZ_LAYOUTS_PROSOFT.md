@@ -8,16 +8,13 @@ pacotes, planilhas, nomes de clientes, dados ou identificadores privados.
 
 ## Situação de publicação
 
-A = API implementada/testada na PR40, incluindo as duas correções desta versão.
-B = interface/seleção e mapeamentos por empresa publicados na PR44, ainda sujeitos
-à composição com a base. P = exportador não implementado, sem teste de emissão
-ou importação desse registro. Publicação em PR não é integração de develop,
-release ou implantação. O head e CI atuais devem ser conferidos nas PRs.
-
-Na conferência inicial, PR40 e PR44 estavam abertas draft com CI aprovado nos
-heads anteriores; somente LC1/LC2 e intercâmbio de plano já existiam no develop
-e main. A presente correção requer novo CI. CI de um head anterior não aprova
-um merge futuro. Não foram alterados PR44, outras frentes ou produção.
+A = API nativa integrada pela PR40. B = operação/mapeamentos e seleções
+integradas pelas PR44/62 e espécies corrigidas pela PR51. C = perfil TRC PJ
+mínimo implementado nesta branch, sujeito à revisão e CI da PR; P = formato não
+implementado. Base conferida: develop dev.39
+`4610314bc94abbbcecaf271c0e87ca04623525d3`. A consulta JSON de saldos observados
+da PR65 é preparatória: não gera SLD nem comprova abertura/completude.
+Publicação/CI de um head não são homologação Prosoft nem aprovação de outro head.
 
 ## Fiscal TXT: vinte modelos conferidos
 
@@ -73,7 +70,7 @@ Páginas abaixo referem-se ao layout contábil fornecido.
 | Registro | Páginas | Código/teste/publicação | Falta concreta |
 |---|---|---|---|
 | CTA, 208 posições | 2 | A opcional; B incluir/excluir sem apagar configuração | Só contas movimentadas declaradas ausentes; sem consulta ao cadastro remoto |
-| TRC | 3–4 | P | Ambiguidade CPF e sobreposição de posições no documento; encoder/testes/aceite |
+| TRC PJ mínimo, 646 posições | 3–4 | C opcional, integrado aos perfis de lançamentos | CPF/PF/livre e demais campos pendentes; ambiguidades pessoais não resolvidas; aceite no destino |
 | LC1, 448 posições | 4–5 | Preexistente develop/main; A amplia; B opera UI | Conciliação não derivada; aceite real pendente |
 | LC2, 342 posições | 5 | Preexistente develop/main; A preserva; B perfil LC1/LC2 | Até 200 partidas; aceite real pendente |
 | SLD | 6 | P | Exercício/saldo inicial/movimentos, reaplicação sem dupla contagem, encoder e testes |
@@ -123,7 +120,7 @@ brancos, cadastro/plano e reimportação/rollback no destino. Não se presume ac
 por CI, prévia, arquivo gerado ou planilha de acompanhamento. Não é necessário
 reenviar os layouts já localizados.
 
-Validação local deste incremento: 72 regressões diretamente afetadas aprovadas
+Validação histórica do incremento inicial: 72 regressões diretamente afetadas aprovadas
 em 23,910 s; 160 testes frontend e build aprovados; sintaxe e diff-check aprovados.
 A suíte integral coletou 1.094 testes: 1.063 aprovados, 28 PostgreSQL sem DSN
 local e três erros de criação de socket Unix no executor (`EPERM`). Uma chamada
@@ -131,3 +128,6 @@ mínima sem importar o app reproduziu a restrição. Os arquivos do atualizador
 Docker são idênticos ao develop; nenhum teste foi removido, contornado ou
 acrescentado como skip. O CI remoto deve executar os testes completos, inclusive
 sockets Unix e PostgreSQL real, antes da integração da PR.
+
+O [contrato TRC PJ mínimo](PROSOFT_TRC_PJ.md) descreve posições, escolhas,
+limites, rastreabilidade e provas deste novo perfil. Não é suporte integral TRC.

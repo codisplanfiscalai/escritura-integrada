@@ -21,7 +21,7 @@ Somente código, documentação e testes construídos com dados fictícios entra
 | Plano e contas | Plano de conferência padrão `0050` (050), escolhível; conta fiscal por CFOP e empresa da requisição | Plano não é um campo desses arquivos; selecionar o mesmo plano no destino. Mapeamentos explícitos por chamada; interface salva versões próprias por empresa/área |
 | CTA | Conta movimentada declarada ausente no destino; 208 posições antes de LC1/LC2 | Inclusão opcional explícita; não exporta o plano inteiro nem verifica cadastro remoto |
 | LC1/LC2 | Fluxo anterior preservado, 448/342 posições, hash, lote e download | Não cria lançamentos novos; não muda contabilização diária da outra frente |
-| TRC | Não gerado; referência de terceiro do LC1/LC2 continua disponível | Resolver divergência CPF na convenção geral versus tabela TRC e sobreposição de posições 501–508 no PDF antes de perfil cadastral |
+| TRC | [PJ mínimo opcional, 646 posições](PROSOFT_TRC_PJ.md), para terceiros movimentados declarados ausentes | PF/CPF/livre e campos opcionais pendentes; ambiguidades pessoais 501–508 não são usadas; aceite real pendente |
 | SLD | Não gerado | Definir exercício, saldo inicial versus movimentos mensais, terceiros/centros e política de reaplicação no destino; impedir somar duas vezes saldos e lançamentos |
 | Canceladas escrituradas pelo livro validado | Identidade e total zero preservados; Nota Cancelada = 1, entrada 809 / saída 930 | Não cria/valida evento eletrônico nem altera escrituração |
 | Demais fiscal | Não gerados | Itens, faturas, meios de pagamento, cadastros, ST/FCP/DIFAL, PIS/COFINS, IBS/CBS, ajustes e serviços/transporte |
@@ -116,7 +116,7 @@ Para emitir CTA, incluir `create_account` **dentro de um mapeamento de conta mov
 
 CTA usa classificador sem pontuação, completado com zeros à direita até 15 posições; nome até 30; terceiro `none/optional/required` → 1/2/3; centro 0/1/2/3; conciliação 0/1. Plano especial é opcional (`special_classifier`, até 20 posições, e `special_name`, até 80). Políticas são explícitas; campos obrigatórios não são inferidos do código local. Os fillers permanecem brancos. CTA só é emitido para contas efetivamente usadas e aparece antes de LC1/LC2; sua sequência é independente. Definições iguais no mesmo acesso são deduplicadas, mantendo a trilha dos IDs locais. Definições ou políticas conflitantes para o mesmo acesso e centro obrigatório ausente são recusados. Referências globais passam pela resolução de alias já existente antes do encoder; não se assume igualdade de IDs entre empresas.
 
-Sem `create_account`, o TXT contábil permanece LC1/LC2. A prévia agora informa `account_registrations`, `record_counts`, `plan_code` e limites. A chave histórica de layout dos lotes foi mantida por compatibilidade; conferir os tipos efetivos em `record_counts`. Este recurso não importa TRC, não gera SLD nem substitui o intercâmbio de plano completo `CTBPLANO` que já existe.
+Sem `create_account`, o TXT contábil permanece LC1/LC2. A prévia agora informa `account_registrations`, `record_counts`, `plan_code` e limites. A chave histórica de layout dos lotes foi mantida por compatibilidade; conferir os tipos efetivos em `record_counts`. CTA não cria terceiros; TRC PJ mínimo é uma opção separada. Não gera SLD nem substitui o intercâmbio de plano completo `CTBPLANO` que já existe.
 
 ## Canceladas e referência contábil longa
 

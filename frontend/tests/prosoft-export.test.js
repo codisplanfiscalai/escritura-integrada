@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createProsoftExport,prosoftDefaults,prosoftDownload,prosoftManifest} from '../src/lib/prosoft-export.js';
+import {createProsoftExport,prosoftDefaults,prosoftDownload,prosoftManifest,accountingProfile,accountingTypes} from '../src/lib/prosoft-export.js';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 function setup(area='fiscal'){
  const ctx={cid:1,year:'2026',module:area,period:'2026-11',area},calls=[];
@@ -94,4 +94,28 @@ test('a confirmed file response cannot recreate a download link after switching 
 test('reference map URL uses the confirmed company and cannot become a fiscal download',()=>{
  assert.equal(prosoftManifest({cid:7,id:91,area:'accounting'}),'/api/companies/7/prosoft/exports/91/manifest?download=1');
  assert.equal(prosoftManifest({cid:7,id:91,area:'fiscal'}),'');
+});
+
+
+test('TRC profiles are explicit and independent of optional CTA',()=>{
+ for(const [profile,types] of Object.entries({journals:['LC1','LC2'],journals_cta:['LC1','LC2','CTA'],journals_trc:['LC1','LC2','TRC'],journals_cta_trc:['LC1','LC2','CTA','TRC']})){
+  assert.deepEqual(accountingTypes(profile),types);assert.equal(accountingProfile(types),profile);
+ }
+ assert.deepEqual(prosoftDefaults('accounting').record_types,['LC1','LC2']);
+ const chosen=accountingTypes('journals_trc');chosen.push('CTA');assert.deepEqual(accountingTypes('journals_trc'),['LC1','LC2','TRC']);
+});
+
+test('TRC registration follows the saved company draft and invalidates a stale file',async()=>{
+ const c=setup('accounting');await c.load();
+ c.s.config.participants[7]={code:'11222333000181',third_type:'normal',confirmed:true,
+  create_third:{destination_missing:true,person_type:'legal',name:'Synthetic PJ',alias:'Synthetic',state:'SP'}};
+ c.s.config.record_types=accountingTypes('journals_trc');await c.save();await c.run();
+ const previewCall=c.calls.at(-1);assert.deepEqual(previewCall.body.record_types,['LC1','LC2','TRC']);
+ assert.equal(previewCall.body.participants[7].create_third.alias,'Synthetic');
+ c.s.reviewed=true;await c.run(true);assert.equal(c.s.result.id,8);
+ c.s.config.participants[7].create_third.alias='Changed Synthetic';
+ assert.equal(c.s.preview,null);assert.equal(c.s.result,null);assert.equal(c.s.reviewed,false);
+ assert.equal(previewCall.body.participants[7].create_third.alias,'Synthetic');
+ c.s.config.record_types=accountingTypes('journals');assert.equal(c.s.config.participants[7].create_third.alias,'Changed Synthetic');
+ c.ctx.cid=2;c.reset('0088');assert.deepEqual(c.s.config.participants,{});c.dispose();
 });

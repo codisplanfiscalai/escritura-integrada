@@ -1,6 +1,6 @@
 # Rateio contábil nativo por meios de pagamento
 
-Base: `develop` em `2a80b87ce2e2666013dff54dfe678e66a90b54e2`, `0.9.0-dev.41`. PR64 e PR50 já incorporadas; nenhuma alteração em SPED, relatórios, importadores ou workflows.
+Base original da PR68: `develop` em `2a80b87ce2e2666013dff54dfe678e66a90b54e2`, `0.9.0-dev.41`. PR64 e PR50 já incorporadas; nenhuma alteração em SPED, relatórios, importadores ou workflows.
 
 ## Comportamento anterior e incremento
 
@@ -9,6 +9,8 @@ A integração permitia um débito e um crédito pelo total de cada nota, ou um 
 Na subguia Contabilizar, selecione a forma de débito e informe uma conta para cada meio declarado e a conta de crédito do total. Nenhuma conta vem preenchida. O nome exibido para dinheiro/cartão apenas identifica o código fiscal; não escolhe a classificação contábil. Centro de custo e participante continuam sujeitos às regras das contas da empresa e do plano selecionado. A seleção de modelo opcional retorna ao débito único, sem misturar métodos na mesma nota.
 
 A consulta dos pagamentos ocorre somente ao optar pelo rateio ou mudar sua seleção. É cancelável e descarta respostas antigas após troca de empresa, exercício, sentido, seleção ou fechamento da tela. Alternar subguias preserva contas, troco e seleção, sem consulta adicional. A consulta detalhada por nota é expansível e só monta suas linhas ao abrir; contas e troco ficam visíveis.
+
+Atualização de compatibilidade: [notas antigas sem snapshot podem recuperar pagamentos do XML original íntegro e correspondente](PAGAMENTOS_XML_LEGADO.md), somente em memória e sem alterar a revisão.
 
 ## Evidência e valores
 
@@ -43,6 +45,6 @@ Reprodução: instalar dependências de teste do projeto, definir `ESCRITURA_DAT
 
 ## Limites e próximo incremento
 
-Este incremento não contabiliza na importação nem aplica dados na instância real. Entradas continuam individuais no fluxo anterior; não há rateio de créditos, itens/tributos, taxas de cartão, recebimento, baixa, conciliação financeira, criação de títulos ou inferência de saldo/conta/classificação. Não altera o Diário Consolidado, que continua somente leitura. Documentos sem snapshot detPag reconciliado precisam de conferência ou do fluxo anterior.
+Este incremento não contabiliza na importação nem aplica dados na instância real. Entradas continuam individuais no fluxo anterior; não há rateio de créditos, itens/tributos, taxas de cartão, recebimento, baixa, conciliação financeira, criação de títulos ou inferência de saldo/conta/classificação. Não altera o Diário Consolidado, que continua somente leitura. Documentos sem pagamentos reconciliados no snapshot nem no original correspondente precisam de conferência ou do fluxo anterior.
 
 Mapeamentos são explícitos para a seleção atual e são limpos ao trocar contexto; não há persistência automática de novas contas padrão por empresa. Um próximo incremento pode oferecer configuração de meios por empresa, se solicitada, sem aplicar retroativamente ao histórico. Suíte backend integral, PostgreSQL, Qt empacotado, Windows/macOS e escala de produção não executados localmente. CI do head publicado deve ser verificada separadamente. Sem merge, release ou implantação nesta entrega.
