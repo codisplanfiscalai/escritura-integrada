@@ -34,27 +34,29 @@ ambiente. Conflito comprovado antes do envio atualiza somente metadados locais e
 exige novo clique. Resultados incertos continuam sem repetição automática.
 Receber, baixar ou listar documentos não escritura e não manifesta documentos.
 
-## Diagnóstico do upload A1 e HTTPS
+## Cadastro A1 atrás de proxy e HTTP de entrada
 
-O erro observado `Use HTTPS para configurar o A1.` ocorre antes da leitura do
-PFX: o aplicativo viu uma requisição HTTP não enquadrada na exceção desktop de
-loopback. Isso não diagnostica senha, algoritmo ou incompatibilidade do A1. O
-endereço do navegador sem esquema visível também não comprova onde o TLS termina.
+O cadastro A1 não verifica mais o esquema HTTP/HTTPS da requisição de entrada.
+A rota aceita upload autenticado também por HTTP, inclusive fora de loopback,
+sem exigir `FORWARDED_ALLOW_IPS` ou cabeçalhos de proxy para cadastrar o A1.
+A atualização das opções do A1 segue o mesmo controle de sessão e permissões.
+Isso elimina a recusa `Use HTTPS para configurar o A1.` quando o proxy termina
+TLS e encaminha HTTP para o aplicativo; não depende de inferir quem é o proxy.
 
-Quando o TLS termina num proxy reverso, o Uvicorn deve confiar explicitamente no
-IP/CIDR desse proxy para interpretar `X-Forwarded-Proto`. A entrada do container
-agora valida `FORWARDED_ALLOW_IPS` e os três templates Compose repassam a variável.
-O padrão permanece `127.0.0.1`. Use somente endereços reais do proxy **vistos pelo
-container**, limitando o acesso à porta da aplicação e fazendo o proxy substituir
-os cabeçalhos encaminhados recebidos do cliente. Não use uma faixa inteira de
-clientes como proxy. Curinga, rede global e nomes não resolvidos são recusados na
-inicialização. `ESCRITURA_COOKIE_SECURE` não substitui essa identificação do proxy.
+**A aplicação também aceita HTTP de entrada sem proxy.** HTTPS externo e a
+proteção do caminho entre proxy e aplicativo são responsabilidade da implantação.
+HTTP sem proteção de transporte pode expor o PFX e sua senha em trânsito; a
+criptografia do cofre protege o armazenamento e não substitui o transporte.
+Esta alteração não instala TLS nem modifica Compose, VPS ou proxy do operador.
+A validação restrita já existente de `FORWARDED_ALLOW_IPS` permanece para outros
+usos de cabeçalhos encaminhados; não foi ampliada a confiança em clientes.
 
-A documentação oficial explica a terminação TLS e a confiança nos cabeçalhos:
-[FastAPI: Behind a Proxy](https://fastapi.tiangolo.com/advanced/behind-a-proxy/).
-A correção não inventa o IP do proxy instalado, não instala TLS e não altera a
-produção. É necessário confirmar no ambiente do operador o TLS externo, o salto
-até o app e o endereço autorizado; sem isso o upload HTTP continua recusado.
+Continuam obrigatórios sessão, CSRF/origem permitida, permissão de edição na
+empresa e os limites do multipart/arquivo. O PFX e a senha continuam cifrados por
+empresa no banco, com chave privada separada e sem leitura pública dos segredos.
+As conexões fiscais **de saída** continuam verificando hostname e certificado do
+servidor, com TLS mínimo 1.2; esta mudança não altera o mTLS nem os formatos A1
+aceitos. Não garante compatibilidade universal nem homologação fiscal externa.
 
 Um seletor de certificado **do navegador** disparado no reload pode pertencer ao
 handshake TLS do site/proxy. É distinto de enviar um PFX ao backend e da conexão
@@ -97,9 +99,11 @@ executor. O caminho nativo Intel existente e seus testes de CI foram preservados
   `test_reception_proxy_https.py`, `test_reception_a1_formats.py`, regressões
   `test_reception*.py`, infraestrutura/contexto/permissões, suíte frontend,
   build e `scripts/browser_reception_rebuild.py`.
-- O teste de proxy cobre o middleware Uvicorn real, HTTPS nativo no ASGI, proxy
-  confiável e cabeçalhos forjados; um listener HTTP local real recusa HTTPS
-  forjado. Não é teste de terminação TLS no proxy de produção.
+- Os testes de entrada cobrem HTTP autenticado sem cabeçalhos de proxy, HTTPS
+  no ASGI, proxy confiável e cabeçalhos arbitrários, além de recusa de sessão
+  ausente, CSRF/origem inválida e permissão insuficiente. Um listener HTTP local
+  real aceita o A1 sintético autenticado sem cabeçalho de HTTPS. Isso não testa
+  terminação TLS no proxy de produção.
 - O navegador verifica reload sem requests fiscais/check/upload, ambos ambientes
   de cadastro Produção, views sem seletor duplicado, A1 sintético correto/incorreto,
   acervo/versões/CSV, consulta NF-e por stub, troca de empresa e layout móvel.

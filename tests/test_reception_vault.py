@@ -72,11 +72,14 @@ class VaultTests(unittest.TestCase):
         self.vault.directory=self.core.db.data_dir/'bad-vault'
         with self.assertRaises(DomainError):self.save(options=self.options|{'version':1})
         self.assertFalse((self.core.db.data_dir/'bad-vault').exists())
-    def test_api_https_size_csrf_permissions_and_nonactive_company_configuration(self):
+    def test_api_http_size_csrf_permissions_and_nonactive_company_configuration(self):
         files={'certificate':('synthetic.P12',self.raw,'application/x-pkcs12')};data={'password':PASSWORD.decode(),'options':json.dumps(self.options)}
-        r=self.client.post(self.scope('/reception-credential'),data=data,files=files);self.assertEqual(400,r.status_code)
-        self.client.base_url='https://testserver'
+        self.assertEqual('http',self.client.base_url.scheme)
         r=self.client.post(self.scope('/reception-credential'),data=data,files=files);self.assertEqual(200,r.status_code,r.text);self.assertNotIn('ciphertext',r.text)
+        self.assertNotIn(PASSWORD.decode(),r.text);self.assertNotIn(base64.b64encode(self.raw).decode(),r.text)
+        self.assertEqual(MATRIX,self.vault.load(self.a['id'],MATRIX,'nfe_distribution','homologation').tax_id)
+        r=self.client.put(self.scope('/reception-credential'),json=self.options|{'version':1})
+        self.assertEqual(200,r.status_code,r.text);self.assertEqual(2,r.json()['version'])
         r=self.client.post(self.scope('/reception-credential'),data=data,files={'certificate':('large.pfx',b'x'*6000001,'application/octet-stream')});self.assertEqual(400,r.status_code)
         r=self.client.put(self.scope('/reception-settings',self.b['id']),json={'version':0,'nfe_environment':'production','nfse_environment':'restricted_production'});self.assertEqual(200,r.status_code,r.text)
         self.assertEqual(self.a['id'],self.client.get('/api/session').json()['active_company_id'])
@@ -90,6 +93,17 @@ class VaultTests(unittest.TestCase):
         self.assertFalse(self.client.get(self.scope('/reception-settings')).json()['can_edit'])
         self.assertEqual(403,self.client.post(self.scope('/reception-credential'),data=data,files=files).status_code)
         self.assertEqual(403,self.client.get(self.scope('/reception-settings',self.b['id'])).status_code)
+        self.assertEqual(403,self.client.post(self.scope('/reception-credential',self.b['id']),data=data,files=files).status_code)
+        self.assertEqual(2,self.vault.status(self.a['id'],self.uid)['version'])
+    def test_http_anonymous_and_cross_origin_uploads_cannot_store_a1(self):
+        from fastapi.testclient import TestClient
+        files={'certificate':('synthetic.P12',self.raw,'application/x-pkcs12')}
+        data={'password':PASSWORD.decode(),'options':json.dumps(self.options)}
+        with TestClient(self.app,base_url='http://testserver') as anonymous:
+            self.assertEqual(401,anonymous.post(self.scope('/reception-credential'),data=data,files=files).status_code)
+        r=self.client.post(self.scope('/reception-credential'),headers={'Origin':'https://foreign.invalid'},data=data,files=files)
+        self.assertEqual(403,r.status_code,r.text)
+        self.assertFalse(self.vault.status(self.a['id'],self.uid)['configured'])
     def test_changed_a1_during_preparation_cannot_start_remote_attempt(self):
         self.save();service=self.app.state.reception;service.transport=FakeTransport(RemoteReply(200,b'never sent'));original=service.credentials.load
         def changed(*args):
