@@ -36,8 +36,8 @@ a = Analysis(
     binaries=[],
     datas=datas,
     hiddenimports=[
-        "app.api", "uvicorn.logging", "uvicorn.loops.asyncio",
-        "uvicorn.protocols.http.h11_impl", "uvicorn.protocols.websockets.auto", "uvicorn.protocols.websockets.websockets_sansio_impl",
+        "app.api", "Cryptodome.Cipher.AES", "uvicorn.logging", "uvicorn.loops.asyncio",
+        "uvicorn.protocols.http.h11_impl", "uvicorn.protocols.websockets.auto","uvicorn.protocols.websockets.websockets_sansio_impl",
         "uvicorn.lifespan.on", "PySide6.QtSvg", "PySide6.QtWebEngineCore",
         "PySide6.QtWebEngineWidgets",
     ],

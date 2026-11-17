@@ -133,6 +133,16 @@ jobs:
           path: artifacts/browser-fiscal-sales-accounting/
           retention-days: 14
           if-no-files-found: error
+      - name: Validar views separadas DF-e/ADN e cofre A1 sintético no Chromium
+        if: success() || failure()
+        run: python scripts/browser_reception_rebuild.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: browser-reception-rebuild
+          path: artifacts/browser-reception-rebuild/
+          retention-days: 14
+          if-no-files-found: error
       - name: Validar planos de contas no Chromium
         if: success() || failure()
         run: python scripts/browser_account_plans.py
