@@ -80,7 +80,9 @@ def main():
         run('check', 'data', 'vault')  # Different container after creation/removal of seed.
         run('missing', 'data', 'empty-vault')
         run('wrong', 'data', 'wrong-vault')
-        run('backup', 'backup', 'key-backup', mount('data', '/source-data', True) + mount('vault', '/source-vault', True))
+        # Canonical backup opens SQLite mode=ro; WAL coordination can still create
+        # -shm/-wal files. Match the real app's writable data mount, not immutable media.
+        run('backup', 'backup', 'key-backup', mount('data', '/source-data') + mount('vault', '/source-vault', True))
         run('restore', 'restored-data', 'restored-vault', mount('backup', '/source-backup', True) + mount('key-backup', '/source-vault', True))
         run('check', 'restored-data', 'restored-vault')
     finally:

@@ -4,9 +4,11 @@ Never use this fixture with an existing volume. The driver creates UUID-scoped
 volumes and runs each step in a different, disposable, unprivileged container.
 """
 from datetime import datetime, timedelta, timezone
+from contextlib import closing
 import json
 import os
 from pathlib import Path
+import sqlite3
 import sys
 
 from app import backup_crypto as crypto
@@ -89,7 +91,12 @@ def check(data, missing=False):
 def backup(data, source_data=Path('/source-data'), source_vault=Path('/source-vault')):
     secret = crypto.Secret('raw', os.urandom(32))
     private(data / 'synthetic-envelope.key', secret.value)
-    checksum = crypto.build(source_data / 'store/escritura.sqlite3', data / 'synthetic.eibk', 'fixture', secret)
+    database = source_data / 'store/escritura.sqlite3'
+    with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)) as conn:
+        sql = 'SELECT company_id,scope,key,request_hash,result_json FROM operations ORDER BY company_id,scope,key'
+        before = conn.execute(sql).fetchall()
+        checksum = crypto.build(database, data / 'synthetic.eibk', 'fixture', secret)
+        assert conn.execute(sql).fetchall() == before
     (data / 'checksum.json').write_text(json.dumps(checksum))
     copy_keys(source_vault)
     return {'encrypted_database_backup': True, 'separate_key_copy': True}

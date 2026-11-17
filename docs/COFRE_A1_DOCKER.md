@@ -75,6 +75,10 @@ backup cifrado do banco, cópia separada de chave, restauração em volumes novo
 e nova reabertura. Remove somente os recursos de teste que criou; não usa
 certificados reais, consulta fiscal ou stack existente. Não faz skip silencioso
 se Docker faltar. O resultado deve ser conferido no CI da PR antes de operar.
+O banco da fixture usa mount gravável, como `/data` do app: mesmo a conexão
+SQLite `mode=ro` pode precisar criar arquivos auxiliares WAL/SHM. O ensaio confere
+que os registros do cofre não mudam durante o backup; a chave de origem permanece
+em mount somente leitura. Veja [SQLite WAL em leitura](https://sqlite.org/wal.html#read_only_databases).
 
 Na composição com develop `7ddec58017d6506bd58d3b56563ee48b87fb1730` (dev.52),
 a regressão local executou **278 testes em 113,859 s: 268 aprovados, 10 skips,
