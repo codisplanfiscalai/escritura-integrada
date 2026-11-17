@@ -1,0 +1,278 @@
+{
+  "base": "50dbad4381869eea69174f4d111e02b207a147a3",
+  "version": "0.9.0-dev.44",
+  "provenance": "Final worktree source on develop dev44, before documentation commit; synthetic fixtures and disposable local SQLite only. Source hashes identify tested code; published-head CI must be checked separately.",
+  "source_sha256": {
+    "app/fiscal_payment_sources.py": "033c0a88c6a07c0cb98a93e7a5fda5db16928ef6a22dad7c6e4e11026c7f93d8",
+    "app/fiscal_payment_allocations.py": "ddabc011c2389939bc25adfd69cfc74f6af3fb4690ee23d4d113999f2dd6e5a4",
+    "app/fiscal_sales_accounting.py": "8fd4a284b6e02a97bd7c77eab44c9bfdb10836de6550d8d809e32b28799095e8",
+    "tests/test_fiscal_payment_legacy_sources.py": "01778018d584ac5c65fb075a75fffb82bc4623dcdb8431d5ec2cbc184749f2d9",
+    "scripts/browser_fiscal_sales_accounting.py": "ae5d0845bc5d4a1eaadbb189ed3dca8df7556c37d55c3c7df2ec2b517793e720"
+  },
+  "backend": {
+    "modules": [
+      "test_fiscal_payment_legacy_sources",
+      "test_fiscal_payment_allocations",
+      "test_browser_fiscal_accounting_entrypoint",
+      "test_browser_performance_evidence",
+      "test_performance_workflows",
+      "test_fiscal_sales_accounting",
+      "test_fiscal_incoming_accounting",
+      "test_direct_fiscal_accounting",
+      "test_fiscal_sales_composition",
+      "test_fiscal_accounting_prosoft_composition",
+      "test_workspace_context",
+      "test_document_preview",
+      "test_integrations",
+      "test_infrastructure",
+      "test_master_evidence",
+      "test_import_revision",
+      "test_import_package_cleanup",
+      "test_import_reprocessing",
+      "test_reprocessing_linked_effects"
+    ],
+    "tests_run": 213,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "ok": true,
+    "seconds": 149.24
+  },
+  "frontend": {
+    "passed": 213,
+    "failed": 0,
+    "skipped": 0
+  },
+  "build": {
+    "ok": true,
+    "seconds": 5.54,
+    "warning": "Existing main chunk above 500kB"
+  },
+  "browser": {
+    "ok": true,
+    "synthetic_only": true,
+    "checks": [
+      "Pagination, empty/combined/rapid filters and KeepAlive navigation are read-only",
+      "Compact notes/actions, repeated subguides and keyboard retain selection/accounts/history with zero extra reads; desktop and 390px layouts stay contained",
+      "Canceling a read-only preview under latency preserves selection and data; a fresh preview remains available",
+      "Daily direct accounts, optional model regression preserved: 0.01 + 10.02 => one balanced 10.03 journal; lost response after commit and exact-key retry do not duplicate; both sources traced",
+      "Individual: three notes/dates/CFOP/accounts => three journals; company B has two independent journals; saved company mode and previous movements preserved",
+      "Fiscal fields, original single journal and receivable preserved; independent daily report read-only and balanced at 43.22",
+      "Closed accounting month refuses UI generation even with permissive legacy defaults; reopening permits it; FK and all journals balanced",
+      "Both menus share direct-account integration without required models: incoming preview/close read-only; daily sales setting preserved; two purchases remain individual; lost-response exact retry and alternate menu do not duplicate; origins/FK/balance preserved",
+      "Fresh company C has no accounting models: two direct sales consolidate at 10.03; two direct purchases stay individual; all origins and balances preserved without creating models",
+      "F8 competence changes return to notes, apply the current month and preserve all accounting/fiscal data; both access headings match their modules",
+      "Configuration and controls remain within the 1100px viewport; wide table scroll is contained",
+      "Native cash/card splits: declared payments and explicit change, cancellation/retry, subguide retention, read-only preview, responsive controls, daily consolidation, three source traces and lost-response replay create one balanced journal without settlement",
+      "Legacy imported/booked NFC-e without stored snapshots recover exact retained ZIP payments, preserve revisions/IDs/fields/original bytes, preview read-only and consolidate mixed/cash sources with lost-response replay without duplicates"
+    ],
+    "console_errors": [],
+    "browser_version": "151.0.7922.34",
+    "read_only_hashes": {
+      "before": {
+        "documents": "4fc5e68d8c4520e451353ef5416eb72ed3b222d8d4e0bf41b71179d349f48c4f",
+        "journals": "5bc8de566de6c0592a4ef9f6cf479adb6a2b61c3fc6438324b7ef1d26eb74f60",
+        "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+        "titles": "fd57b6339bbee7738641a63ff435c14ff545d0077f56f6b024ae79e0f687f802",
+        "audit": "891febf55449f8a2f840c3166f386e2a4091cfb4a3a4795e8254194bc8aadd7f"
+      },
+      "after": {
+        "documents": "4fc5e68d8c4520e451353ef5416eb72ed3b222d8d4e0bf41b71179d349f48c4f",
+        "journals": "5bc8de566de6c0592a4ef9f6cf479adb6a2b61c3fc6438324b7ef1d26eb74f60",
+        "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+        "titles": "fd57b6339bbee7738641a63ff435c14ff545d0077f56f6b024ae79e0f687f802",
+        "audit": "891febf55449f8a2f840c3166f386e2a4091cfb4a3a4795e8254194bc8aadd7f"
+      }
+    },
+    "desktop_notes_table_top": 632.28125,
+    "subguide_read_request_count": 0,
+    "replay_hashes": {
+      "before": {
+        "documents": "78f5cc6e90af11da2950c84ddfcaa92c19777281ccfbb133e686bf5e129cdb92",
+        "journals": "154858bf53f8e7f7f943e4931c92769e17489f22376c49c764ff70ddbbe6c224",
+        "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+        "titles": "fd57b6339bbee7738641a63ff435c14ff545d0077f56f6b024ae79e0f687f802",
+        "audit": "a0e71710466ccfee09cfe92dbb960556b7e264a513a65d5a62fa69d9be2a66bb"
+      },
+      "after": {
+        "documents": "78f5cc6e90af11da2950c84ddfcaa92c19777281ccfbb133e686bf5e129cdb92",
+        "journals": "154858bf53f8e7f7f943e4931c92769e17489f22376c49c764ff70ddbbe6c224",
+        "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+        "titles": "fd57b6339bbee7738641a63ff435c14ff545d0077f56f6b024ae79e0f687f802",
+        "audit": "a0e71710466ccfee09cfe92dbb960556b7e264a513a65d5a62fa69d9be2a66bb"
+      }
+    },
+    "report_hashes": {
+      "before": {
+        "documents": "82911376de8ce2b5aab52d2b2e3e06ecc61f05602fe8cf131c71d81a8e428e51",
+        "journals": "cd9df5d6a188151293c6befc47da07f186b450b7f19a22b87c28f0f2d7a10670",
+        "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+        "titles": "fd57b6339bbee7738641a63ff435c14ff545d0077f56f6b024ae79e0f687f802",
+        "audit": "489d61ffec967f97c1f91d89b6d7fce50519c3148cae85687313ff96be184b2b"
+      },
+      "after": {
+        "documents": "82911376de8ce2b5aab52d2b2e3e06ecc61f05602fe8cf131c71d81a8e428e51",
+        "journals": "cd9df5d6a188151293c6befc47da07f186b450b7f19a22b87c28f0f2d7a10670",
+        "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+        "titles": "fd57b6339bbee7738641a63ff435c14ff545d0077f56f6b024ae79e0f687f802",
+        "audit": "489d61ffec967f97c1f91d89b6d7fce50519c3148cae85687313ff96be184b2b"
+      }
+    },
+    "incoming_preview_hashes": {
+      "before": {
+        "documents": "ede7a9c7d563fecff5709ab18359be29bc2cc2dfa65040bb7a204594aa956ff8",
+        "journals": "11b3144e69fd5fd7ed9065c25acd55fa9c861ad9c8a1ffa4c8082f3f4d67740e",
+        "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+        "titles": "fd57b6339bbee7738641a63ff435c14ff545d0077f56f6b024ae79e0f687f802",
+        "audit": "eb5a539912647b524e47bc7085c1134662b36d720f5fbb076c55749c5ad569b5"
+      },
+      "after": {
+        "documents": "ede7a9c7d563fecff5709ab18359be29bc2cc2dfa65040bb7a204594aa956ff8",
+        "journals": "11b3144e69fd5fd7ed9065c25acd55fa9c861ad9c8a1ffa4c8082f3f4d67740e",
+        "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+        "titles": "fd57b6339bbee7738641a63ff435c14ff545d0077f56f6b024ae79e0f687f802",
+        "audit": "eb5a539912647b524e47bc7085c1134662b36d720f5fbb076c55749c5ad569b5"
+      }
+    },
+    "incoming_replay_hashes": {
+      "before": {
+        "documents": "c0cdb9ca08864c5b720e47865c3720d47e2a121fd47c1faa105c9b8e3c11b255",
+        "journals": "68aef76f3adf36341c3738a992886dc5bf367b0148b4aa2238fd3ea25a962c53",
+        "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+        "titles": "fd57b6339bbee7738641a63ff435c14ff545d0077f56f6b024ae79e0f687f802",
+        "audit": "3e7323f614a9b3dda372600322978b1ad93e5f2a5b132a06dc4620b982b99dbe"
+      },
+      "after": {
+        "documents": "c0cdb9ca08864c5b720e47865c3720d47e2a121fd47c1faa105c9b8e3c11b255",
+        "journals": "68aef76f3adf36341c3738a992886dc5bf367b0148b4aa2238fd3ea25a962c53",
+        "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+        "titles": "fd57b6339bbee7738641a63ff435c14ff545d0077f56f6b024ae79e0f687f802",
+        "audit": "3e7323f614a9b3dda372600322978b1ad93e5f2a5b132a06dc4620b982b99dbe"
+      }
+    },
+    "no_models_company_journals": 3,
+    "workspace_month_hashes": {
+      "before": {
+        "documents": "6780cceb83f2c3385ede29e1ce33ccc562e9becda35ad7b3bf2499b50b3605b6",
+        "journals": "d6a7d96779c3852554a2c86ae3060ffe42a096c99592e804d12a9ec4b348234b",
+        "journal_lines": "5b60843e612bb5d986fa82de1491d9bb30d5a909c15f516e9cb79940cf968e9c",
+        "titles": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "audit": "ef78d0686845f29794f68f349fc93462c90979964ad25dbf15dc985b9f6c8d0f"
+      },
+      "after": {
+        "documents": "6780cceb83f2c3385ede29e1ce33ccc562e9becda35ad7b3bf2499b50b3605b6",
+        "journals": "d6a7d96779c3852554a2c86ae3060ffe42a096c99592e804d12a9ec4b348234b",
+        "journal_lines": "5b60843e612bb5d986fa82de1491d9bb30d5a909c15f516e9cb79940cf968e9c",
+        "titles": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "audit": "ef78d0686845f29794f68f349fc93462c90979964ad25dbf15dc985b9f6c8d0f"
+      }
+    },
+    "payment_split_journal_count": 1,
+    "payment_split_total_cents": 1703,
+    "legacy_payment_total_cents": 53150,
+    "legacy_payment_journals": 1,
+    "final_journals": {
+      "A": 8,
+      "B": 2,
+      "C": 3
+    }
+  },
+  "performance": {
+    "ok": true,
+    "checks": [
+      "183 payables, filter, history and cancel without mutations",
+      "22597 accounts, accent search, second page",
+      "no hidden-screen or unrelated catalog loads"
+    ],
+    "console_errors": [],
+    "accounts": {
+      "ready_ms": 529.17,
+      "requests": [
+        {
+          "path": "/api/context",
+          "url": "http://127.0.0.1:41999/api/context",
+          "method": "POST",
+          "status": 200,
+          "decoded_bytes": 2473,
+          "elapsed_ms": 92.96
+        },
+        {
+          "path": "/api/companies/1/periods",
+          "url": "http://127.0.0.1:41999/api/companies/1/periods?period=2026-11",
+          "method": "GET",
+          "status": 200,
+          "decoded_bytes": 622,
+          "elapsed_ms": 93.0
+        },
+        {
+          "path": "/api/companies/1/exercises",
+          "url": "http://127.0.0.1:41999/api/companies/1/exercises?module=social&year=2026",
+          "method": "GET",
+          "status": 200,
+          "decoded_bytes": 1847,
+          "elapsed_ms": 93.89
+        },
+        {
+          "path": "/api/companies/1/exercises",
+          "url": "http://127.0.0.1:41999/api/companies/1/exercises?module=accounting&year=2026",
+          "method": "GET",
+          "status": 200,
+          "decoded_bytes": 1903,
+          "elapsed_ms": 95.49
+        },
+        {
+          "path": "/api/companies/1/exercises",
+          "url": "http://127.0.0.1:41999/api/companies/1/exercises?module=financial&year=2026",
+          "method": "GET",
+          "status": 200,
+          "decoded_bytes": 1889,
+          "elapsed_ms": 97.4
+        },
+        {
+          "path": "/api/companies/1/exercises",
+          "url": "http://127.0.0.1:41999/api/companies/1/exercises?module=fiscal&year=2026",
+          "method": "GET",
+          "status": 200,
+          "decoded_bytes": 1847,
+          "elapsed_ms": 121.04
+        },
+        {
+          "path": "/api/companies/1/accounts",
+          "url": "http://127.0.0.1:41999/api/companies/1/accounts?page=1&per_page=50&search=",
+          "method": "GET",
+          "status": 200,
+          "decoded_bytes": 12748,
+          "elapsed_ms": 130.3
+        },
+        {
+          "path": "/api/companies/1/global-account-plans",
+          "url": "http://127.0.0.1:41999/api/companies/1/global-account-plans",
+          "method": "GET",
+          "status": 200,
+          "decoded_bytes": 771,
+          "elapsed_ms": 151.36
+        }
+      ]
+    }
+  },
+  "checks": [
+    "python -m scripts.ci.dependencies",
+    "version 0.9.0-dev.44",
+    "compileall changed Python",
+    "git diff --check"
+  ],
+  "invariants": [
+    "Only missing/null declared_document_fields triggers fallback; existing snapshot remains authoritative",
+    "Both retained container SHA256 and individual XML SHA256 checked",
+    "Company-scoped metadata and actual parsed company/key/model/direction validated",
+    "No updates/backfill/reimport/renumbering or existing-link changes by evidence lookup/preview",
+    "Originals parsed once per archive per operation; no global cache or lookup for stored snapshots",
+    "Generation/replay/reversal remain in existing domain services"
+  ],
+  "limits": [
+    "Requires matching company-owned retained original with coherent hashes/identity",
+    "No SEFAZ query, signature/XSD certification or restored missing original",
+    "No local full backend suite, PostgreSQL, installers or production test",
+    "No real data, PR merge, release or deployment"
+  ]
+}
