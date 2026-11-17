@@ -216,3 +216,23 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual([],self.core.documents(self.a['id']))
 
 if __name__=='__main__':unittest.main()
+
+class ReceiptHistoryTests(WorkspaceTests):
+    def test_history_over_twenty_without_xml_reads_or_transport_and_scope(self):
+        with self.core.db.transaction() as conn:
+            for n in range(43):
+                key=f'history-synthetic-{n:03d}'
+                result={'provider':'nfe_distribution','environment':'homologation','period':'2026-11','state':'received','entries':[{'nsu':str(n)}]}
+                conn.execute('INSERT INTO operations(company_id,scope,key,request_hash,result_json,created_at) VALUES(?,?,?,?,?,?)',(self.a['id'],RUN_SCOPE,key,digest(result),pack(result),now()))
+        from app.reception_workspace import ReceptionWorkspace
+        with patch.object(ReceptionWorkspace,'archive',side_effect=AssertionError('no archive scan')),patch('app.reception_workspace.read_file',side_effect=AssertionError('no XML reads')):
+            pages=[]
+            for offset in (0,20,40):
+                r=self.client.get(self.scope('/reception/nfe_distribution/receipts'),params={'environment':'homologation','year':2026,'offset':offset})
+                self.assertEqual(200,r.status_code,r.text);pages.append(r.json())
+            self.assertEqual([20,20,3],[len(p['receipts']) for p in pages])
+            self.assertEqual([True,True,False],[p['has_more'] for p in pages])
+            self.assertEqual(43,len({r['receipt_key'] for p in pages for r in p['receipts']}))
+            empty=self.client.get(self.scope('/reception/nfe_distribution/receipts'),params={'environment':'production','year':2026}).json()
+            self.assertEqual([],empty['receipts'])
+        self.assertEqual([],self.transport.plans)

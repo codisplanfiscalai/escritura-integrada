@@ -5,14 +5,14 @@ export const receiptStates={received:'Recebido para conferência',in_progress:'T
 export function createReception({state,api,can,scope,provider}){
  if(!services[provider])throw new Error('Serviço inválido.');
  const defaults=()=>Object.keys(services[provider].environments)[0];
- const m=reactive({provider,environment:defaults(),configuration:null,data:null,applied:'',receipt:null,document:null,documentLoading:false,query:'',direction:'',competence:'',error:'',check:null,loading:false,busy:false,intent:null});
- let active=false,version=0,reader=null,owner=null,receiptVersion=0,documentVersion=0;
+ const m=reactive({provider,environment:defaults(),configuration:null,data:null,applied:'',receipt:null,history:null,historyLoading:false,document:null,documentLoading:false,query:'',direction:'',competence:'',error:'',check:null,loading:false,busy:false,intent:null});
+ let active=false,version=0,reader=null,owner=null,receiptVersion=0,documentVersion=0,historyVersion=0;
  const context=()=>({companyId:state.companyId,period:state.period,year:state.period.slice(0,4),module:state.module,uid:state.session?.user?.id});
  const same=c=>c.companyId===state.companyId&&c.period===state.period&&c.module===state.module&&c.uid===state.session?.user?.id;
  const readable=()=>!!state.companyId&&state.module==='fiscal'&&!!state.session?.user&&can('fiscal.imports','read');
  const valid=(c,v)=>active&&version===v&&same(c)&&readable();
  function release(key){if(state.editor?.owner===key)state.editor=null;if(owner===key)owner=null;}
- function invalidate(clear){version++;receiptVersion++;documentVersion++;reader?.abort();reader=null;if(owner)release(owner);Object.assign(m,{configuration:null,data:null,applied:'',receipt:null,document:null,documentLoading:false,check:null,error:'',loading:false,busy:false});if(clear){m.intent=null;m.environment=defaults();m.query='';m.direction='';m.competence='';}}
+ function invalidate(clear){version++;receiptVersion++;documentVersion++;historyVersion++;reader?.abort();reader=null;if(owner)release(owner);Object.assign(m,{configuration:null,data:null,applied:'',receipt:null,history:null,historyLoading:false,document:null,documentLoading:false,check:null,error:'',loading:false,busy:false});if(clear){m.intent=null;m.environment=defaults();m.query='';m.direction='';m.competence='';}}
  function reset(){invalidate(true);if(active&&readable())load();}
  function activate(){if(active)return;active=true;if(readable())load();}
  function deactivate(){active=false;invalidate(false);}
@@ -26,7 +26,7 @@ export function createReception({state,api,can,scope,provider}){
    const selected=result.configuration;
    if(!selected?.revision||!services[provider].environments[selected.environment]||result.environment!==selected.environment)throw new Error('Configuração da empresa indisponível. Atualize a tela.');
    if(m.configuration?.revision!==selected.revision){receiptVersion++;documentVersion++;m.check=null;m.receipt=null;m.document=null;m.documentLoading=false;}
-   m.configuration=selected;m.environment=selected.environment;m.data=result;m.applied=new URLSearchParams({...Object.fromEntries(new URLSearchParams(filters)),environment:selected.environment}).toString();
+   historyVersion++;m.history=null;m.historyLoading=false;m.configuration=selected;m.environment=selected.environment;m.data=result;m.applied=new URLSearchParams({...Object.fromEntries(new URLSearchParams(filters)),environment:selected.environment}).toString();
   }catch(e){if(valid(c,v)&&!abort.signal.aborted)m.error=e.message;}
   finally{if(valid(c,v)&&reader===abort){m.loading=false;reader=null;}}
  }
@@ -50,6 +50,19 @@ export function createReception({state,api,can,scope,provider}){
   try{const r=await api(scope('/imports/reception/receipts/'+encodeURIComponent(key),c.companyId));if(!valid(c,v)||seq!==receiptVersion||env!==m.environment)return;if(r.provider!==provider||r.environment&&r.environment!==env)throw new Error('Recibo de outro serviço ou ambiente.');m.receipt=r;if(recover&&r.state!=='in_progress')m.intent=null;}
   catch(e){if(valid(c,v)&&seq===receiptVersion)m.error=e.status===404?'Recibo ainda não localizado. Repetir usa a mesma identificação.':e.message;}
  }
+ async function history(offset=0){
+  if(!active||!readable())return;
+  const c=context(),v=version,env=m.environment,seq=++historyVersion;
+  m.historyLoading=true;m.error='';
+  try{
+   const filters=new URLSearchParams({environment:env,year:c.year,offset:String(offset)});
+   const r=await api(scope('/reception/'+provider+'/receipts?'+filters,c.companyId));
+   if(!valid(c,v)||seq!==historyVersion||env!==m.environment)return;
+   if(r.provider!==provider||r.environment!==env)throw new Error('Histórico de outro serviço ou ambiente.');
+   m.history=r;
+  }catch(e){if(valid(c,v)&&seq===historyVersion)m.error=e.message;}
+  finally{if(valid(c,v)&&seq===historyVersion)m.historyLoading=false;}
+ }
  async function versions(id,offset=0){
   if(!active||!readable())return;const c=context(),v=version,env=m.environment,seq=++documentVersion;
   if(m.document?.record_id!==id)m.document=null;m.documentLoading=true;
@@ -60,5 +73,5 @@ export function createReception({state,api,can,scope,provider}){
  }
  function download(row,original=false){if(!readable()||!can('fiscal.imports','export'))return '';return '/api'+scope('/imports/reception/receipts/'+encodeURIComponent(row.receipt_key)+(original?'/download':'/documents/'+encodeURIComponent(row.nsu)+'/download'));}
  function report(view='documents'){return readable()&&m.data&&can('fiscal.imports','export')?'/api'+scope('/reception/'+provider+'/report?'+m.applied+(view==='occurrences'?'&view=occurrences':'')):'';}
- return {m,readable,activate,deactivate,reset,load,check,capture,receipt,versions,download,report};
+ return {m,readable,activate,deactivate,reset,load,check,capture,receipt,history,versions,download,report};
 }

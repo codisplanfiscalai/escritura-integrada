@@ -29,6 +29,13 @@ def server(data,port):
     packets.append(packet(6,xml=xml.replace(b'PRESTADOR SINTETICO',b'VERSAO SINTETICA PARA REVISAO'))|{'ChaveAcesso':'SYNTHETIC-NFSE-3'})
     seed=ReceptionService(core,FakeCredentials(),FakeTransport(RemoteReply(200,json.dumps(page(packets)).encode())))
     seed.query(ids[0],{'provider':'nfse_adn','environment':'restricted_production','period':'2026-11','idempotency_key':'synthetic-seed-adn-001'},'synthetic',uid)
+    # Synthetic audit-only receipts exercise history beyond the first page.
+    from app.core import pack,digest,now
+    from app.reception_service import RUN_SCOPE
+    with core.db.transaction() as conn:
+        for index in range(23):
+            result={'provider':'nfse_adn','environment':'restricted_production','period':'2026-11','state':'rejected','entries':[]}
+            conn.execute('INSERT INTO operations(company_id,scope,key,request_hash,result_json,created_at) VALUES(?,?,?,?,?,?)',(ids[0],RUN_SCOPE,f'synthetic-history-{index:03d}',digest(result),pack(result),now()))
     class Transport:
         def send(self,plan,identity):
             assert plan['provider']=='nfe_distribution' and identity.tax_id==MATRIX
@@ -88,6 +95,16 @@ def main():
                         assert all(address.startswith(url+'/') for _,address in requests[start:]),requests[start:]
                         assert not [(method,address) for method,address in requests[start:] if method!='GET' and any(part in address for part in ['/reception/','/reception-credential'])],requests[start:]
                         report['checks'].append('Reload e navegação leem somente recursos locais; nenhum check A1, upload ou consulta externa automática; views sem seletor de ambiente')
+                        history=page.locator('.receive-history')
+                        history.get_by_role('button',name='Consultar histórico completo').click()
+                        expect(history.locator('tbody tr')).to_have_count(20)
+                        history.get_by_role('button',name='Próximos recibos').click()
+                        expect(history.locator('tbody tr')).to_have_count(4)
+                        expect(history.get_by_role('button',name='Próximos recibos')).to_be_disabled()
+                        history.get_by_role('button',name='Recibos anteriores').click()
+                        expect(history.locator('tbody tr')).to_have_count(20)
+                        shot('receipt-history.png')
+                        report['checks'].append('Histórico de 24 recibos em duas páginas, sem consulta externa')
                         box.get_by_label('Direção dos documentos').select_option('both');box.get_by_role('button',name='Consultar acervo local').click();expect(box.locator('tbody tr')).to_have_count(1)
                         box.get_by_label('Competência declarada no XML').fill('2026-09')
                         with page.expect_response(lambda r:'/reception/nfse_adn?' in r.url and 'competence=2026-09' in r.url and r.request.method=='GET'):

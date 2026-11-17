@@ -20,6 +20,10 @@ def register(app,core,actor,check_period):
     def overview(cid:int,provider:str,request:Request,year:int,environment:str|None=None,query:str='',offset:int=0,direction:str='',competence:str=''):
         return workspace().overview(cid,request.state.session['user']['id'],provider,environment,year,query,offset,direction,competence)
 
+    @app.get('/api/companies/{cid}/reception/{provider}/receipts')
+    def receipt_history(cid:int,provider:str,request:Request,environment:str,year:int,offset:int=0):
+        return workspace().receipt_history(cid,request.state.session['user']['id'],provider,environment,year,offset)
+
     @app.get('/api/companies/{cid}/reception/{provider}/report')
     def report(cid:int,provider:str,request:Request,environment:str,year:int,query:str='',direction:str='',competence:str='',view:str='documents'):
         raw=workspace().report(cid,request.state.session['user']['id'],provider,environment,year,query,direction,competence,view)

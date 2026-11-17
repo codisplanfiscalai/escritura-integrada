@@ -91,6 +91,19 @@ class ReceptionWorkspace:
                 'state':{'cursor':state['cursor'],'next_allowed_at':state['next_allowed_at'],'busy':state['lease_until']>self.reception.clock()},
                 'documents':documents[offset:offset+20],'offset':offset,'has_more':len(documents)>offset+20,'receipts':receipts,
                 'capabilities':CAPABILITIES[provider]|{'automation_available':False,'a1_cnpj_only':True}}
+    def receipt_history(self,cid,uid,provider,environment,year,offset=0):
+        """Page the audit history without opening or decompressing original XMLs."""
+        self.validate_filters(provider,environment,year,'',offset,'','')
+        with self.db.read(snapshot=True) as conn:
+            self.reception._access(conn,uid,cid)
+            items=[]
+            for index,(row,result) in enumerate(self.rows(conn,cid,provider,environment,year)):
+                if index < offset:continue
+                items.append({k:result[k] for k in ('state','period','cursor_before','cursor_after','error_codes','code') if k in result}|{'receipt_key':row['key'],'created_at':row['created_at'],'count':len(result.get('entries',[])),'has_original':bool(result.get('file_id'))})
+                if len(items)>20:break
+            return {'provider':provider,'environment':environment,'receipts':items[:20],
+                    'offset':offset,'has_more':len(items)>20}
+
     def local_entries(self,conn,cid,result,target,cache=None):
         cache={} if cache is None else cache
         files=cache.setdefault('files',{});metadata_cache=cache.setdefault('metadata',{})
