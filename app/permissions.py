@@ -159,6 +159,10 @@ def route_policy(path, method, query, payload, session):
         if tail.endswith('/confirm'): return 'accounting.accounts', 'create', False
         if tail.endswith('/detach'): return 'accounting.accounts', 'edit', False
         return 'accounting.accounts', 'edit' if method == 'PUT' else 'read', False
+    if root in {'reception-settings','reception-credential'}:
+        return 'system.companies', 'edit' if write else 'read', False
+    if root == 'reception':
+        return 'fiscal.imports', 'export' if tail.endswith('/report') else 'import' if write else 'read', False
     if root == 'operational-settings':
         return ('system.companies', 'edit', True) if write else (None, 'read', False)
     if root == 'bulk-operations':

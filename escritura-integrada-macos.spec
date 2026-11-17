@@ -17,7 +17,7 @@ if platform.machine() != 'x86_64':
 datas += collect_data_files('brazilfiscalreport')
 datas += collect_data_files('fpdf')
 a=Analysis([str(root/'app/desktop.py')],pathex=[str(root)],binaries=[],datas=datas,
-    hiddenimports=['app.api','uvicorn.logging','uvicorn.loops.asyncio','uvicorn.protocols.http.h11_impl',
+    hiddenimports=['app.api','Cryptodome.Cipher.AES','uvicorn.logging','uvicorn.loops.asyncio','uvicorn.protocols.http.h11_impl',
       'uvicorn.protocols.websockets.auto','uvicorn.lifespan.on','PySide6.QtSvg','PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets'],
     excludes=['PyQt5','PyQt6','PySide2','tkinter'],noarchive=False)
 pyz=PYZ(a.pure)

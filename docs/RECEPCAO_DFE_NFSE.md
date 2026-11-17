@@ -1,5 +1,9 @@
 # Recepção DF-e / NFS-e: consulta mTLS e importação revisada
 
+> Continuação e estado atual: [acervo, versões e bloqueio ADN de 17/11/2026](RECEPCAO_ACERVO_VERSOES_20261117.md).
+
+> Histórico das novas views e do cofre: [reconstrução local de 16/11/2026](RECEPCAO_VIEWS_RECONSTRUCAO_20261116.md). O texto abaixo mantém o histórico da frente original; referências a ausência de interface, senha HTTP e esperas ADN devem ser lidas com essa atualização.
+
 Base inicial dev.9 `3a6ab4c`; atualização sincronizada com develop dev.10 `6344584593f3a64126ef69095b7645760b716095`, preservando a PR38; dev.11 `21b6e76` incorporou a PR36 e a continuação usa dev.12 `955404e`, preservando a PR35 sem executar migração. Desenvolvimento em worktree exclusiva `escritura-reception-20261115`. A PR41 continua draft, sem integração em develop/main, release, deploy ou mudança de banco operacional. A recepção manual de arquivo e o transporte mTLS fazem parte da mesma PR; nenhuma consulta fiscal externa foi executada nesta validação.
 
 ## Recuperação antes da implementação

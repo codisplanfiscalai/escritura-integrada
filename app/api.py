@@ -160,7 +160,7 @@ def create_app(data_dir=None, demo=False):
                     match = re.match(r"^/api/companies/(\d+)/", path)
                     # Company administration targets the opened registration, not movements.
                     # Permissions are still revalidated for that exact company in the transaction.
-                    if match and not re.fullmatch(r"/api/companies/\d+/(?:operational-settings(?:/(?:templates|apply-template))?|accounting-settings(?:/(?:plans/\d+/preview|previews/\d+/confirm|detach|plan-manager(?:/drafts(?:/[a-f0-9]{32}(?:/accounts(?:/[^/]+)?|/publish)?)?)?))?)", path):
+                    if match and not re.fullmatch(r"/api/companies/\d+/(?:reception-settings|reception-credential|operational-settings(?:/(?:templates|apply-template))?|accounting-settings(?:/(?:plans/\d+/preview|previews/\d+/confirm|detach|plan-manager(?:/drafts(?:/[a-f0-9]{32}(?:/accounts(?:/[^/]+)?|/publish)?)?)?))?)", path):
                         cid = int(match.group(1))
                         if session["active_company_id"] != cid:
                             return JSONResponse({"detail": "A empresa ativa mudou. Reabra o lançamento no contexto correto.", "code": "stale_context"}, 409)
