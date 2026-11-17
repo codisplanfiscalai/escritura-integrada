@@ -82,3 +82,15 @@ test('a local A1 check from an older configuration never becomes ready in the re
  const loading=f.c.load();f.calls.at(-1).resolve({...overview(),configuration:{revision:'2'.repeat(64),environment:'homologation'}});await loading;
  pending.resolve({ready:true,message:'old A1'});await checking;assert.equal(f.m.check,null);assert.equal(f.state.editor,null);
 });
+
+test('receipt history pages separately and discards stale context and out-of-order replies',async()=>{
+ const f=setup();f.c.activate();f.calls[0].resolve(overview());await tick();
+ const first=f.c.history(0),a=f.calls.at(-1),next=f.c.history(20),b=f.calls.at(-1);
+ assert.match(b.path,/receipts\?.*offset=20/);
+ b.resolve({provider:'nfe_distribution',environment:'homologation',offset:20,receipts:[{receipt_key:'new'}],has_more:true});await next;
+ a.resolve({provider:'nfe_distribution',environment:'homologation',offset:0,receipts:[{receipt_key:'old'}]});await first;
+ assert.equal(f.m.history.offset,20);assert.equal(f.m.historyLoading,false);
+ const pending=f.c.history(40),c=f.calls.at(-1);f.state.companyId=2;f.c.reset();f.calls.at(-1).resolve(overview());await tick();
+ c.resolve({provider:'nfe_distribution',environment:'homologation',offset:40,receipts:[{receipt_key:'stale'}]});await pending;
+ assert.equal(f.m.history,null);assert.equal(f.m.historyLoading,false);
+});
