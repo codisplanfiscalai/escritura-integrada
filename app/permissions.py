@@ -211,6 +211,8 @@ def route_policy(path, method, query, payload, session):
         return 'fiscal.parameters', 'edit' if write else 'read', False
     if root == 'fiscal-import-mappings':
         return 'fiscal.parameters', action, False
+    if root == 'documents' and tail.endswith('/auxiliary'):
+        return 'fiscal.documents', 'export', False
     if root == 'documents' and tail.endswith('/account'):
         return 'accounting.journals', 'create', False
     if tail == '/prosoft/observed-balances' and method == 'GET':
