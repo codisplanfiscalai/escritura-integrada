@@ -1,6 +1,7 @@
 """PDF e Excel gerados no servidor com os mesmos filtros/valores da consulta."""
 from decimal import Decimal
 from io import BytesIO
+from .report_tables import table_chunks
 import json
 from xml.sax.saxutils import escape
 from .core import DomainError,decimal_text
@@ -131,8 +132,9 @@ def export_report(result,kind):
         if not columns:continue
         if index:story+=[PageBreak(),para(title+' · continuação',styles['Heading2']),para(result['company_name'],body),Spacer(1,10)]
         content=[[para(labels.get(k,k)) for k in columns]]+[[para(display(k,r.get(k))) for k in columns] for r in rows]
-        table=LongTable(content,colWidths=[width/len(columns)]*len(columns),repeatRows=1,hAlign='LEFT',splitByRow=1,splitInRow=1)
-        table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#dceee7')),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f5f7f8')]),('GRID',(0,0),(-1,-1),.25,colors.HexColor('#d5dfe2')),('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]));story.append(table)
+        for chunk in table_chunks(content):
+            table=LongTable(chunk,colWidths=[width/len(columns)]*len(columns),repeatRows=1,hAlign='LEFT',splitByRow=1,splitInRow=1)
+            table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#dceee7')),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f5f7f8')]),('GRID',(0,0),(-1,-1),.25,colors.HexColor('#d5dfe2')),('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]));story.append(table)
     if not rows:story.append(para('Nenhum registro nos filtros selecionados.',body))
     def footer(canvas,document):
         canvas.setFont('EscrituraSans',8);canvas.drawString(30,15,'Escritura Integrada · relatório auxiliar');canvas.drawRightString(pagesize[0]-30,15,f'Página {document.page}')

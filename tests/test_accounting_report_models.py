@@ -40,6 +40,17 @@ class AccountingModelTests(unittest.TestCase):
                 self.assertEqual(mime,'application/pdf')
                 self.assertEqual(result,before)
 
+    def test_chunked_report_preserves_every_record_and_page_sequence(self):
+        result=fixture(count=401)
+        data,_=accounting_pdf(result,first_page=3)
+        pages=PdfReader(BytesIO(data)).pages
+        text='\n'.join(page.extract_text() for page in pages)
+        for i in range(1,402):
+            self.assertIn('RASTRO FINAL '+str(i)+'\n',text)
+        for number,page in enumerate(pages,3):
+            self.assertIn(f'Folha: {number:05d}',page.extract_text())
+        self.assertIn('49.503,45',text)
+
     def test_catalog_supported_and_unique(self):
         ids=[m['id'] for m in CATALOG]
         self.assertEqual(len(ids),len(set(ids)))

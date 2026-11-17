@@ -35,6 +35,23 @@ class LazyAccountRefTests(unittest.TestCase):
             {'account_id':refs['00101']['id'],'debit':'17.00','credit':'0.00'},
             {'account_id':refs['00102']['id'],'debit':'0.00','credit':'17.00'}],**extra}
 
+    def test_positive_lookup_matches_view_without_virtual_plan_scan(self):
+        from app.account_refs import resolve_account
+        from app.core import DomainError
+        _,refs=self.adopt()
+        self.post('/journals',self.journal(refs),201)
+        with self.core.db.read() as conn:
+            expected=[dict(row) for row in conn.execute('SELECT * FROM effective_accounts WHERE company_id=? AND id>0',(self.b['id'],))]
+            for row in expected:
+                statements=[]
+                conn.set_trace_callback(statements.append)
+                actual=resolve_account(conn,self.b['id'],row['id'])
+                conn.set_trace_callback(None)
+                self.assertEqual(row,actual)
+                self.assertFalse(any('effective_accounts' in sql for sql in statements))
+                with self.assertRaises(DomainError):
+                    resolve_account(conn,self.a['id'],row['id'])
+
     def test_binding_read_reports_and_export_copy_no_company_definitions(self):
         g,refs=self.adopt();before=self.counts()
         self.assertEqual({'accounts':6,'account_plan_batches':0,'account_plan_metadata':0,'account_plan_properties':0,'global_account_plan_links':0},before)

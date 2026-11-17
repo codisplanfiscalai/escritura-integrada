@@ -6,6 +6,7 @@ campos/variantes, não a geometria da saída impressa. Nenhuma assinatura ou
 qualificação profissional é inventada por estes modelos.
 """
 from collections import OrderedDict
+from .report_tables import table_chunks
 from decimal import Decimal
 from io import BytesIO
 import json
@@ -142,7 +143,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
         data = [[p('Reg.')] + [p(LABELS.get(key, key)) for key in keys]]
         for index, row in records:
             data.append([p(index)] + [p(val(key, row.get(key)), numeric if key.endswith('_cents') else normal) for key in keys])
-        story.append(table(data, widths))
+        story.extend(table(chunk, widths) for chunk in table_chunks(data))
     if not rows:
         story.append(p('Nenhum registro nos filtros selecionados.'))
     story.append(p('Totais do escopo consultado', heading))
@@ -162,7 +163,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
         for index, fields in extras:
             for key, value in fields:
                 data.append([p(index), p(LABELS.get(key, key)), p(val(key, value))])
-        story.append(table(data, [width * .06, width * .25, width * .69]))
+        story.extend(table(chunk, [width * .06, width * .25, width * .69]) for chunk in table_chunks(data))
 
     def header_footer(canvas, document):
         page = first_page + document.page - 1
