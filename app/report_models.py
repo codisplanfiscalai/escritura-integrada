@@ -19,6 +19,7 @@ CATALOG=[
     'status':'field_based_not_homologated','supported':True,
     'limitations':'Falta exemplar impresso equivalente para certificar aparência Prosoft. Não equivale a livro legal homologado.'}
    for kind,name,source in [
+    ('bank-movements','Movimentação bancária','Movimentos importados; estilo contábil nativo'),
     ('diary','Diário Geral','CTB020600 / formulários'),
     ('consolidated-diary','Diário Consolidado','CTB020800 / formulários'),
     ('trial-balance','Balancete','CTB021400 / formulários'),

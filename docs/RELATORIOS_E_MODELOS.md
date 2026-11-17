@@ -56,3 +56,19 @@ ESCRITURA_TEST_BROWSER=/usr/bin/chromium python scripts/browser_reports.py
 Os testes específicos cobrem compatibilidade modelo/relatório, folha inicial e limite de paginação, PDFs vazios e multipáginas, campos extensos e caracteres especiais, saldos do Razão pesquisado, filtros fiscais efetivos, formatos de exportação e estado concorrente da interface. A aceitação nativa Windows/macOS/Qt e a homologação fiscal com a Prosoft continuam etapas distintas da validação local Linux/Chromium.
 
 Fluxo operacional, tratamento de pendências e compatibilidade de URLs: [Relatórios de referência e conferência](RELATORIOS_REFERENCIA_E_CONFERENCIA.md).
+
+## Movimentação bancária no Contábil
+
+Contábil → Livros e demonstrações → **Movimentação bancária** consulta os movimentos
+já importados, com período, identificação exata da conta bancária, entradas/saídas
+e pesquisa em conta, referência e descrição. O acesso exige tanto Relatórios
+contábeis quanto leitura da Conciliação bancária. Exportação e impressão mantêm
+as permissões próprias dos relatórios; não concedem edição ou conciliação.
+
+Grade, CSV, Excel e PDF usam a mesma seleção. O PDF reutiliza fonte, organização,
+cabeçalho, paginação e anexo dos modelos contábeis existentes, sem afirmar identidade
+visual homologada Prosoft. Entradas e saídas têm o sentido do extrato; não são
+classificações contábeis. **Movimento líquido não é saldo bancário**: não são
+inventados saldo inicial, saldo final, contrapartidas ou conciliações. O relatório
+não gera lançamentos. A origem é identificada pelo movimento importado; o conteúdo
+bruto do arquivo e suas credenciais não são incluídos.
