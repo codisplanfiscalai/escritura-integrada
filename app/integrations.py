@@ -1,4 +1,4 @@
-"""Company-scoped integration v1: durable cost-center changes, bearer credentials."""
+"""Company-scoped integration v1: explicit resources, durable events and credentials."""
 from __future__ import annotations
 
 import asyncio
@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from .core import DomainError, audit
 from .permissions import require
 
-SCOPES = {'cost-centers:read', 'events:read', 'webhooks:deliver'}
+from .integration_resources import SCOPES, authorize_scope, event_type, migrate, scope_for, subscriptions
 MAX_ATTEMPTS = 5
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS integration_credentials (
@@ -56,9 +56,9 @@ CREATE TABLE IF NOT EXISTS integration_limits (
 
 def envelope(row):
     return {'specversion': '1.0', 'id': row['id'], 'sequence': row['seq'],
-            'type': 'cost-center.changed.v1', 'time': row['created'],
+            'type': event_type(row['resource'] if 'resource' in row.keys() else 'cost-centers'), 'time': row['created'],
             'company_id': row['company_id'],
-            'data': {'id': row['resource_id'], 'version': row['version'], 'operation': row['operation']}}
+            'data': {'id': row['resource_id'], 'version': row['version'] or None, 'operation': row['operation']}}
 
 
 def encode(value):
@@ -137,6 +137,7 @@ class Integrations:
         self.connections = 0
         with database.read() as conn:
             conn.executescript(SCHEMA)
+            migrate(conn)
             for operation, sql_operation in [('created', 'INSERT'), ('updated', 'UPDATE')]:
                 conn.executescript(f"""CREATE TRIGGER IF NOT EXISTS integration_center_{operation}
                 AFTER {sql_operation} ON cost_centers BEGIN
@@ -148,8 +149,7 @@ class Integrations:
         if (not credential or credential['revoked'] or credential['expires'] <= time.time()
                 or credential['company_id'] != cid or scope not in json.loads(credential['scopes'])):
             raise DomainError('Credencial inválida para este recurso.', 401, 'integration_unauthorized')
-        for action in ('read', 'export'):
-            require(conn, credential['user_id'], cid, 'accounting.cost_centers', action)
+        authorize_scope(conn,credential['user_id'],cid,scope)
         # Removing delegation permission also stops previously issued credentials.
         require(conn, credential['user_id'], cid, 'system.integrations', 'create')
         return credential
@@ -170,15 +170,15 @@ class Integrations:
         return row
 
     def issue(self, cid, uid, scopes, expires_in):
-        if not isinstance(scopes, list) or not scopes or any(not isinstance(s,str) or s not in SCOPES for s in scopes):
+        if not isinstance(scopes, list) or not scopes or len(scopes) > len(SCOPES) or any(not isinstance(s,str) or s not in SCOPES for s in scopes):
             raise DomainError('Escopos inválidos.', 422, 'invalid_scope')
         if type(expires_in) is not int or not 60 <= expires_in <= 2592000:
             raise DomainError('Validade deve ser de 60 segundos a 30 dias.', 422, 'invalid_expiry')
         token, ident = secrets.token_urlsafe(32), secrets.token_hex(16)
         with self.db.transaction() as conn:
             require(conn, uid, cid, 'system.integrations', 'create')
-            for action in ('read', 'export'):
-                require(conn, uid, cid, 'accounting.cost_centers', action)
+            for scope in scopes:
+                authorize_scope(conn,uid,cid,scope)
             if conn.execute('SELECT count(*) FROM integration_credentials WHERE company_id=? AND revoked=0 AND expires>?', (cid, time.time())).fetchone()[0] >= 50:
                 raise DomainError('Limite de credenciais ativas.', 409, 'credential_limit')
             conn.execute('INSERT INTO integration_credentials VALUES(?,?,?,?,?,?,0,?)',
@@ -191,8 +191,10 @@ class Integrations:
             raise DomainError('Chave de webhooks não configurada.', 503, 'webhooks_unconfigured')
         return hmac.new(self.master.encode(), ident.encode(), hashlib.sha256).hexdigest()
 
-    def events(self, conn, cid, after, limit=100):
-        return [envelope(r) for r in conn.execute('SELECT * FROM integration_events WHERE company_id=? AND seq>? ORDER BY seq LIMIT ?', (cid, after, limit))]
+    def events(self, conn, cid, after, limit=100, resource='cost-centers'):
+        names = subscriptions(resource)
+        placeholders = ','.join('?' for _ in names)
+        return [envelope(r) for r in conn.execute('SELECT * FROM integration_events WHERE company_id=? AND seq>? AND resource IN ('+placeholders+') ORDER BY seq LIMIT ?', (cid, after, *names, limit))]
 
     def dispatch_one(self):
         """One writer lease, crash recovery, at-least-once delivery; no secret in audit."""
@@ -202,7 +204,7 @@ class Integrations:
             for hook in conn.execute('SELECT * FROM integration_webhooks WHERE revoked=0 LIMIT 100'):
                 credential = conn.execute('SELECT * FROM integration_credentials WHERE id=?', (hook['credential_id'],)).fetchone()
                 try:
-                    self.check(conn, credential, credential['company_id'], 'webhooks:deliver')
+                    self.check(conn, credential, credential['company_id'], scope_for(hook['resource'],'webhooks'))
                 except DomainError:
                     continue
                 pending = conn.execute("SELECT count(*) FROM integration_deliveries WHERE webhook_id=? AND state IN ('pending','inflight')", (hook['id'],)).fetchone()[0]
@@ -210,8 +212,8 @@ class Integrations:
                     continue
                 last = conn.execute('SELECT coalesce(max(event_seq),?) FROM integration_deliveries WHERE webhook_id=?', (hook['start_seq'], hook['id'])).fetchone()[0]
                 conn.execute('''INSERT OR IGNORE INTO integration_deliveries(webhook_id,event_seq)
-                    SELECT ?,seq FROM integration_events WHERE company_id=? AND seq>? ORDER BY seq LIMIT ?''', (hook['id'], credential['company_id'], last,100-pending))
-            row = conn.execute('''SELECT d.*,w.url,w.credential_id,w.revoked FROM integration_deliveries d
+                    SELECT ?,seq FROM integration_events WHERE company_id=? AND seq>? AND resource=? ORDER BY seq LIMIT ?''', (hook['id'], credential['company_id'], last,hook['resource'],100-pending))
+            row = conn.execute('''SELECT d.*,w.url,w.credential_id,w.revoked,w.resource FROM integration_deliveries d
                 JOIN integration_webhooks w ON w.id=d.webhook_id
                 WHERE d.state IN ('pending','inflight') AND d.next_at<=? AND w.revoked=0
                 AND d.attempts<? ORDER BY d.next_at,d.event_seq LIMIT 1''', (time.time(), MAX_ATTEMPTS)).fetchone()
@@ -219,7 +221,7 @@ class Integrations:
                 return False
             credential = conn.execute('SELECT * FROM integration_credentials WHERE id=?', (row['credential_id'],)).fetchone()
             try:
-                self.check(conn, credential, credential['company_id'], 'webhooks:deliver')
+                self.check(conn, credential, credential['company_id'], scope_for(row['resource'],'webhooks'))
             except DomainError:
                 conn.execute("UPDATE integration_deliveries SET state='cancelled',last_result='authorization' WHERE webhook_id=? AND event_seq=?", (row['webhook_id'],row['event_seq']))
                 return True
@@ -229,7 +231,7 @@ class Integrations:
         body = encode(envelope(event))
         stamp = str(int(time.time()))
         try:
-            status = self.sender(row['url'], body, {'Content-Type': 'application/json', 'X-Escritura-Event': event['id'],
+            status = self.sender(row['url'], body, {'Content-Type': 'application/json', 'X-Escritura-Event': event['id'], 'X-Escritura-Subscription': row['webhook_id'],
                 'X-Escritura-Timestamp': stamp, 'X-Escritura-Signature': 'v1='+signature(secret,stamp,body)}, self.destinations.get(str(credential['company_id']),frozenset()))
             result = 'http_'+str(int(status))
             success = 200 <= status < 300
@@ -288,11 +290,12 @@ def register(application, database):
             raise DomainError('Destino HTTPS não autorizado ou não público.',422,'invalid_destination')
         with database.transaction() as conn:
             credential = conn.execute('SELECT * FROM integration_credentials WHERE id=? AND user_id=?', (payload.get('credential_id'),request.state.session['user']['id'])).fetchone()
-            service.check(conn,credential,cid,'webhooks:deliver')
+            resource = payload.get('resource','cost-centers')
+            service.check(conn,credential,cid,scope_for(resource,'webhooks'))
             if conn.execute('SELECT count(*) FROM integration_webhooks WHERE revoked=0').fetchone()[0] >= 100:
                 raise DomainError('Limite de destinos.',409,'webhook_limit')
             start = conn.execute('SELECT coalesce(max(seq),0) FROM integration_events').fetchone()[0]
-            conn.execute('INSERT INTO integration_webhooks VALUES(?,?,?,?,0)', (ident,credential['id'],url,start))
+            conn.execute('INSERT INTO integration_webhooks(id,credential_id,url,start_seq,revoked,resource) VALUES(?,?,?,?,0,?)', (ident,credential['id'],url,start,resource))
             audit(conn,cid,str(credential['user_id']),'create','webhook',ident)
         return {'id':ident,'signing_secret':secret,'start_sequence':start}
 
@@ -324,20 +327,30 @@ def register(application, database):
         return JSONResponse({'version':'1','items':rows,'next_cursor':rows[-1]['id'] if rows else after},headers={'Cache-Control':'no-store'})
 
     @application.get('/integrations/v1/companies/{cid}/events')
-    def events(cid: int, request: Request, after: int = Query(0,ge=0,le=9223372036854775807), limit: int = Query(100,ge=1,le=100)):
+    def events(cid: int, request: Request, resource: str = 'cost-centers', resources: list[str] | None = Query(None), after: int = Query(0,ge=0,le=9223372036854775807), limit: int = Query(100,ge=1,le=100)):
+        if resources is not None and 'resource' in request.query_params:
+            raise DomainError('Use resource ou resources, não ambos.',422,'invalid_subscription')
+        names = subscriptions(resources if resources is not None else resource)
         with database.transaction() as conn:
-            service.authenticate(conn,bearer(request),cid,'events:read',limited=True)
-            rows = service.events(conn,cid,after,limit)
+            credential = service.authenticate(conn,bearer(request),cid,scope_for(names[0],'events'),limited=True)
+            for name in names[1:]:
+                service.check(conn,credential,cid,scope_for(name,'events'))
+            rows = service.events(conn,cid,after,limit,names)
         return JSONResponse({'events':rows,'next_cursor':rows[-1]['sequence'] if rows else after},headers={'Cache-Control':'no-store'})
 
-    def stream_auth(token, cid):
+    def stream_auth(token, cid, resource):
         with database.transaction() as conn:
-            return service.authenticate(conn,token,cid,'events:read',limited=True)['id']
+            credential = service.authenticate(conn,token,cid,scope_for(resource[0],'events'),limited=True)
+            for name in resource[1:]:
+                service.check(conn,credential,cid,scope_for(name,'events'))
+            return credential['id']
 
-    def stream_batch(token, cid, cursor):
+    def stream_batch(token, cid, cursor, resource):
         with database.read(snapshot=True) as conn:
-            service.authenticate(conn,token,cid,'events:read')
-            return service.events(conn,cid,cursor)
+            credential = service.authenticate(conn,token,cid,scope_for(resource[0],'events'))
+            for name in resource[1:]:
+                service.check(conn,credential,cid,scope_for(name,'events'))
+            return service.events(conn,cid,cursor,resource=resource)
 
     @application.websocket('/integrations/v1/stream')
     async def stream(ws: WebSocket):
@@ -362,14 +375,17 @@ def register(application, database):
             cid, cursor, token = auth['company_id'],auth.get('after',0),auth['token']
             if type(cid) is not int or type(cursor) is not int or not 0 <= cursor <= 9223372036854775807:
                 raise ValueError()
-            key = await asyncio.to_thread(stream_auth,token,cid)
+            if 'resource' in auth and 'resources' in auth:
+                raise ValueError()
+            resource = subscriptions(auth.get('resources',auth.get('resource','cost-centers')))
+            key = await asyncio.to_thread(stream_auth,token,cid,resource)
             if service.sockets.get(key,0) >= 3:
                 key = None
                 await ws.close(code=1013)
                 return
             service.sockets[key] = service.sockets.get(key,0)+1
             while True:
-                rows = await asyncio.to_thread(stream_batch,token,cid,cursor)
+                rows = await asyncio.to_thread(stream_batch,token,cid,cursor,resource)
                 if rows:
                     cursor = rows[-1]['sequence']
                 await asyncio.wait_for(ws.send_json({'events':rows,'next_cursor':cursor}),5)
@@ -393,3 +409,6 @@ def register(application, database):
                 service.sockets[key] -= 1
                 if not service.sockets[key]:
                     del service.sockets[key]
+
+    from .integration_domain_api import register as register_domains
+    register_domains(application,database,service,bearer)

@@ -114,7 +114,7 @@ Em **Empresas → Operação**, configure restrições opcionais e modelos reuti
 
 ## API externa e eventos
 
-O corte v1 oferece consulta de centros de custo, eventos persistidos, webhooks assinados e WebSocket com cursor, credenciais revogáveis e permissões por empresa. Gestão via API interna; os demais domínios ainda não estão expostos externamente. Consulte [contratos, configuração, testes e lacunas](docs/INTEGRATION_API_V1.md).
+A API externa oferece projeções de leitura de 37 recursos e eventos de 35 recursos, com webhooks assinados, WebSocket com cursor/ACK, credenciais revogáveis e permissões por empresa e domínio. Gestão e recuperação de entregas via API interna. A cobertura continua parcial: comandos externos, relatórios e conteúdos completos ainda têm lacunas. Consulte [matriz de domínios e contratos](docs/INTEGRATION_DOMAINS_V1.md) e [configuração do transporte](docs/INTEGRATION_API_V1.md).
 
 ## Limites que permanecem explícitos
 
