@@ -152,7 +152,7 @@ class LocalApplicationServer:
             server = uvicorn.Server(uvicorn.Config(
                 api, host="127.0.0.1", port=self._port, workers=1,
                 loop="asyncio", http="h11", lifespan="on",
-                log_config=None, access_log=False, timeout_graceful_shutdown=10,
+                log_config=None, access_log=False, ws_max_size=2048, ws_max_queue=4, ws_per_message_deflate=False, timeout_graceful_shutdown=10,
             ))
             with self._lock:
                 self._server = server

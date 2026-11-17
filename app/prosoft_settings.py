@@ -31,7 +31,7 @@ def assert_settings_version(conn, cid, mode, payload):
 def mapping_values(value, kind):
     if not isinstance(value, dict): raise DomainError('Mapeamento Prosoft inválido.')
     allowed = {'code', 'confirmed'} | ({'third_mode', 'third', 'third_type', 'create_account'} if kind == 'account' else
-                                      {'third_type'} if kind == 'participant' else set())
+                                      {'third_type', 'create_third'} if kind == 'participant' else set())
     if set(value) - allowed: raise DomainError('Propriedade de mapeamento Prosoft desconhecida.')
     result = dict(value)
     code = result.get('code', '')
@@ -66,6 +66,9 @@ def mapping_values(value, kind):
         third_type = result.get('third_type', 'normal')
         if not isinstance(third_type, str) or third_type not in {'normal', 'free'}: raise DomainError('Tipo de terceiro inválido.')
         result['third_type'] = third_type
+    if kind == 'participant' and result.get('create_third') is not None:
+        from .prosoft_trc import validate_registration
+        validate_registration(result)
     return result
 
 

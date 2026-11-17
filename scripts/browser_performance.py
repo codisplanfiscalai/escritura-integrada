@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from collections import deque
 import json
 import importlib.util
 import os
@@ -95,23 +96,58 @@ def stop_server(process):
         process.wait(timeout=5)
 
 
+class RequestMetrics:
+    """Record starts immediately; decode completed bodies only in the main flow.
+
+    Playwright sync calls can yield to the scenario from inside event callbacks.
+    A callback must not wait on response/body RPCs or mutate a late list snapshot.
+    """
+    def __init__(self, records):
+        self.records = records
+        self.started = {}
+        self.completed = deque()
+
+    def start(self, request):
+        if '/api/' not in request.url:
+            return
+        entry = {'path': urlparse(request.url).path, 'url': request.url,
+                 'method': request.method, 'status': None, 'decoded_bytes': None,
+                 'elapsed_ms': None}
+        self.records.append(entry)
+        self.started[request] = (entry, time.perf_counter())
+
+    def finish(self, request):
+        if request not in self.started:
+            return
+        entry, begin = self.started.pop(request)
+        entry['elapsed_ms'] = round((time.perf_counter() - begin) * 1000, 2)
+        self.completed.append((request, entry))
+
+    def collect(self):
+        while self.completed:
+            request, entry = self.completed.popleft()
+            response = request.response()
+            entry['status'] = response.status if response else None
+            entry['decoded_bytes'] = len(response.body()) if response else 0
+
+
+def assert_account_page_read(current):
+    reads = [r for r in current if r['path'].endswith('/accounts')]
+    assert len(reads) == 1, current
+    read = reads[0]
+    assert parse_qs(urlparse(read['url']).query).get('page') == ['1'], current
+    assert read['method'] == 'GET' and read['status'] == 200, current
+    assert isinstance(read['decoded_bytes'], int) and 0 < read['decoded_bytes'] < 100000, reads
+    assert not any(r['path'].endswith(('/journals', '/cost-centers', '/masters/history')) for r in current), current
+
+
 def scenario(page, url, fixture, report, baseline=False):
     from playwright.sync_api import expect
 
     requests = report['requests']
-    started = {}
-
-    def finished(request):
-        if '/api/' not in request.url:
-            return
-        response = request.response()
-        requests.append({'path': urlparse(request.url).path, 'url': request.url,
-                         'method': request.method, 'status': response.status if response else None,
-                         'decoded_bytes': len(response.body()) if response else 0,
-                         'elapsed_ms': round((time.perf_counter() - started.pop(request, time.perf_counter())) * 1000, 2)})
-
-    page.on('request', lambda request: started.__setitem__(request, time.perf_counter()))
-    page.on('requestfinished', finished)
+    metrics = RequestMetrics(requests)
+    page.on('request', metrics.start)
+    page.on('requestfinished', metrics.finish)
     page.on('pageerror', lambda error: report['console_errors'].append(str(error)))
     page.on('requestfailed', lambda request: report.setdefault('request_failures', []).append({'url': request.url, 'error': request.failure}) if '/api/' in request.url else None)
     page.set_default_timeout(20000 if not baseline else 60000)
@@ -133,18 +169,21 @@ def scenario(page, url, fixture, report, baseline=False):
         expect(page.get_by_role('tab', name=label, exact=True)).to_have_attribute('aria-selected', 'true')
 
     def measure(name, label, ready, response_suffix=None):
+        metrics.collect()
         offset = len(requests)
         begin = time.perf_counter()
         if response_suffix:
             # An empty fixture must not be mistaken for ready before its read.
-            with page.expect_response(lambda response: urlparse(response.url).path.endswith(response_suffix) and response.status == 200) as pending:
+            with page.expect_request_finished(lambda request: urlparse(request.url).path.endswith(response_suffix)) as pending:
                 nav(label)
-            pending.value.finished()
+            response = pending.value.response()
+            assert response is not None and response.status == 200, response_suffix
         else:
             nav(label)
         ready()
         elapsed = round((time.perf_counter() - begin) * 1000, 2)
         page.wait_for_load_state('networkidle')
+        metrics.collect()
         current = requests[offset:]
         report['measurements'][name] = {'ready_ms': elapsed, 'requests': current}
         return current
@@ -175,21 +214,24 @@ def scenario(page, url, fixture, report, baseline=False):
     page.get_by_role('dialog').get_by_role('button', name='Fechar', exact=True).click()
     expect(page.get_by_role('dialog')).to_have_count(0)
     main.get_by_label('Pesquisar títulos', exact=True).fill('')
+    metrics.collect()
     offset = len(requests)
     if not baseline:
-        # networkidle may already belong to the earlier SPA navigation. Wait
-        # for both complete lazy reads before inspecting requestfinished metrics.
-        with page.expect_response(lambda response: urlparse(response.url).path.endswith('/documents') and response.status == 200) as documents_read, \
-             page.expect_response(lambda response: urlparse(response.url).path.endswith('/masters/participant') and response.status == 200) as participants_read:
+        # SPA networkidle can belong to the earlier navigation. Observe actual
+        # completed reads without detached Response.finished tasks at teardown.
+        with page.expect_request_finished(lambda request: urlparse(request.url).path.endswith('/documents')) as documents_read, \
+             page.expect_request_finished(lambda request: urlparse(request.url).path.endswith('/masters/participant')) as participants_read:
             main.get_by_role('button', name='Novo título', exact=True).click()
-        documents_read.value.finished()
-        participants_read.value.finished()
+        for request in (documents_read.value, participants_read.value):
+            response = request.response()
+            assert response is not None and response.status == 200, request.url
     else:
         main.get_by_role('button', name='Novo título', exact=True).click()
     dialog = page.get_by_role('dialog')
     expect(dialog).to_be_visible()
     expect(dialog.get_by_role('button', name='Salvar título', exact=True)).to_be_enabled()
     page.wait_for_load_state('networkidle')
+    metrics.collect()
     if not baseline:
         modal_paths = [r['path'] for r in requests[offset:]]
         assert any(path.endswith('/documents') for path in modal_paths), modal_paths
@@ -198,12 +240,15 @@ def scenario(page, url, fixture, report, baseline=False):
     dialog.get_by_role('button', name='Cancelar', exact=True).click()
     expect(dialog).to_have_count(0)
 
-    current = measure('accounts', 'Plano de contas', lambda: expect(main.locator('table tbody tr')).to_have_count(50))
+    def accounts_ready():
+        if not baseline:
+            expect(main.get_by_role('heading', name='Plano de contas', exact=True)).to_be_visible()
+            expect(main.get_by_role('columnheader', name='Acesso', exact=True)).to_be_visible()
+        expect(main.locator('table tbody tr')).to_have_count(50)
+
+    current = measure('accounts', 'Plano de contas', accounts_ready, None if baseline else '/accounts')
     if not baseline:
-        account_reads = [r for r in current if r['path'].endswith('/accounts')]
-        assert len(account_reads) == 1 and 'page=1' in account_reads[0]['url'], current
-        assert account_reads[0]['decoded_bytes'] < 100000, account_reads
-        assert not any(r['path'].endswith(('/journals', '/cost-centers', '/masters/history')) for r in current), current
+        assert_account_page_read(current)
     expect(main.get_by_text(f"{fixture['account_count']} registros", exact=True).first).to_be_visible()
     main.get_by_label('Pesquisar contabilidade', exact=True).fill(fixture['accent_search'])
     expect(main.locator('table tbody tr')).to_have_count(1)
@@ -235,6 +280,7 @@ def scenario(page, url, fixture, report, baseline=False):
     if not baseline:
         no_catalogs(current)
         assert not any('/global-account-plans' in r['path'] for r in current), current
+    metrics.collect()
     assert not report['console_errors'], report['console_errors']
     assert not report.get('request_failures'), report.get('request_failures')
     assert all(r['status'] is not None and r['status'] < 400 for r in requests), requests

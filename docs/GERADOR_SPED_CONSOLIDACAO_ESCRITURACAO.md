@@ -56,14 +56,17 @@ vazios; os seis hashes de equivalência com a referência continuam verificados.
 Não se declara equivalência byte a byte entre esse exportador completo e o novo
 recorte parcial.
 
-**Limite anterior do domínio, observado no teste:** para C190, chave tributária
-ausente produz desconhecido, enquanto null explícito em certos campos passa pelo
-normalizador fiscal anterior como zero. O adaptador não consegue recuperar uma
-ausência já normalizada a montante; preserva o valor da projeção recebida. O serviço
-fiscal e o arquivo individual anterior não foram alterados para fazer testes
-passarem. Essa distinção exige revisão própria e impede afirmar preservação
-universal de null na cadeia inteira. A fixture de ausência usa chave ausente,
-conforme o contrato real; a falha inicial com null foi preservada na evidência local.
+**Correção da projeção C190:** os campos VL_BC_ICMS e VL_ICMS agora conservam
+chave ausente, null explícito e string vazia como desconhecidos (None), sem
+convertê-los em zero. Zeros explicitamente informados continuam conhecidos.
+A geração individual e a consolidação operacional mantêm os campos em branco
+quando qualquer parcela é desconhecida, com os diagnósticos existentes. Valores
+conhecidos e o caminho nativo sobre EFD original não são alterados.
+
+A correção é somente de leitura/projeção: não migra dados, não altera originais,
+não calcula créditos ou saldos e não recupera informação que tenha sido perdida
+anteriormente. Não é uma declaração de preservação universal de null para todos
+os campos fiscais, nem de homologação no PVA.
 
 Caso uma transformação não possa conservar os vínculos (duplicatas, chave
 inválida, registro ainda não suportado ou ambiguidade), a resposta mantém o arquivo

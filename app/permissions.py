@@ -8,17 +8,18 @@ ACTIONS = {'read': 'Consultar', 'create': 'Incluir', 'edit': 'Editar', 'delete':
            'import': 'Importar', 'export': 'Exportar', 'print': 'Imprimir', 'book': 'Escriturar',
            'settle': 'Realizar baixas', 'reverse': 'Estornar', 'close': 'Fechar', 'reopen': 'Reabrir'}
 ROUTINES = {
+    'system.integrations': ('Integrações por empresa', 'read create delete'),
     'fiscal.documents': ('Escrituração e documentos', 'read create edit delete book reverse export print'),
     'fiscal.imports': ('Importações fiscais', 'read import export delete'),
     'fiscal.shared_parties': ('Catálogo global de terceiros', 'read create edit delete'),
-    'fiscal.masters': ('Cadastros fiscais', 'read create edit delete'),
-    'fiscal.parameters': ('Parametrizações fiscais', 'read create edit delete'),
+    'fiscal.masters': ('Cadastros fiscais', 'read create edit delete export'),
+    'fiscal.parameters': ('Parametrizações fiscais', 'read create edit delete export'),
     'fiscal.assessments': ('Apurações e ajustes', 'read create edit reverse book export print'),
     'fiscal.reports': ('Livros e relatórios fiscais', 'read export print'),
     'accounting.journals': ('Lançamentos e saldos iniciais', 'read create edit delete book reverse export print'),
-    'accounting.accounts': ('Plano de contas', 'read create edit delete'),
-    'accounting.histories': ('Históricos e modelos contábeis', 'read create edit delete'),
-    'accounting.cost_centers': ('Centros de custo', 'read create edit delete'),
+    'accounting.accounts': ('Plano de contas', 'read create edit delete export'),
+    'accounting.histories': ('Históricos e modelos contábeis', 'read create edit delete export'),
+    'accounting.cost_centers': ('Centros de custo', 'read create edit delete export'),
     'accounting.reports': ('Livros e demonstrações', 'read export print'),
     'accounting.imports': ('Importações contábeis', 'read import export'),
     'financial.imports': ('Importação de títulos', 'read import export'),
@@ -28,15 +29,15 @@ ROUTINES = {
     'fiscal.prosoft': ('Integração fiscal Prosoft', 'read edit export'),
     'accounting.prosoft': ('Integração Prosoft', 'read edit export'),
     'financial.titles': ('Títulos a pagar e receber', 'read create edit reverse export print'),
-    'financial.settlements': ('Baixas financeiras', 'read settle reverse'),
+    'financial.settlements': ('Baixas financeiras', 'read settle reverse export'),
     'financial.reconciliation': ('Conciliação bancária e de participantes', 'read import edit reverse export print'),
     'financial.reports': ('Relatórios financeiros', 'read export print'),
     'accounting.accountants': ('Cadastro de contadores', 'read create edit delete'),
-    'system.companies': ('Cadastro da empresa', 'read edit'),
+    'system.companies': ('Cadastro da empresa', 'read edit export'),
     'system.audit': ('Auditoria da empresa', 'read export'),
 }
 for _module in ('fiscal', 'accounting', 'financial', 'social'):
-    ROUTINES[_module + '.periods'] = ('Exercícios e competências', 'read create close reopen')
+    ROUTINES[_module + '.periods'] = ('Exercícios e competências', 'read create close reopen export')
 
 
 def catalog():
@@ -147,7 +148,11 @@ def route_policy(path, method, query, payload, session):
     if tail == '':
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
+    if root == 'integrations':
+        return 'system.integrations', action, False
     if root in {'fiscal-sales-accounting', 'fiscal-purchases-accounting'}:
+        if root == 'fiscal-sales-accounting' and tail.endswith('/payments'):
+            return 'accounting.accounts', 'read', False
         if tail.endswith('/settings'):
             return 'accounting.accounts', 'edit' if write else 'read', False
         return 'accounting.journals', 'create' if write and not tail.endswith('/preview') else 'read', False
