@@ -1,4 +1,4 @@
-"""Local A1 credentials. Never accepts certificates or secrets from HTTP."""
+"""Shared A1 validation plus operator-managed local profiles."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -127,44 +127,50 @@ class LocalA1Credentials:
         except (OSError, KeyError, TypeError, ValueError):
             raise DomainError('Perfil local de recepção inválido ou senha local indisponível.', 503, 'reception_credentials') from None
         raw = _private_file(root / filename, 5_000_000)
-        if sys.platform == 'darwin' and platform.machine() == 'x86_64':
-            from .reception_native import NativeA1Bridge
-            return NativeA1Bridge().load(raw,password,target,provider,environment,allow)
-        try:
-            from cryptography.hazmat.primitives import serialization
-            from cryptography.hazmat.primitives.serialization.pkcs12 import load_key_and_certificates
-        except ImportError:
-            raise DomainError('Runtime A1 incompleto. Confira a instalação do aplicativo antes de habilitar o transporte.', 503, 'reception_dependency_missing') from None
-        try:
-            key, cert, chain = load_key_and_certificates(raw, password.encode())
-            if key is None or cert is None:
-                raise ValueError()
-            holder = certificate_cnpj(cert)
-            clock = datetime.now(timezone.utc)
-            if not cert.not_valid_before_utc <= clock < cert.not_valid_after_utc:
-                raise DomainError('Certificado fora da validade; consulta não executada.', 409, 'reception_certificate_expired')
-            if provider == 'nfe_distribution':
-                if _cnpj(target)[:8] != holder[:8]:
-                    raise DomainError('Distribuição NF-e exige certificado da mesma raiz da empresa consultada neste adaptador.', 409, 'reception_certificate_identity')
-            else:
-                adn_access_mode(target, holder, allow)
-            context = ssl.create_default_context()
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-            # SSLContext accepts files. Only encrypted ephemeral PEM is written,
-            # with owner-only permissions, removed before returning the context.
-            temporary_password = secrets.token_urlsafe(32).encode()
-            encrypted_key = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                                               serialization.BestAvailableEncryption(temporary_password))
-            public_chain = b''.join(c.public_bytes(serialization.Encoding.PEM) for c in [cert, *(chain or [])])
-            with tempfile.TemporaryDirectory(prefix='escritura-a1-') as directory:
-                for name, content in [('key.pem', encrypted_key), ('chain.pem', public_chain)]:
-                    path = Path(directory) / name
-                    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                    with os.fdopen(descriptor, 'wb') as output:
-                        output.write(content)
-                context.load_cert_chain(str(Path(directory) / 'chain.pem'), str(Path(directory) / 'key.pem'), lambda: temporary_password)
-            return ClientIdentity(holder, context, allow)
-        except DomainError:
-            raise
-        except (OSError, TypeError, ValueError, ssl.SSLError):
-            raise DomainError('Não foi possível carregar o A1. Confira arquivo, senha e compatibilidade local.', 503, 'reception_credentials') from None
+        return load_a1(raw,password,target,provider,environment,allow)
+
+
+def load_a1(raw,password,target,provider,environment,allow=False):
+    """Same identity, validity and TLS policy for either credential store."""
+    target=query_cnpj(target,provider)
+    if sys.platform == 'darwin' and platform.machine() == 'x86_64':
+        from .reception_native import NativeA1Bridge
+        return NativeA1Bridge().load(raw,password,target,provider,environment,allow)
+    try:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.serialization.pkcs12 import load_key_and_certificates
+    except ImportError:
+        raise DomainError('Runtime A1 incompleto. Confira a instalação do aplicativo antes de habilitar o transporte.', 503, 'reception_dependency_missing') from None
+    try:
+        key, cert, chain = load_key_and_certificates(raw, password.encode())
+        if key is None or cert is None:
+            raise ValueError()
+        holder = certificate_cnpj(cert)
+        clock = datetime.now(timezone.utc)
+        if not cert.not_valid_before_utc <= clock < cert.not_valid_after_utc:
+            raise DomainError('Certificado fora da validade; consulta não executada.', 409, 'reception_certificate_expired')
+        if provider == 'nfe_distribution':
+            if _cnpj(target)[:8] != holder[:8]:
+                raise DomainError('Distribuição NF-e exige certificado da mesma raiz da empresa consultada neste adaptador.', 409, 'reception_certificate_identity')
+        else:
+            adn_access_mode(target, holder, allow)
+        context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        # SSLContext accepts files. Only encrypted ephemeral PEM is written,
+        # with owner-only permissions, removed before returning the context.
+        temporary_password = secrets.token_urlsafe(32).encode()
+        encrypted_key = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                           serialization.BestAvailableEncryption(temporary_password))
+        public_chain = b''.join(c.public_bytes(serialization.Encoding.PEM) for c in [cert, *(chain or [])])
+        with tempfile.TemporaryDirectory(prefix='escritura-a1-') as directory:
+            for name, content in [('key.pem', encrypted_key), ('chain.pem', public_chain)]:
+                path = Path(directory) / name
+                descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, 'wb') as output:
+                    output.write(content)
+            context.load_cert_chain(str(Path(directory) / 'chain.pem'), str(Path(directory) / 'key.pem'), lambda: temporary_password)
+        return ClientIdentity(holder, context, allow)
+    except DomainError:
+        raise
+    except (OSError, TypeError, ValueError, ssl.SSLError):
+        raise DomainError('Não foi possível carregar o A1. Confira arquivo, senha e compatibilidade local.', 503, 'reception_credentials') from None
