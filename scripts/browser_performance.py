@@ -240,7 +240,13 @@ def scenario(page, url, fixture, report, baseline=False):
     dialog.get_by_role('button', name='Cancelar', exact=True).click()
     expect(dialog).to_have_count(0)
 
-    current = measure('accounts', 'Plano de contas', lambda: expect(main.locator('table tbody tr')).to_have_count(50), '/accounts')
+    def accounts_ready():
+        if not baseline:
+            expect(main.get_by_role('heading', name='Plano de contas', exact=True)).to_be_visible()
+            expect(main.get_by_role('columnheader', name='Acesso', exact=True)).to_be_visible()
+        expect(main.locator('table tbody tr')).to_have_count(50)
+
+    current = measure('accounts', 'Plano de contas', accounts_ready, None if baseline else '/accounts')
     if not baseline:
         assert_account_page_read(current)
     expect(main.get_by_text(f"{fixture['account_count']} registros", exact=True).first).to_be_visible()

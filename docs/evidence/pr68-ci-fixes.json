@@ -1,0 +1,152 @@
+{
+  "parent_head": "51d072e4235bc3e2a8da8c3df48f2f2a6038fb8b",
+  "base": "2a80b87ce2e2666013dff54dfe678e66a90b54e2",
+  "version": "0.9.0-dev.41",
+  "provenance": "Synthetic-only worktree checks before documentation commit; source_sha in browser artifacts is the parent HEAD while the script fixes were uncommitted. Source hashes below identify tested code. No clean-head or new-CI success claim.",
+  "original_ci": {
+    "run_id": 43991979091,
+    "linux_job_id": 133734609627,
+    "project_check": "success",
+    "postgres": "success",
+    "failed_steps": [
+      "fiscal accounting Chromium",
+      "performance Chromium"
+    ]
+  },
+  "source_sha256": {
+    "scripts/browser_fiscal_sales_accounting.py": "5c6ac8fb444e791312f2b752d5518beac3aab0aae17ed1b1e47da193064aa623",
+    "scripts/browser_performance.py": "80c2d317f22a912e179ff09b184f4f7bedf8f040eb1265bd3859050479985106",
+    "tests/test_browser_fiscal_accounting_entrypoint.py": "e8e36033b7d9926f072aab5b3a6e2393a8971c1e6733fb03f07fe1df52a37739"
+  },
+  "application_frontend_workflows_unchanged": true,
+  "before": {
+    "fiscal_ok": false,
+    "fiscal_error": "No module named 'app'",
+    "fiscal_completed_groups": 11,
+    "performance_normal_ok": true,
+    "controlled_body_delay_ms": 1500,
+    "controlled_ok": false,
+    "controlled_recorded_account_reads": 0,
+    "controlled_dom_rows": 50,
+    "controlled_dom_account_heading": true
+  },
+  "after": {
+    "pythonpath_unset": true,
+    "playwright": "1.62.0",
+    "chromium": "151.0.7922.34",
+    "fiscal_ok": true,
+    "fiscal_groups": 12,
+    "fiscal_console_errors": [],
+    "payment_split_total_cents": 1703,
+    "payment_split_journal_count": 1,
+    "normal_performance_runs": [
+      {
+        "ok": true,
+        "account_read_count": 1,
+        "account_page_one": true,
+        "account_decoded_bytes": [
+          12748
+        ],
+        "measurement_names": [
+          "payables",
+          "accounts",
+          "participants",
+          "payables_return"
+        ],
+        "request_count": 40,
+        "console_errors": [],
+        "secondary_errors": [],
+        "metric_waits": [],
+        "checks": [
+          "183 payables, filter, history and cancel without mutations",
+          "22597 accounts, accent search, second page",
+          "no hidden-screen or unrelated catalog loads"
+        ]
+      },
+      {
+        "ok": true,
+        "account_read_count": 1,
+        "account_page_one": true,
+        "account_decoded_bytes": [
+          12748
+        ],
+        "measurement_names": [
+          "payables",
+          "accounts",
+          "participants",
+          "payables_return"
+        ],
+        "request_count": 40,
+        "console_errors": [],
+        "secondary_errors": [],
+        "metric_waits": [],
+        "checks": [
+          "183 payables, filter, history and cancel without mutations",
+          "22597 accounts, accent search, second page",
+          "no hidden-screen or unrelated catalog loads"
+        ]
+      }
+    ],
+    "controlled_body_delay_ms": 1500,
+    "controlled_performance": {
+      "ok": true,
+      "account_read_count": 1,
+      "account_page_one": true,
+      "account_decoded_bytes": [
+        12748
+      ],
+      "measurement_names": [
+        "payables",
+        "accounts",
+        "participants",
+        "payables_return"
+      ],
+      "request_count": 40,
+      "console_errors": [],
+      "secondary_errors": [],
+      "metric_waits": [
+        2
+      ],
+      "checks": [
+        "183 payables, filter, history and cancel without mutations",
+        "22597 accounts, accent search, second page",
+        "no hidden-screen or unrelated catalog loads"
+      ]
+    }
+  },
+  "backend": {
+    "modules": [
+      "test_browser_fiscal_accounting_entrypoint",
+      "test_browser_performance_evidence",
+      "test_performance_workflows",
+      "test_fiscal_payment_allocations",
+      "test_fiscal_sales_accounting",
+      "test_fiscal_incoming_accounting",
+      "test_direct_fiscal_accounting",
+      "test_fiscal_sales_composition",
+      "test_fiscal_accounting_prosoft_composition",
+      "test_workspace_context",
+      "test_document_preview"
+    ],
+    "tests_run": 97,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "ok": true,
+    "seconds": 85.831
+  },
+  "frontend": {
+    "passed": 209,
+    "failed": 0,
+    "skipped": 0
+  },
+  "build": {
+    "ok": true,
+    "warning": "Existing chunk above 500kB"
+  },
+  "limits": [
+    "Full backend suite, PostgreSQL, containers and native packages not rerun locally",
+    "Exact-head CI must be checked after publication",
+    "No merge, release, deployment, production or real data"
+  ]
+}
