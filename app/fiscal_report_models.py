@@ -5,6 +5,7 @@ Referências de campos: inventário LFSLIVROS/LFSLIVROSAPUR em
 P2/A e P9 fornecidos pelo usuário. Eles não comprovam fabricante ou paridade.
 Este módulo apresenta exclusivamente o resultado já apurado pelo serviço.
 """
+from .report_tables import table_chunks
 from decimal import Decimal
 from html import escape
 from io import BytesIO
@@ -150,17 +151,19 @@ def fiscal_pdf(result, first_page=1, show_numbers=False):
         body = [header_row]
         for index, row in enumerate(data, 1):
             body.append([p(_display(key, index if key == 'sequence' else row.get(key))) for key, _ in cols])
-        table = LongTable(body, colWidths=[size * usable / sum(v for _, v in cols) for _, size in cols],
-                          repeatRows=1, splitByRow=1, splitInRow=1, hAlign='LEFT')
-        table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e9edf2')),
-            ('LINEBELOW', (0, 0), (-1, 0), .6, colors.HexColor('#475569')),
-            ('LINEBELOW', (0, 1), (-1, -1), .25, colors.HexColor('#d1d5db')),
-            ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ]))
-        story.extend([table, Spacer(1, 6)])
+        for chunk in table_chunks(body):
+            table = LongTable(chunk, colWidths=[size * usable / sum(v for _, v in cols) for _, size in cols],
+                              repeatRows=1, splitByRow=1, splitInRow=1, hAlign='LEFT')
+            table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e9edf2')),
+                ('LINEBELOW', (0, 0), (-1, 0), .6, colors.HexColor('#475569')),
+                ('LINEBELOW', (0, 1), (-1, -1), .25, colors.HexColor('#d1d5db')),
+                ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ]))
+            story.append(table)
+        story.append(Spacer(1, 6))
 
     cancelled = [d for d in (result.get('document_headers') or rows) if d.get('document_state') == 'cancelled']
     if cancelled:

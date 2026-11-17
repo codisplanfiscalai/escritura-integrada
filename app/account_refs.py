@@ -29,7 +29,17 @@ def canonical_payload_accounts(conn,cid,payload):
 def resolve_account(conn, cid, value, materialize=False, actor=None):
     value = account_ref(value)
     if value > 0:
-        row = conn.execute('SELECT * FROM effective_accounts WHERE company_id=? AND id=?', (cid,value)).fetchone()
+        # Positive references can only be materialized company rows. Querying the
+        # UNION view also scans every virtual plan entry for every journal line.
+        row = conn.execute("""SELECT a.id,a.company_id,a.access_code,
+            COALESCE(a.classifier,g.classifier) AS classifier,COALESCE(a.name,g.name) AS name,
+            COALESCE(a.nature,g.nature) AS nature,COALESCE(a.analytical,g.analytical) AS analytical,
+            COALESCE(a.requires_cost_center,g.requires_cost_center) AS requires_cost_center,
+            COALESCE(a.active,g.active) AS active,a.version,
+            COALESCE(a.report_group,g.report_group) AS report_group,
+            COALESCE(a.prosoft_code,g.prosoft_code) AS prosoft_code,a.shared_entry_id
+            FROM accounts a LEFT JOIN global_account_entries g ON g.id=a.shared_entry_id
+            WHERE a.company_id=? AND a.id=?""", (cid,value)).fetchone()
     else:
         entry_id = -value
         # Already used aliases stay valid for retries and old open forms. The
