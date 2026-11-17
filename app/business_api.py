@@ -98,10 +98,12 @@ def register_business_routes(app,core,db,actor,check_date,check_period):
     def partner_reconciliation(cid:int):return core.partner_reconciliation(cid)
 
     @app.get('/api/companies/{cid}/business-reports/{kind}')
-    def report(cid:int,kind:str,request:Request,start:str,end:str,account_id:int|None=None,cost_center_id:int|None=None,query:str='',status:str='',direction:str='',cfop:str='',ncm:str='',format:str='json',model:str='internal',first_page:int=1,show_numbers:bool=False):
+    def report(cid:int,kind:str,request:Request,start:str,end:str,account_id:int|None=None,cost_center_id:int|None=None,query:str='',status:str='',direction:str='',cfop:str='',ncm:str='',format:str='json',model:str='internal',first_page:int=1,show_numbers:bool=False,bank_account:str=''):
         check_period(request,start[:7]);check_period(request,end[:7])
         from .fiscal_reports import FISCAL_REPORTS
-        result=core.fiscal_report(cid,kind,start,end,query,status,direction,cfop,ncm) if kind in FISCAL_REPORTS else core.business_report(cid,kind,start,end,account_id,cost_center_id,query,status,direction)
+        if bank_account and kind!='bank-movements':raise DomainError('Filtro de conta bancária disponível somente na movimentação bancária.')
+        if kind=='bank-movements' and (cfop or ncm):raise DomainError('Movimentação bancária não aceita filtros fiscais.')
+        result=core.fiscal_report(cid,kind,start,end,query,status,direction,cfop,ncm) if kind in FISCAL_REPORTS else core.business_report(cid,kind,start,end,account_id,cost_center_id,query,status,direction,bank_account)
         from .report_models import CATALOG,report_model_pdf,resolve_model_id
         resolved_model=resolve_model_id(kind,model)
         if resolved_model is not None:

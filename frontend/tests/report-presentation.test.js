@@ -67,3 +67,9 @@ test('espécie, cancelamento e vínculos de origem não se perdem na grade opera
  assert.ok(reportColumns({kind:'partners',rows:[{title_id:1,due_date:'2026-10-01',status:'partial'}]}).includes('due_date'));
  assert.ok(reportColumns({kind:'cash-flow',rows:[{title_id:1,settlement_id:4,cash_cents:-100}]}).includes('title_id'));
 });
+
+test('movimentos bancários distinguem fluxo de saldo e não expõem origem bruta',()=>{
+ const result={kind:'bank-movements',rows:[{bank_id:1,date:'2026-11-01',bank_account:'Teste',reference:'R1',description:'Movimento',incoming_cents:100,outgoing_cents:0,amount_cents:100}],totals:{incoming_cents:100,outgoing_cents:0,net_movement_cents:100,transactions:1}};
+ assert.deepEqual(reportColumns(result),['bank_id','date','bank_account','reference','description','incoming_cents','outgoing_cents']);
+ assert.equal(reportLabel('net_movement_cents'),'Movimento líquido');
+});
