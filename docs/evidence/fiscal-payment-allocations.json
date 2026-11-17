@@ -1,0 +1,180 @@
+{
+  "base": "2a80b87ce2e2666013dff54dfe678e66a90b54e2",
+  "version": "0.9.0-dev.41",
+  "provenance": "Final worktree on develop dev41 with synthetic fixtures and disposable local SQLite databases, before documentation commit. All recorded frontend/backend/browser checks passed on this composition. CI of published head must be checked separately.",
+  "source_sha256": {
+    "app/fiscal_payment_allocations.py": "afe23b669df89e00b3faf9f3dd7b5f420236e85c88f6f1f6a0796241deb0c8e9",
+    "app/fiscal_sales_accounting.py": "2f40a6ee7aadc32f27615520e010983f804ed2e5029d673d1553aa856f606905",
+    "app/permissions.py": "8fb4b65433664cd5707f1f3294a3e0fe82302af52cdb6eabecd7cb459ca25a7c",
+    "frontend/src/views/FiscalSalesAccountingView.vue": "be7cf408edd20758b83e6f3d2dbaa32474fb98d69152d23f213311c47d1e4091",
+    "frontend/tests/fiscal-sales-accounting.test.js": "6b0f1362a9f920e7bc0b9a2fc7197db4b7b0c339acb68f4efea433efe2d2e56e",
+    "scripts/browser_fiscal_sales_accounting.py": "7729f1687382e929ca5e7b8be074139f67cd10ee4479170fbec8e871e585122b",
+    "tests/test_fiscal_payment_allocations.py": "632809695449901d1eb301bfbfa2092355da69c00f7d580e53940561d9015454"
+  },
+  "frontend": {
+    "passed": 209,
+    "failed": 0,
+    "skipped": 0,
+    "command": "node --test frontend/tests/*.test.js"
+  },
+  "backend": {
+    "modules": [
+      "test_fiscal_payment_allocations",
+      "test_fiscal_sales_accounting",
+      "test_fiscal_incoming_accounting",
+      "test_direct_fiscal_accounting",
+      "test_fiscal_sales_composition",
+      "test_fiscal_accounting_prosoft_composition",
+      "test_workspace_context",
+      "test_document_preview"
+    ],
+    "tests_run": 91,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "ok": true,
+    "seconds": 79.616
+  },
+  "browser": {
+    "ok": true,
+    "synthetic_only": true,
+    "checks": [
+      "Pagination, empty/combined/rapid filters and KeepAlive navigation are read-only",
+      "Compact notes/actions, repeated subguides and keyboard retain selection/accounts/history with zero extra reads; desktop and 390px layouts stay contained",
+      "Canceling a read-only preview under latency preserves selection and data; a fresh preview remains available",
+      "Daily direct accounts, optional model regression preserved: 0.01 + 10.02 => one balanced 10.03 journal; lost response after commit and exact-key retry do not duplicate; both sources traced",
+      "Individual: three notes/dates/CFOP/accounts => three journals; company B has two independent journals; saved company mode and previous movements preserved",
+      "Fiscal fields, original single journal and receivable preserved; independent daily report read-only and balanced at 43.22",
+      "Closed accounting month refuses UI generation even with permissive legacy defaults; reopening permits it; FK and all journals balanced",
+      "Both menus share direct-account integration without required models: incoming preview/close read-only; daily sales setting preserved; two purchases remain individual; lost-response exact retry and alternate menu do not duplicate; origins/FK/balance preserved",
+      "Fresh company C has no accounting models: two direct sales consolidate at 10.03; two direct purchases stay individual; all origins and balances preserved without creating models",
+      "F8 competence changes return to notes, apply the current month and preserve all accounting/fiscal data; both access headings match their modules",
+      "Configuration and controls remain within the 1100px viewport; wide table scroll is contained",
+      "Native cash/card splits: declared payments and explicit change, cancellation/retry, subguide retention, read-only preview, responsive controls, daily consolidation, three source traces and lost-response replay create one balanced journal without settlement"
+    ],
+    "console_errors": [],
+    "browser_version": "151.0.7922.34",
+    "read_only_hashes": {
+      "before": {
+        "documents": "9c9ea3e5792d81d7aec47c2b5e86d2074633d1168eb674a57bbeeaf8c96735d5",
+        "journals": "b6d665dbfeb6ae6927842783fa86990364d50f95792201a7360f664454632bd1",
+        "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+        "titles": "2b8f8b5ac3ef8dd217aadb9ae6e6127462ff8157a9c89985171f1c88eee590b9",
+        "audit": "dc6ccba560c2bebf8108495694a766503ec52b0af7b05650a46ca8540da1d7fc"
+      },
+      "after": {
+        "documents": "9c9ea3e5792d81d7aec47c2b5e86d2074633d1168eb674a57bbeeaf8c96735d5",
+        "journals": "b6d665dbfeb6ae6927842783fa86990364d50f95792201a7360f664454632bd1",
+        "journal_lines": "f1a33821a25cd4080920e39a2a0f15da23002bb3a2284861e5821c35b96cb14a",
+        "titles": "2b8f8b5ac3ef8dd217aadb9ae6e6127462ff8157a9c89985171f1c88eee590b9",
+        "audit": "dc6ccba560c2bebf8108495694a766503ec52b0af7b05650a46ca8540da1d7fc"
+      }
+    },
+    "desktop_notes_table_top": 632.28125,
+    "subguide_read_request_count": 0,
+    "replay_hashes": {
+      "before": {
+        "documents": "92edc75f2c6eed9bb33bf62da157ca3dd720343b260eede401480d1fa38eec92",
+        "journals": "dfb911182a4f9b67ddf3b12a926429a2aa55d50968cd94a91186b96f53e63c05",
+        "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+        "titles": "2b8f8b5ac3ef8dd217aadb9ae6e6127462ff8157a9c89985171f1c88eee590b9",
+        "audit": "ea48000c98703acdbb47c167fec968978af076f1cde06bdb57aac531a58294c7"
+      },
+      "after": {
+        "documents": "92edc75f2c6eed9bb33bf62da157ca3dd720343b260eede401480d1fa38eec92",
+        "journals": "dfb911182a4f9b67ddf3b12a926429a2aa55d50968cd94a91186b96f53e63c05",
+        "journal_lines": "d4bd61a561cd57b7a34a4de760ca413e61a1a0b0d8eccc791563abebb934cd58",
+        "titles": "2b8f8b5ac3ef8dd217aadb9ae6e6127462ff8157a9c89985171f1c88eee590b9",
+        "audit": "ea48000c98703acdbb47c167fec968978af076f1cde06bdb57aac531a58294c7"
+      }
+    },
+    "report_hashes": {
+      "before": {
+        "documents": "5d621753b41ea7a3cb6507f09fe4b70c02a4cb7bd43f948cd9141b49d66bbc89",
+        "journals": "f172385d2050dac777bf4983cfbd124d238df1f0b938ce83639a228376df74a4",
+        "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+        "titles": "2b8f8b5ac3ef8dd217aadb9ae6e6127462ff8157a9c89985171f1c88eee590b9",
+        "audit": "096a43d75a0e1e0286e68e02d1832f7ee1e725454aa86a258fad221a5dbd9e8d"
+      },
+      "after": {
+        "documents": "5d621753b41ea7a3cb6507f09fe4b70c02a4cb7bd43f948cd9141b49d66bbc89",
+        "journals": "f172385d2050dac777bf4983cfbd124d238df1f0b938ce83639a228376df74a4",
+        "journal_lines": "c22c9c2226e1bd436c808f205e69e66589220d3fdb28c8e1775692abb837f4e4",
+        "titles": "2b8f8b5ac3ef8dd217aadb9ae6e6127462ff8157a9c89985171f1c88eee590b9",
+        "audit": "096a43d75a0e1e0286e68e02d1832f7ee1e725454aa86a258fad221a5dbd9e8d"
+      }
+    },
+    "incoming_preview_hashes": {
+      "before": {
+        "documents": "23bf37bb44ea1adfdc677e5a5535df9ce51bc53ad6e7cd1870756adc389b9027",
+        "journals": "ea394c233310ac9d4a7d877d00c8e558d6d52807aab5045af4c6cc78de5fa328",
+        "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+        "titles": "2b8f8b5ac3ef8dd217aadb9ae6e6127462ff8157a9c89985171f1c88eee590b9",
+        "audit": "33ba163530c8bc6fbe08e301a32e00b91a504f5aea7b417517913c65a21e8b9c"
+      },
+      "after": {
+        "documents": "23bf37bb44ea1adfdc677e5a5535df9ce51bc53ad6e7cd1870756adc389b9027",
+        "journals": "ea394c233310ac9d4a7d877d00c8e558d6d52807aab5045af4c6cc78de5fa328",
+        "journal_lines": "420b2460c9716adc84e8be6633853c2326e8823193b38227bb17e3cf4e7d89e4",
+        "titles": "2b8f8b5ac3ef8dd217aadb9ae6e6127462ff8157a9c89985171f1c88eee590b9",
+        "audit": "33ba163530c8bc6fbe08e301a32e00b91a504f5aea7b417517913c65a21e8b9c"
+      }
+    },
+    "incoming_replay_hashes": {
+      "before": {
+        "documents": "d09805affc40b86a9a17212def797c6f235695dca2a00e35400ac58749c90783",
+        "journals": "17028e3e9d2c94a524b98eaa0a56c5c882af4f6246073b702a9a2202cef4698e",
+        "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+        "titles": "2b8f8b5ac3ef8dd217aadb9ae6e6127462ff8157a9c89985171f1c88eee590b9",
+        "audit": "a194417e68250e9891d021412c860eac72d86ac3160f09b9b6a6b051d510d64c"
+      },
+      "after": {
+        "documents": "d09805affc40b86a9a17212def797c6f235695dca2a00e35400ac58749c90783",
+        "journals": "17028e3e9d2c94a524b98eaa0a56c5c882af4f6246073b702a9a2202cef4698e",
+        "journal_lines": "13eb5cfc2ba351cdc5b5049902137c227e2e509464d08e32da1adfb29889ea7d",
+        "titles": "2b8f8b5ac3ef8dd217aadb9ae6e6127462ff8157a9c89985171f1c88eee590b9",
+        "audit": "a194417e68250e9891d021412c860eac72d86ac3160f09b9b6a6b051d510d64c"
+      }
+    },
+    "no_models_company_journals": 3,
+    "workspace_month_hashes": {
+      "before": {
+        "documents": "f27f6cba2d09e369921e25588d025f1af8e4e0f555c731847bfc70abb02642fc",
+        "journals": "46ac60464eab2ef21a78792fc5379a41741d55c5cd70cadf95a94d9648b325b2",
+        "journal_lines": "5b60843e612bb5d986fa82de1491d9bb30d5a909c15f516e9cb79940cf968e9c",
+        "titles": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "audit": "9599f0305e5efa9c9837810134bd4274ff88123949bb676a1f2b10012a2e3ab8"
+      },
+      "after": {
+        "documents": "f27f6cba2d09e369921e25588d025f1af8e4e0f555c731847bfc70abb02642fc",
+        "journals": "46ac60464eab2ef21a78792fc5379a41741d55c5cd70cadf95a94d9648b325b2",
+        "journal_lines": "5b60843e612bb5d986fa82de1491d9bb30d5a909c15f516e9cb79940cf968e9c",
+        "titles": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "audit": "9599f0305e5efa9c9837810134bd4274ff88123949bb676a1f2b10012a2e3ab8"
+      }
+    },
+    "payment_split_journal_count": 1,
+    "payment_split_total_cents": 1703,
+    "final_journals": {
+      "A": 8,
+      "B": 2,
+      "C": 3
+    }
+  },
+  "build": {
+    "ok": true,
+    "seconds": 5.87,
+    "warning": "Main chunk above 500 kB"
+  },
+  "other_checks": [
+    "python -m scripts.ci.dependencies",
+    "python scripts/ci/versioning.py check --expected 0.9.0-dev.41",
+    "compileall of changed Python files",
+    "git diff --check"
+  ],
+  "limits": [
+    "No real company data, import automation, financial settlement, card fees, general item allocation or credit splitting",
+    "Payment mode requires preserved NF-e/NFC-e declared_document_fields with detPag values that reconcile to the booked total",
+    "No local full backend suite, PostgreSQL, Qt packages, Windows/macOS or production validation"
+  ]
+}

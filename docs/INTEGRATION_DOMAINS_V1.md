@@ -2,7 +2,7 @@
 
 Esta frente usa a fundação do PR #69, integrado em develop no commit
 `4dc688152eca4026a1a0750db9d6c04e46c64182`. A PR #71 foi sincronizada com
-develop `5d53aaefc1b50f303e86f4988d66de5387eacdd2` (dev.42) para revisão
+develop `2a7e036b31bcaace4482464373dfb00bb22f3c8f` (dev.43) para revisão
 somente do delta. A PR #71 permanece em rascunho, sem merge, implantação, acesso
 a bases reais ou alteração de workflows.
 
@@ -285,3 +285,14 @@ fluxos internos existentes são verificados também pela regressão da aplicaç�
 - 206 testes frontend aprovados; instalação e build concluídos.
 - A regressão completa acima pertence ao incremento anterior à sincronização;
   não foi repetida integralmente nesta etapa. O CI próprio verifica o novo head.
+
+### Verificação após sincronização com develop dev.43
+
+- Merge local automático, preservando os pagamentos da PR #68 e os escopos desta PR.
+- 112 testes Python aprovados: integração (30), núcleo (19), contabilização fiscal
+  de entradas/saídas (51), rateio de pagamentos (11) e entrada isolada do roteiro (1).
+- 209 testes frontend aprovados; instalação e build concluídos.
+- Templates sincronizados e git diff --check aprovados; nenhum workflow alterado.
+- CI anterior 43999562197 aprovado para o head 6fac8b9 (dev.42). Esse resultado
+  não substitui o CI do novo head. Suíte integral, PostgreSQL, imagens e roteiros
+  de navegador não foram repetidos localmente nesta sincronização.

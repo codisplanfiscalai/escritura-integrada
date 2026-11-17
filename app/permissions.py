@@ -151,6 +151,8 @@ def route_policy(path, method, query, payload, session):
     if root == 'integrations':
         return 'system.integrations', action, False
     if root in {'fiscal-sales-accounting', 'fiscal-purchases-accounting'}:
+        if root == 'fiscal-sales-accounting' and tail.endswith('/payments'):
+            return 'accounting.accounts', 'read', False
         if tail.endswith('/settings'):
             return 'accounting.accounts', 'edit' if write else 'read', False
         return 'accounting.journals', 'create' if write and not tail.endswith('/preview') else 'read', False

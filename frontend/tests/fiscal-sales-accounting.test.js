@@ -161,3 +161,31 @@ test('cancelar prévia mantém seleção e subguia atual e ignora conclusão tar
  assert.equal(h.view.preview.value,null);assert.equal(h.view.previewLoading.value,false);assert.equal(h.view.selectedIds.value.length,2);assert.equal(h.view.section.value,'notes');assert.equal(h.updates.length,0);
  }finally{h.close();}
 });
+
+test('rateio optativo lê pagamentos, preserva contas nas subguias e captura payload imutável',async()=>{
+ const h=await harness();try{
+ await ready(h,[doc(1)],'daily');h.view.selectFiltered();assert.equal(h.requests.length,3);
+ h.view.debitMode.value='payments';await flush();const read=h.requests.at(-1);assert.ok(read.path.endsWith('/payments'));assert.deepEqual(read.options.body,{entries:[{document_id:1,version:3}]});
+ read.resolve({documents:[{document_id:1,version:3,change_cents:0,total_cents:1001,issue:'',payments:[{index:0,method:'01',amount_cents:600},{index:1,method:'03',amount_cents:401}]}]});await flush();
+ h.view.paymentAccounts.value={'01':31,'03':31};h.view.creditAccount.value=32;h.view.reason.value='Rateio sintético';assert.equal(h.view.canSubmit.value,true);
+ const count=h.requests.length;h.view.section.value='notes';h.view.section.value='settings';h.view.section.value='accounting';await flush();assert.equal(h.requests.length,count);assert.equal(h.view.paymentAccounts.value['01'],31);
+ const preview=h.view.showPreview();const request=h.requests.at(-1);assert.ok(request.path.endsWith('/preview'));
+ assert.deepEqual(request.options.body.entries,[{document_id:1,version:3,payment_accounts:[{method:'01',account_id:31},{method:'03',account_id:31}],change_allocations:[],credit_account_id:32,cost_center_id:null}]);
+ h.view.paymentAccounts.value['01']=32;assert.equal(request.options.body.entries[0].payment_accounts[0].account_id,31);request.resolve(result({preview:true}));await preview;assert.equal(h.view.preview.value,null);
+ }finally{h.close();}
+});
+
+test('cancelamento e contexto descartam pagamentos atrasados e não transportam mapeamentos',async()=>{
+ const h=await harness();try{
+ await ready(h,[doc(1)]);h.view.selectFiltered();h.view.debitMode.value='payments';await flush();const old=h.requests.at(-1);h.view.cancelPayments();assert.equal(old.options.signal.aborted,true);old.resolve({documents:[{document_id:1,payments:[],issue:''}]});await flush();assert.equal(h.view.paymentData.value.length,0);assert.equal(h.view.canSubmit.value,false);
+ const retry=h.view.loadPayments();const pending=h.requests.at(-1);h.view.paymentAccounts.value={'01':31};h.state.companyId=2;await flush();assert.equal(pending.options.signal.aborted,true);pending.resolve({documents:[{document_id:1,payments:[],issue:''}]});await retry;assert.equal(h.view.paymentData.value.length,0);assert.deepEqual(h.view.paymentAccounts.value,{});assert.equal(h.view.debitMode.value,'single');assert.equal(h.view.selectedIds.value.length,0);
+ }finally{h.close();}
+});
+
+test('troco exige distribuição exata em centavos e selecionar modelo restaura débito único',async()=>{
+ const h=await harness();try{
+ await ready(h,[doc(1)]);h.view.selectFiltered();h.view.debitMode.value='payments';await flush();h.requests.at(-1).resolve({documents:[{document_id:1,version:3,issue:'',change_cents:100,payments:[{index:0,method:'01',amount_cents:1101}]}]});await flush();h.view.paymentAccounts.value={'01':31};h.view.creditAccount.value=32;
+ assert.match(h.view.paymentIssue.value,/troco/);h.view.paymentChanges.value={'1:0':'1,00'};assert.equal(h.view.canSubmit.value,true);assert.equal(h.view.accountingEntries()[0].change_allocations[0].amount_cents,100);
+ h.view.paymentChanges.value={'1:0':'0,999'};assert.equal(h.view.canSubmit.value,false);h.view.commonModel.value=7;h.view.applyModel();assert.equal(h.view.debitMode.value,'single');assert.equal(h.view.modelIds.value[1],7);assert.equal(h.view.canSubmit.value,true);
+ }finally{h.close();}
+});
