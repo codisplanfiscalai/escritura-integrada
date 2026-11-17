@@ -1,5 +1,7 @@
 # Recepção DF-e / NFS-e: consulta mTLS e importação revisada
 
+> Atualização: o bloqueio de URL ADN e a consulta limitada a um lote foram substituídos pelo [fluxo contínuo por NSU](RECEPCAO_CONSULTA_CONTINUA.md). Os resultados históricos abaixo não descrevem essa correção.
+
 > Continuação e estado atual: [acervo, versões e bloqueio ADN de 17/11/2026](RECEPCAO_ACERVO_VERSOES_20261117.md).
 
 > Histórico das novas views e do cofre: [reconstrução local de 16/11/2026](RECEPCAO_VIEWS_RECONSTRUCAO_20261116.md). O texto abaixo mantém o histórico da frente original; referências a ausência de interface, senha HTTP e esperas ADN devem ser lidas com essa atualização.

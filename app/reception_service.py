@@ -15,7 +15,7 @@ from .core import DomainError, audit, company_row, digest, now, pack, period
 from .file_store import read_file, store_file
 from .permissions import require
 from .importers import ImportProblem
-from .reception_adn import load_adn_json, read_adn_distribution
+from .reception_adn import load_adn_json, read_adn_distribution, read_adn_absence
 from .reception import (ADN_ENDPOINTS, NFE_ENDPOINTS, adn_rejection, adn_request,
                         nfe_request, read_nfe_distribution)
 from .reception_credentials import _cnpj, query_cnpj
@@ -177,11 +177,19 @@ class ReceptionService:
                     return metadata|{'state':'nsu_mismatch'},cursor,fallback
                 return metadata|{'state':'received','status_code':response['status_code'],
                                  'entries':[{k:v for k,v in entry.items() if k!='xml'} for entry in response['entries']],
-                                 'review_pending':True},proposed,max(60,response['cooldown_seconds'])
+                                 'review_pending':True,'has_more':proposed<response['reported_max_nsu'],
+                                 'reported_max_nsu':response['reported_max_nsu']},proposed,response['cooldown_seconds']
+            if response['status_code']=='656' and proposed is not None and proposed>cursor:
+                return metadata|{'state':'cursor_synchronized','status_code':'656','has_more':False,
+                                 'documents_downloaded':False,'missing_documents_review':True,
+                                 'synchronized_from':cursor,'synchronized_to':proposed},proposed,3600
             return metadata|{'state':'rejected','status_code':response['status_code']},cursor,max(3600,response['cooldown_seconds'])
         if provider == 'nfse_adn':
             try:
                 payload = load_adn_json(reply.body)
+                absence=read_adn_absence(payload,reply.status,environment)
+                if absence is not None:
+                    return metadata|absence,cursor,reply.retry_after
                 # Rejection defaults are never proof of authorization, even if
                 # accompanied by an inconsistent success status/HTTP 200.
                 if isinstance(payload,dict) and payload.get('Erros'):
@@ -233,7 +241,7 @@ class ReceptionService:
                         'adn-'+key+'-'+entry['nsu']+'.xml',xml,actor)
                 if provider == 'nfse_adn' and proposed != state['cursor'] and not entry.get('file_id'):
                     raise DomainError('XML íntegro obrigatório antes de avançar NSU ADN.',409,'reception_original_required')
-            state.update(cursor=proposed,lease_id=None,lease_until=0,next_allowed_at=self.clock()+max(60 if provider=='nfe_distribution' else 0,cooldown),last_receipt=key)
+            state.update(cursor=proposed,lease_id=None,lease_until=0,next_allowed_at=self.clock()+max(0,cooldown),last_receipt=key)
             self._save_state(conn,cid,state_key,state)
             conn.execute('UPDATE operations SET result_json=? WHERE company_id=? AND scope=? AND key=? AND request_hash=?',
                          (pack(result),cid,RUN_SCOPE,key,identity))

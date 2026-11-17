@@ -69,7 +69,7 @@ def read_adn_distribution(payload, cursor, environment, expected_mode):
     Cursor candidate is max returned NSU (exclusive GET contract), and only the
     service may commit it after storing both envelope and every decoded original.
     """
-    if not isinstance(payload,dict) or set(payload)-TOP_FIELDS:
+    if not isinstance(payload,dict):
         _invalid('ADN_RESPONSE_UNSUPPORTED')
     if payload.get('StatusProcessamento') != 'DOCUMENTOS_LOCALIZADOS':
         _invalid('ADN_RESPONSE_UNSUPPORTED')
@@ -79,8 +79,8 @@ def read_adn_distribution(payload, cursor, environment, expected_mode):
         _invalid('ADN_ENVIRONMENT_MISMATCH')
     if payload.get('Erros') not in (None,[]):
         _invalid('ADN_ERRORS_PRESENT')
-    # Alert semantics are not inferred; retain page for review without advancing.
-    if payload.get('Alertas') not in (None,[]):
+    alerts = message_codes(payload.get('Alertas'))
+    if 'E2220' in alerts:
         _invalid('ADN_ALERT_REVIEW')
     processed=_date(payload.get('DataHoraProcessamento'))
     _optional_text(payload.get('VersaoAplicativo'))
@@ -91,19 +91,22 @@ def read_adn_distribution(payload, cursor, environment, expected_mode):
     seen,entries=set(),[]
     budget={'expanded':0}
     for packet in packets:
-        if not isinstance(packet,dict) or set(packet)-PACKET_FIELDS:
+        if not isinstance(packet,dict):
             _invalid('ADN_RESPONSE_UNSUPPORTED')
         current=packet.get('NSU')
-        if type(current) is not int or current <= old or current in seen:
-            _invalid('ADN_NSU')
         number=adn_nsu(current)
-        seen.add(current)
+        if int(number) <= old or int(number) in seen:
+            _invalid('ADN_NSU')
+        seen.add(int(number))
         kind=packet.get('TipoDocumento')
         if not isinstance(kind,str) or kind not in KINDS:
             _invalid('ADN_DOCUMENT_TYPE')
         key=_optional_text(packet.get('ChaveAcesso'))
         event=_optional_text(packet.get('TipoEvento'))
-        generated=_date(packet.get('DataHoraGeracao'),nullable=True)
+        try:
+            generated=_date(packet.get('DataHoraGeracao'),nullable=True)
+        except ImportProblem:
+            generated=None  # Advisory metadata; the original envelope remains stored.
         if not packet.get('ArquivoXml'):
             _invalid('ADN_XML_MISSING')
         raw=_inflate(packet['ArquivoXml'],budget)
@@ -117,10 +120,63 @@ def read_adn_distribution(payload, cursor, environment, expected_mode):
         root=_xml_tree(raw)
         if kind=='NFSE' and (root.tag != '{'+NFSE_NS+'}NFSe' or len(root.findall('{'+NFSE_NS+'}infNFSe')) != 1):
             _invalid('ADN_XML_LAYOUT')
+        # Same recovery as the supplied client: advisory envelope dates may
+        # omit an offset; use a validated timestamp from the decoded XML instead.
+        generation_source='envelope' if generated is not None else None
+        if generated is None:
+            paths={'NFSE':'infNFSe/dhProc','EVENTO':'infEvento/dhProc',
+                   'DPS':'infDPS/dhEmi','PEDIDO_REGISTRO_EVENTO':'infPedReg/dhEvento'}
+            path=paths.get(kind)
+            nodes=root.findall('/'.join('{'+NFSE_NS+'}'+part for part in path.split('/'))) if path else []
+            if len(nodes)==1 and len(nodes[0])==0:
+                try:
+                    generated=_date(nodes[0].text)
+                    generation_source='xml'
+                except ImportProblem:
+                    pass
         entries.append({'nsu':number,'document_type':kind,'access_key':key,'event_type':event,
-                        'generation_time':generated,'xml_root':root.tag,'sha256':hashlib.sha256(raw).hexdigest(),
+                        'generation_time':generated,'generation_time_source':generation_source,'xml_root':root.tag,'sha256':hashlib.sha256(raw).hexdigest(),
                         'bytes':len(raw),'xml':raw,'review_pending':True,
                         'reason':'nfse_bookkeeping_reader_pending' if kind=='NFSE' else 'received_xml_without_fiscal_effect'})
     return {'contract_profile':PROFILE,'authorization_mode':expected_mode,'authorization_verified':True,
-            'processing_time':processed,'entries':entries,'reported_last_nsu':adn_nsu(max(seen)),
+            'processing_time':processed,'alert_codes':alerts,'entries':entries,'reported_last_nsu':adn_nsu(max(seen)),
+            'has_more':True,'empty':False,
             'review_pending':True}
+
+
+def message_codes(messages):
+    """Keep codes, not arbitrary server text. Alerts alone do not invalidate XML."""
+    if messages is None:
+        return []
+    if not isinstance(messages,list):
+        _invalid('ADN_MESSAGES_INVALID')
+    codes=[]
+    for message in messages:
+        if not isinstance(message,dict) or not isinstance(message.get('Codigo'),str):
+            _invalid('ADN_MESSAGES_INVALID')
+        code=message['Codigo']
+        if not re.fullmatch(r'[A-Z][0-9]{1,5}',code):
+            _invalid('ADN_MESSAGES_INVALID')
+        codes.append(code)
+    return codes
+
+
+def read_adn_absence(payload, status, environment):
+    """Recognize explicit absence like the supplied distribution client, not any 404."""
+    if not isinstance(payload,dict):
+        return None
+    processing=payload.get('StatusProcessamento')
+    if processing not in {'REJEICAO','NENHUM_DOCUMENTO_LOCALIZADO'}:
+        return None
+    if payload.get('TipoAmbiente') != {'production':'PRODUCAO','restricted_production':'HOMOLOGACAO'}.get(environment):
+        _invalid('ADN_ENVIRONMENT_MISMATCH')
+    errors=message_codes(payload.get('Erros'))
+    alerts=message_codes(payload.get('Alertas'))
+    codes=errors+alerts
+    if payload.get('LoteDFe') not in (None,[]):
+        _invalid('ADN_LOT_INVALID')
+    explicit=(status==404 and codes and set(codes)=={'E2220'}) or (
+        status==200 and processing=='NENHUM_DOCUMENTO_LOCALIZADO' and set(codes)<={'E2220'})
+    if explicit:
+        return {'state':'no_documents','entries':[],'empty':True,'has_more':False,'error_codes':errors,'alert_codes':alerts}
+    return None

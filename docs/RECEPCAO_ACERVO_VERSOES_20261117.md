@@ -1,5 +1,7 @@
 # Acervo DF-e/ADN: reconsulta, versões e proveniência
 
+> Atualização: o bloqueio de URL ADN e a consulta limitada a um lote foram substituídos pelo [fluxo contínuo por NSU](RECEPCAO_CONSULTA_CONTINUA.md). Os resultados históricos abaixo não descrevem essa correção.
+
 ## Incremento e operação
 
 Continuação da mesma frente local `rebuild/dfe-nfse-ui-20261116`, preservando `f87c8e9ba68ef13456ec0a089b032a6141199af5`. A composição preserva a história local e incorpora develop dev.41 `2a80b87ce2e2666013dff54dfe678e66a90b54e2`. Não recria a implementação em outra frente e não modifica produção, políticas de entrega main/develop ou frentes paralelas. Incremento parcial para revisão em PR draft, sem merge, release ou deploy.

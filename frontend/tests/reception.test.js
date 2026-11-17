@@ -3,18 +3,18 @@ import assert from 'node:assert/strict';
 import {reactive,nextTick} from 'vue';
 import {createReception} from '../src/lib/reception.js';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
-const overview=(provider='nfe_distribution')=>({environment:provider==='nfe_distribution'?'homologation':'restricted_production',configuration:{revision:'1'.repeat(64),environment:provider==='nfe_distribution'?'homologation':'restricted_production'},preferences:{version:0,nfe_environment:'homologation',nfse_environment:'restricted_production'},state:{cursor:'0',busy:false,next_allowed_at:0},documents:[],receipts:[],offset:0,has_more:false,capabilities:{remote_available:provider==='nfe_distribution'}});
+const overview=(provider='nfe_distribution')=>({environment:provider==='nfe_distribution'?'homologation':'restricted_production',configuration:{revision:'1'.repeat(64),environment:provider==='nfe_distribution'?'homologation':'restricted_production'},preferences:{version:0,nfe_environment:'homologation',nfse_environment:'restricted_production'},state:{cursor:'0',busy:false,next_allowed_at:0},documents:[],receipts:[],offset:0,has_more:false,capabilities:{remote_available:true}});
 const tick=async()=>{await nextTick();await Promise.resolve();};
 function setup(provider='nfe_distribution'){
  const state=reactive({companyId:1,period:'2026-11',module:'fiscal',session:{user:{id:8}},editor:null}),calls=[];let access=true;
  const c=createReception({state,provider,can:()=>access,scope:(s,cid=state.companyId)=>'/companies/'+cid+s,api:(path,options={})=>{const d=deferred();calls.push({path,options,...d});return d.promise;}});
  return {c,m:c.m,state,calls,deny:()=>{access=false;}};
 }
-test('distinct resources open through local GET only and ADN remote remains disabled',async()=>{
+test('distinct resources open through local GET only and ADN is available on explicit query',async()=>{
  const dfe=setup(),adn=setup('nfse_adn');dfe.c.activate();adn.c.activate();
  assert.match(dfe.calls[0].path,/\/reception\/nfe_distribution\?/);assert.match(adn.calls[0].path,/\/reception\/nfse_adn\?/);
  assert.equal(dfe.calls[0].options.method,undefined);dfe.calls[0].resolve(overview());adn.calls[0].resolve(overview('nfse_adn'));await tick();
- await adn.c.capture();assert.equal(adn.calls.length,1);assert.equal(dfe.m.provider,'nfe_distribution');assert.equal(adn.m.provider,'nfse_adn');
+ const capture=adn.c.capture();assert.equal(adn.calls.length,2);adn.calls.at(-1).reject(Object.assign(new Error('synthetic'),{status:400}));await capture;assert.equal(dfe.m.provider,'nfe_distribution');assert.equal(adn.m.provider,'nfse_adn');
 });
 test('late loads and receipt selections cannot cross company or overwrite a later selection',async()=>{
  const f=setup();f.c.activate();const old=f.calls[0];f.state.companyId=2;f.c.reset();assert.equal(old.options.signal.aborted,true);
@@ -93,4 +93,38 @@ test('receipt history pages separately and discards stale context and out-of-ord
  const pending=f.c.history(40),c=f.calls.at(-1);f.state.companyId=2;f.c.reset();f.calls.at(-1).resolve(overview());await tick();
  c.resolve({provider:'nfe_distribution',environment:'homologation',offset:40,receipts:[{receipt_key:'stale'}]});await pending;
  assert.equal(f.m.history,null);assert.equal(f.m.historyLoading,false);
+});
+
+
+test('collection follows saved NSU through multiple pages until explicit absence',async()=>{
+ const state=reactive({companyId:1,period:'2026-11',module:'fiscal',session:{user:{id:8}},editor:null});
+ let requests=0;const keys=[];
+ const c=createReception({state,provider:'nfse_adn',can:()=>true,scope:s=>s,api:async(path,o={})=>{
+  if(o.method!=='POST')return overview('nfse_adn');
+  keys.push(o.body.idempotency_key);requests++;
+  return requests<3?{state:'received',has_more:true,cursor_advanced:true,entries:[{nsu:String(requests)}]}:
+    {state:'no_documents',has_more:false,cursor_advanced:false,entries:[]};
+ }});
+ c.activate();await tick();await c.collect();
+ assert.equal(requests,3);assert.equal(new Set(keys).size,3);assert.equal(c.m.downloaded,2);
+ assert.equal(c.m.collecting,false);assert.equal(state.editor,null);
+});
+
+test('collection stops after the current lot and never starts a second concurrent collection',async()=>{
+ const f=setup('nfse_adn');f.c.activate();f.calls[0].resolve(overview('nfse_adn'));await tick();
+ const running=f.c.collect();await f.c.collect();assert.equal(f.calls.length,2);f.c.stop();
+ f.calls.at(-1).resolve({state:'received',has_more:true,cursor_advanced:true,entries:[{}]});await tick();
+ f.calls.at(-1).resolve(overview('nfse_adn'));await running;
+ assert.equal(f.calls.filter(x=>x.options.method==='POST').length,1);assert.equal(f.m.collecting,false);
+});
+
+test('context change and uncertain results stop the stream without automatic retry',async()=>{
+ for(const change of [false,true]){
+  const f=setup('nfse_adn');f.c.activate();f.calls[0].resolve(overview('nfse_adn'));await tick();
+  const running=f.c.collect(),pending=f.calls.at(-1);
+  if(change){f.state.companyId=2;f.c.reset();f.calls.at(-1).resolve(overview('nfse_adn'));await tick();}
+  pending.reject(Object.assign(new Error('Timeout'),{status:502}));await running;
+  assert.equal(f.calls.filter(x=>x.options.method==='POST').length,1);assert.equal(f.m.collecting,false);
+  assert.equal(!!f.m.intent,!change);
+ }
 });

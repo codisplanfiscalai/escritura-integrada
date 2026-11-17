@@ -163,7 +163,13 @@ def read_nfe_distribution(data, state=None):
         raise ImportProblem('RECEPTION_RESPONSE_INVALID', 'Ambiente ou status inválido na distribuição.')
     last = nsu(_one_text(response, 'ultNSU')) if status in {'137','138'} else None
     maximum = nsu(_one_text(response, 'maxNSU')) if status in {'137','138'} else None
-    if last is not None and last > maximum:
+    # NT 2014.002: rejection 656 may carry the last NSU used remotely.
+    # It is optional; never infer it from a count or an error description.
+    if status == '656':
+        values=response.findall(f'{{{NFE_NS}}}ultNSU')
+        if values:
+            last=nsu(_one_text(response,'ultNSU'))
+    if last is not None and maximum is not None and last > maximum:
         raise ImportProblem('RECEPTION_NSU', 'Último NSU excede o máximo declarado.')
     packets = list(response.iter(f'{{{NFE_NS}}}docZip'))
     if len(packets) > 50 or (status == '138') != bool(packets):

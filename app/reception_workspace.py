@@ -15,7 +15,7 @@ from .reception_configuration import SETTINGS,preferences,configuration,require_
 
 CAPABILITIES={
  'nfe_distribution':{'remote_available':True,'coverage':'Distribuição NF-e modelo 55. Consulta real/homologação externa não comprovadas nesta reconstrução.'},
- 'nfse_adn':{'remote_available':False,'coverage':'Consulta externa ADN pendente de confirmar URLs no OpenAPI. Documentos e recibos locais continuam disponíveis.'}
+ 'nfse_adn':{'remote_available':True,'coverage':'Consulta e download ADN por NSU, com certificado da empresa e ambientes independentes da NF-e.'}
 }
 
 class ReceptionWorkspace:

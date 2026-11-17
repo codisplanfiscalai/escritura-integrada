@@ -201,11 +201,29 @@ class CaptureApiTests(unittest.TestCase):
         self.assertEqual(1,len(self.transport.plans))
         self.assertTrue(self.query()['duplicate'])
         self.assertEqual(1,len(self.transport.plans))
-        self.query(key='synthetic-0002',status=429)
-        self.clock[0]+=61
+        # A positive nonfinal lot must not impose an artificial wait.
+        self.assertTrue(received['has_more'])
+        self.assertEqual(self.clock[0],self.state()['next_allowed_at'])
         self.transport.reply=RemoteReply(200,response(status='137',last='2',maximum='2'))
         self.assertEqual('000000000000002',self.query(key='synthetic-0002')['cursor_after'])
         self.assertIn(b'000000000000002',self.transport.plans[-1]['body'])
+        self.query(key='synthetic-after-empty',status=429)
+
+    def test_656_synchronizes_only_an_explicit_higher_remote_cursor_and_keeps_wait(self):
+        self.transport.reply=RemoteReply(200,response(status='656',last='123',maximum='123'))
+        result=self.query()
+        self.assertEqual('cursor_synchronized',result['state'])
+        self.assertEqual('000000000000123',self.state()['cursor'])
+        self.assertFalse(result['documents_downloaded'])
+        self.assertTrue(result['missing_documents_review'])
+        self.assertEqual(self.clock[0]+3600,self.state()['next_allowed_at'])
+        self.assertEqual('000000000000000',self.state('nfse_adn','restricted_production')['cursor'])
+        self.query(key='after-sync-now',status=429)
+        self.clock[0]+=3601
+        self.transport.reply=RemoteReply(200,response(status='656',last='12',maximum='123'))
+        result=self.query(key='after-sync-lower')
+        self.assertEqual('000000000000123',self.state()['cursor'])
+        self.assertFalse(result['cursor_advanced'])
 
     def test_matrix_branch_queries_share_certificate_without_sharing_cursor(self):
         self.transport.reply=RemoteReply(400,json.dumps({'Erros':[{'Codigo':'E2220'}]}).encode())
@@ -247,7 +265,7 @@ class CaptureApiTests(unittest.TestCase):
         self.assertEqual([],self.core.documents(self.a['id']))
 
     def test_timeout_status_656_redirect_and_invalid_response_preserve_cursor(self):
-        cases=[TimeoutError('private path or secret'),RemoteReply(200,response(status='656')),RemoteReply(302,b'https://forbidden.invalid'),RemoteReply(200,b'<invalid>'),RemoteReply(200,self.envelope.replace(b'>2</ns0:tpAmb>',b'>1</ns0:tpAmb>')),RemoteReply(429,b'limited',7200)]
+        cases=[TimeoutError('private path or secret'),RemoteReply(200,response(status='656',last='0')),RemoteReply(302,b'https://forbidden.invalid'),RemoteReply(200,b'<invalid>'),RemoteReply(200,self.envelope.replace(b'>2</ns0:tpAmb>',b'>1</ns0:tpAmb>')),RemoteReply(429,b'limited',7200)]
         for i,reply in enumerate(cases):
             with self.subTest(reply=i):
                 self.transport.reply=reply;self.clock[0]+=10000
