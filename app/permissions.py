@@ -148,6 +148,8 @@ def route_policy(path, method, query, payload, session):
         return 'system.companies', action, False
     root = tail.strip('/').split('/')[0]
     if root in {'fiscal-sales-accounting', 'fiscal-purchases-accounting'}:
+        if root == 'fiscal-sales-accounting' and tail.endswith('/payments'):
+            return 'accounting.accounts', 'read', False
         if tail.endswith('/settings'):
             return 'accounting.accounts', 'edit' if write else 'read', False
         return 'accounting.journals', 'create' if write and not tail.endswith('/preview') else 'read', False
