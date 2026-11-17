@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {reactive,nextTick} from 'vue';
 import {createReception} from '../src/lib/reception.js';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
-const overview=(provider='nfe_distribution')=>({preferences:{version:0,nfe_environment:'homologation',nfse_environment:'restricted_production'},state:{cursor:'0',busy:false,next_allowed_at:0},documents:[],receipts:[],offset:0,has_more:false,capabilities:{remote_available:provider==='nfe_distribution'}});
+const overview=(provider='nfe_distribution')=>({environment:provider==='nfe_distribution'?'homologation':'restricted_production',configuration:{revision:'1'.repeat(64),environment:provider==='nfe_distribution'?'homologation':'restricted_production'},preferences:{version:0,nfe_environment:'homologation',nfse_environment:'restricted_production'},state:{cursor:'0',busy:false,next_allowed_at:0},documents:[],receipts:[],offset:0,has_more:false,capabilities:{remote_available:provider==='nfe_distribution'}});
 const tick=async()=>{await nextTick();await Promise.resolve();};
 function setup(provider='nfe_distribution'){
  const state=reactive({companyId:1,period:'2026-11',module:'fiscal',session:{user:{id:8}},editor:null}),calls=[];let access=true;
@@ -44,7 +44,7 @@ test('report follows applied filters; editing a draft search does not export dif
 test('version requests and receipt responses cannot survive an environment change',async()=>{
  const f=setup();f.c.activate();f.calls[0].resolve(overview());await tick();
  const old=f.c.versions('a'.repeat(64)),request=f.calls.at(-1),receipt=f.c.receipt('old-environment-receipt'),oldReceipt=f.calls.at(-1);
- f.c.environment('production');f.calls.at(-1).resolve({...overview(),environment:'production'});await tick();
+ f.c.load();f.calls.at(-1).resolve({...overview(),environment:'production',configuration:{revision:'2'.repeat(64),environment:'production'}});await tick();
  request.resolve({provider:'nfe_distribution',environment:'homologation',record_id:'a'.repeat(64),versions:[{sha256:'OLD'}]});oldReceipt.resolve({provider:'nfe_distribution',environment:'homologation',receipt_key:'old'});await old;await receipt;
  assert.equal(f.m.document,null);assert.equal(f.m.receipt,null);assert.equal(f.m.documentLoading,false);
  const current=f.c.versions('b'.repeat(64));assert.match(f.calls.at(-1).path,/environment=production/);f.calls.at(-1).resolve({provider:'nfe_distribution',environment:'production',record_id:'b'.repeat(64),versions:[]});await current;assert.equal(f.m.document.record_id,'b'.repeat(64));
@@ -57,4 +57,28 @@ test('later version selection wins; company change clears both provenance and ol
  a.resolve({provider:'nfse_adn',environment:'restricted_production',record_id:'a'.repeat(64),versions:[]});await first;assert.equal(f.m.document.record_id,'b'.repeat(64));
  f.state.companyId=2;f.c.reset();assert.equal(f.m.document,null);assert.equal(f.m.documentLoading,false);f.calls.at(-1).resolve(overview('nfse_adn'));await tick();
  const wrong=f.c.versions('b'.repeat(64));f.calls.at(-1).resolve({provider:'nfse_adn',environment:'production',record_id:'b'.repeat(64),versions:[]});await wrong;assert.equal(f.m.document,null);assert.match(f.m.error,/outro serviço ou ambiente/);
+});
+
+test('company defaults are loaded without any environment selection and external actions reuse them',async()=>{
+ const f=setup();f.c.activate();assert.doesNotMatch(f.calls[0].path,/environment=/);
+ f.calls[0].resolve({...overview(),environment:'production',configuration:{revision:'2'.repeat(64),environment:'production'}});await tick();
+ assert.equal(f.calls.length,1);assert.equal(f.m.environment,'production');assert.match(f.c.report(),/environment=production/);
+ const checking=f.c.check();assert.deepEqual(f.calls.at(-1).options.body,{configuration_revision:'2'.repeat(64)});f.calls.at(-1).resolve({ready:true});await checking;
+ const request=f.c.capture();assert.equal(f.calls.at(-1).options.body.environment,'production');assert.equal(f.calls.at(-1).options.body.configuration_revision,'2'.repeat(64));
+ f.calls.at(-1).reject(Object.assign(new Error('Timeout'),{status:502}));await request;
+ f.state.companyId=2;f.c.reset();assert.equal(f.m.intent,null);assert.equal(f.m.configuration,null);assert.equal(f.m.check,null);assert.equal(f.m.receipt,null);assert.equal(f.m.data,null);
+ f.calls.at(-1).resolve(overview());await tick();assert.equal(f.m.environment,'homologation');
+});
+test('configuration conflicts refresh only local data and require a fresh explicit query',async()=>{
+ const f=setup();f.c.activate();f.calls[0].resolve(overview());await tick();
+ const request=f.c.capture(),oldKey=f.calls.at(-1).options.body.idempotency_key;
+ f.calls.at(-1).reject(Object.assign(new Error('Configuração mudou; nenhuma consulta enviada'),{status:409,code:'stale_reception_configuration'}));await tick();
+ assert.equal(f.calls.at(-1).options.method,undefined);f.calls.at(-1).resolve({...overview(),environment:'production',configuration:{revision:'2'.repeat(64),environment:'production'}});await request;
+ assert.equal(f.m.intent,null);assert.match(f.m.error,/nenhuma consulta enviada/);assert.equal(f.calls.filter(c=>c.options.method==='POST').length,1);
+ const next=f.c.capture();assert.notEqual(f.calls.at(-1).options.body.idempotency_key,oldKey);assert.equal(f.calls.at(-1).options.body.environment,'production');f.calls.at(-1).reject(Object.assign(new Error('Timeout'),{status:502}));await next;
+});
+test('a local A1 check from an older configuration never becomes ready in the refreshed company view',async()=>{
+ const f=setup();f.c.activate();f.calls[0].resolve(overview());await tick();const checking=f.c.check(),pending=f.calls.at(-1);
+ const loading=f.c.load();f.calls.at(-1).resolve({...overview(),configuration:{revision:'2'.repeat(64),environment:'homologation'}});await loading;
+ pending.resolve({ready:true,message:'old A1'});await checking;assert.equal(f.m.check,null);assert.equal(f.state.editor,null);
 });

@@ -11,8 +11,8 @@ from .reception import read_nfe_distribution
 from .reception_metadata import classify
 from .reception_archive import project,select,detail,matches,decorate
 from .reception_vault import CompanyA1Vault,ENVS
+from .reception_configuration import SETTINGS,preferences,configuration,require_configuration
 
-SETTINGS='reception-company-preferences-v1'
 CAPABILITIES={
  'nfe_distribution':{'remote_available':True,'coverage':'Distribuição NF-e modelo 55. Consulta real/homologação externa não comprovadas nesta reconstrução.'},
  'nfse_adn':{'remote_available':False,'coverage':'Consulta externa ADN pendente de confirmar URLs no OpenAPI. Documentos e recibos locais continuam disponíveis.'}
@@ -22,8 +22,7 @@ class ReceptionWorkspace:
     def __init__(self,core,reception):
         self.core,self.db,self.reception=core,core.db,reception
     def preferences(self,conn,cid):
-        row=conn.execute('SELECT result_json FROM operations WHERE company_id=? AND scope=? AND key=?',(cid,SETTINGS,'defaults')).fetchone()
-        return json.loads(row['result_json']) if row else {'version':0,'nfe_environment':'homologation','nfse_environment':'restricted_production'}
+        return preferences(conn,cid)
     def settings(self,cid,uid):
         with self.db.read() as conn:
             require(conn,uid,cid,'system.companies','read');company_row(conn,cid)
@@ -75,10 +74,12 @@ class ReceptionWorkspace:
                 if group['record_id']==rid and select(group,year):return detail(group,offset)|{'provider':provider,'environment':environment}
         raise DomainError('Documento não localizado neste acervo.',404,'not_found')
     def overview(self,cid,uid,provider,environment,year,query='',offset=0,direction='',competence=''):
-        self.validate_filters(provider,environment,year,query,offset,direction,competence)
         with self.db.read(snapshot=True) as conn:
             company=self.reception._access(conn,uid,cid)
             prefs=self.preferences(conn,cid)
+            selected=configuration(conn,cid,provider,self.reception.credentials)
+            environment=selected['environment'] if environment is None else environment
+            self.validate_filters(provider,environment,year,query,offset,direction,competence)
             state=self.reception._state(conn,cid,provider+':'+environment+':'+company['tax_id'])
             groups=self.archive(conn,cid,provider,environment,company['tax_id'])
             documents=[item for group in groups if (item:=select(group,year,query,direction,competence)) is not None]
@@ -86,7 +87,7 @@ class ReceptionWorkspace:
             for row,result in self.rows(conn,cid,provider,environment,year):
                 receipts.append({k:result[k] for k in ('state','period','cursor_before','cursor_after','error_codes','code') if k in result}|{'receipt_key':row['key'],'created_at':row['created_at'],'count':len(result.get('entries',[])),'has_original':bool(result.get('file_id'))})
                 if len(receipts)==20:break
-            return {'preferences':prefs,'provider':provider,'environment':environment,
+            return {'preferences':prefs,'configuration':selected,'provider':provider,'environment':environment,
                 'state':{'cursor':state['cursor'],'next_allowed_at':state['next_allowed_at'],'busy':state['lease_until']>self.reception.clock()},
                 'documents':documents[offset:offset+20],'offset':offset,'has_more':len(documents)>offset+20,'receipts':receipts,
                 'capabilities':CAPABILITIES[provider]|{'automation_available':False,'a1_cnpj_only':True}}
@@ -147,15 +148,28 @@ class ReceptionWorkspace:
                     writer.writerow(values)
         return ('\ufeff'+output.getvalue()).encode('utf-8')
 
-    def check(self,cid,uid,provider,environment):
-        self.reception._spec(provider,environment)
-        with self.db.read() as conn:company=self.reception._access(conn,uid,cid,'import')
-        try:self.reception.local_identity(cid,company,provider,environment)
+    def check(self,cid,uid,provider,payload):
+        with self.db.read() as conn:
+            company=self.reception._access(conn,uid,cid,'import')
+            if not isinstance(payload,dict) or set(payload) not in ({'configuration_revision'},{'environment'}):
+                raise DomainError('Informe somente a revisão da configuração da empresa.')
+            # Compatibility for old local-check clients; they cannot override the saved environment.
+            expected=payload.get('configuration_revision') if 'configuration_revision' in payload else configuration(conn,cid,provider,self.reception.credentials)['revision']
+            selected=require_configuration(conn,cid,provider,self.reception.credentials,expected,payload.get('environment'))
+        try:self.reception.local_identity(cid,company,provider,selected['environment'])
         except DomainError as error:return {'ready':False,'remote_checked':False,'message':error.detail,'code':error.code}
-        return {'ready':True,'remote_checked':False,'message':'A1, identidade e validade conferidos localmente. A autorização e a aceitação externas ainda não foram verificadas.'}
+        with self.db.read() as conn:
+            self.reception._access(conn,uid,cid,'import')
+            require_configuration(conn,cid,provider,self.reception.credentials,expected)
+        return {'ready':True,'remote_checked':False,'environment':selected['environment'],'message':'A1, identidade e validade conferidos localmente. A autorização e a aceitação externas ainda não foram verificadas.'}
     def capture(self,cid,uid,actor,provider,payload):
         if provider not in ENVS:raise DomainError('Serviço inválido.')
         if not CAPABILITIES[provider]['remote_available']:
             raise DomainError(CAPABILITIES[provider]['coverage'],409,'reception_contract_pending')
-        if not isinstance(payload,dict) or set(payload)!={'environment','period','idempotency_key'}:raise DomainError('Parâmetros de consulta inválidos.')
-        return self.reception.query(cid,payload|{'provider':provider},actor,uid)
+        if not isinstance(payload,dict) or set(payload)!={'environment','period','idempotency_key','configuration_revision'}:
+            raise DomainError('Parâmetros de consulta inválidos. Atualize a tela.')
+        if not isinstance(payload['configuration_revision'],str) or not re.fullmatch('[a-f0-9]{64}',payload['configuration_revision']):
+            raise DomainError('Revisão da configuração inválida. Atualize a tela.')
+        body={key:value for key,value in payload.items() if key!='configuration_revision'}
+        return self.reception.query(cid,body|{'provider':provider},actor,uid,
+                                    expected_configuration=payload['configuration_revision'])

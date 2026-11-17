@@ -20,6 +20,7 @@ from .reception import (ADN_ENDPOINTS, NFE_ENDPOINTS, adn_rejection, adn_request
                         nfe_request, read_nfe_distribution)
 from .reception_credentials import _cnpj, query_cnpj
 from .reception_vault import CompanyA1Vault
+from .reception_configuration import require_configuration
 from .reception_transport import MtlsTransport
 
 STATE_SCOPE = 'fiscal-reception-state-v1'
@@ -80,7 +81,7 @@ class ReceptionService:
             mode = 'CnpjBase' if target != credential.tax_id else 'InscricaoCertificado'
         return credential,mode
 
-    def query(self, cid, payload, actor, uid):
+    def query(self, cid, payload, actor, uid, *, expected_configuration=None):
         if not isinstance(payload, dict) or set(payload) - {'provider','environment','period','idempotency_key'}:
             raise DomainError('Informe somente provedor, ambiente, competência e chave idempotente; certificados e URLs não são aceitos pela API.')
         provider, environment = payload.get('provider'), payload.get('environment')
@@ -94,6 +95,8 @@ class ReceptionService:
             old = self._operation(conn,cid,RUN_SCOPE,key)
             if old:
                 return self._repeat(old, identity)
+            if expected_configuration is not None:
+                require_configuration(conn,cid,provider,self.credentials,expected_configuration,environment)
         credential,mode=self.local_identity(cid,company,provider,environment)
         state_key = provider + ':' + environment + ':' + target
         lease = uuid.uuid4().hex
@@ -101,7 +104,9 @@ class ReceptionService:
             current = self._access(conn, uid, cid, 'import')
             if hasattr(self.credentials,'revision') and self.credentials.revision(conn,cid)!=revision:
                 raise DomainError('A configuração A1 mudou. Reabra a consulta.',409,'stale_credential')
-            if current['tax_id'] != target:
+            if expected_configuration is not None:
+                require_configuration(conn,cid,provider,self.credentials,expected_configuration,environment)
+            if current['tax_id'] != target or current['state'] != company['state']:
                 raise DomainError('Cadastro da empresa mudou; consulta não executada.',409,'stale_company')
             from .operational_settings import ensure_import_allowed
             ensure_import_allowed(conn,cid,0)

@@ -33,7 +33,8 @@ def server(data,port):
         def send(self,plan,identity):
             assert plan['provider']=='nfe_distribution' and identity.tax_id==MATRIX
             raw=FIXTURE.read_bytes().replace(b'12345678000195',MATRIX.encode())
-            return RemoteReply(200,response([('1','procNFe_v4.00.xsd',raw),('2','resNFe_v1.01.xsd',SUMMARY)],last='2',maximum='3'))
+            if 'www1.nfe.fazenda.gov.br' in plan['url']:raw=raw.replace(b'<tpAmb>2</tpAmb>',b'<tpAmb>1</tpAmb>')
+            return RemoteReply(200,response([('1','procNFe_v4.00.xsd',raw),('2','resNFe_v1.01.xsd',SUMMARY)],last='2',maximum='3',environment='1' if 'www1.nfe.fazenda.gov.br' in plan['url'] else '2'))
     app.state.reception.transport=Transport()  # No HTTP/socket implementation.
     uvicorn.run(app,host='127.0.0.1',port=int(port),log_level='warning')
 
@@ -61,6 +62,8 @@ def main():
                     browser=p.chromium.launch(headless=True,**({'executable_path':os.environ['ESCRITURA_TEST_BROWSER']} if os.environ.get('ESCRITURA_TEST_BROWSER') else {}))
                     page=browser.new_page(viewport={'width':1440,'height':1000});page.set_default_timeout(15000)
                     page.on('pageerror',lambda e:report['console_errors'].append(str(e)))
+                    requests=[]
+                    page.on('request',lambda r:requests.append((r.method,r.url)))
                     def nav(label):
                         expect(page.locator('#active-company')).to_be_enabled()
                         button=page.get_by_role('navigation',name='Navegação principal').get_by_role('button',name=label,exact=True,include_hidden=True)
@@ -79,6 +82,12 @@ def main():
                         nav('NFS-e Nacional');expect(page.get_by_role('heading',name='NFS-e Nacional',exact=True)).to_be_visible()
                         box=page.get_by_role('region',name='Caixa de documentos');expect(box.locator('tbody tr')).to_have_count(4)
                         expect(page.get_by_role('button',name='Consultar uma página',exact=True)).to_be_disabled()
+                        expect(page.locator('select[aria-label="Ambiente de recepção"]')).to_have_count(0)
+                        start=len(requests);page.reload();expect(page.locator('#active-company')).to_be_enabled();nav('DF-e');nav('NFS-e Nacional')
+                        expect(box.locator('tbody tr')).to_have_count(4)
+                        assert all(address.startswith(url+'/') for _,address in requests[start:]),requests[start:]
+                        assert not [(method,address) for method,address in requests[start:] if method!='GET' and any(part in address for part in ['/reception/','/reception-credential'])],requests[start:]
+                        report['checks'].append('Reload e navegação leem somente recursos locais; nenhum check A1, upload ou consulta externa automática; views sem seletor de ambiente')
                         box.get_by_label('Direção dos documentos').select_option('both');box.get_by_role('button',name='Consultar acervo local').click();expect(box.locator('tbody tr')).to_have_count(1)
                         box.get_by_label('Competência declarada no XML').fill('2026-09')
                         with page.expect_response(lambda r:'/reception/nfse_adn?' in r.url and 'competence=2026-09' in r.url and r.request.method=='GET'):
@@ -105,6 +114,8 @@ def main():
                         page.get_by_role('button',name='Configurar empresa',exact=True).click()
                         dialog=page.get_by_role('dialog',name='Editar empresa')
                         expect(dialog.get_by_role('tab',name='Recepção fiscal',exact=True)).to_have_attribute('aria-selected','true')
+                        dialog.get_by_label('Ambiente padrão DF-e',exact=True).select_option('production');dialog.get_by_label('Ambiente padrão NFS-e',exact=True).select_option('production')
+                        for checkbox in dialog.get_by_role('checkbox',name='Produção',exact=True).all():checkbox.check()
                         dialog.get_by_role('checkbox',name='Homologação',exact=True).check();dialog.get_by_role('checkbox',name='Produção restrita',exact=True).check()
                         dialog.get_by_label('Arquivo A1',exact=True).set_input_files(str(pfx));dialog.get_by_label('Senha de proteção do A1',exact=True).fill('WRONG-SYNTHETIC')
                         dialog.get_by_role('button',name='Salvar recepção fiscal').click();expect(dialog.get_by_role('alert')).to_contain_text('Não foi possível carregar o A1')
@@ -115,7 +126,8 @@ def main():
                         assert saved.value.ok;expect(dialog.get_by_text('A1 protegido no cofre.',exact=False)).to_be_visible()
                         assert PASSWORD.decode() not in page.request.get(url+scope+'/reception-settings').text()
                         shot('company-a1.png');dialog.get_by_role('button',name='Cancelar',exact=True).click()
-                        nav('DF-e');page.get_by_role('button',name='Conferir A1 local').click();expect(page.get_by_text('A1, identidade e validade conferidos localmente.',exact=False)).to_be_visible()
+                        nav('DF-e');expect(page.locator('.receive-query')).to_contain_text('Ambiente do cadastro: Produção');expect(page.locator('.receive-query select')).to_have_count(0)
+                        page.get_by_role('button',name='Conferir A1 local').click();expect(page.get_by_text('A1, identidade e validade conferidos localmente.',exact=False)).to_be_visible()
                         page.get_by_role('button',name='Consultar uma página',exact=True).click();expect(box.locator('tbody tr')).to_have_count(2)
                         expect(box).to_contain_text('Resumo; XML íntegro pendente')
                         with page.expect_download() as download:box.get_by_role('link',name='Baixar resumo',exact=True).click()
@@ -123,6 +135,7 @@ def main():
                         assert before==page.request.get(url+scope+'/documents').json()
                         shot('dfe-local-documents.png')
                         report['checks'].append('Cadastro A1 sintético com senha inválida/válida, cofre sem leitura de segredo, consulta NFe por stub e download sem escrituração')
+                        nav('NFS-e Nacional');expect(page.locator('.receive-query')).to_contain_text('Ambiente do cadastro: Produção');expect(box.locator('tbody tr')).to_have_count(0)
                         nav('Empresas');page.get_by_role('button',name='Ativar empresa '+other['name'],exact=True).click();nav('NFS-e Nacional')
                         expect(box.locator('tbody tr')).to_have_count(0);expect(page.get_by_text('Nenhum documento local encontrado para estes filtros.',exact=True)).to_be_visible()
                         page.set_viewport_size({'width':390,'height':844});page.wait_for_timeout(300);page.locator('#workspace-panel').evaluate('(e)=>e.scrollTop=0');shot('nfse-mobile.png')
