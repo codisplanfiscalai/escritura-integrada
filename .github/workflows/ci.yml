@@ -13,6 +13,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  reception-vault-docker:
+    name: Cofre A1 · recriação e recuperação Docker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Exigir Docker e testar volumes privados com A1 sintético
+        run: python3 scripts/probes/reception_vault_docker.py
+
   postgres-backend:
     name: PostgreSQL real · infraestrutura preparatória
     runs-on: ubuntu-24.04

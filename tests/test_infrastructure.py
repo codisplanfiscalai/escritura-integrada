@@ -341,6 +341,7 @@ class InfrastructureTests(unittest.TestCase):
             (root / "scripts").mkdir()
             shutil.copy2(ROOT / "scripts/deploy_storage.py", root / "scripts/deploy_storage.py")
             shutil.copy2(ROOT / "docs/DOCKER_STORAGE.md", root / "docs/DOCKER_STORAGE.md")
+            shutil.copy2(ROOT / "docs/COFRE_A1_DOCKER.md", root / "docs/COFRE_A1_DOCKER.md")
             shutil.copy2(ROOT / "docs/DEPLOY.md", root / "docs/DEPLOY.md")
             shutil.copy2(ROOT / "docker/THIRD-PARTY.md", root / "docker/THIRD-PARTY.md")
             poison = b"SYNTHETIC_SECRET_MUST_NEVER_BE_PACKAGED"
@@ -354,7 +355,7 @@ class InfrastructureTests(unittest.TestCase):
             for entry in result["packages"]:
                 with zipfile.ZipFile(output / entry["file"]) as archive:
                     self.assertEqual({Path(n).name for n in archive.namelist()},
-                                     {"compose.yaml", "compose.release.yaml", "compose.existing-bind.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "STORAGE.md", "deploy_storage.py", "THIRD-PARTY.md"})
+                                     {"compose.yaml", "compose.release.yaml", "compose.existing-bind.yaml", "compose.reception-vault.yaml", ".env", ".env.example", "images.json", "LEIA-ME.txt", "DEPLOY.md", "STORAGE.md", "COFRE_A1.md", "deploy_storage.py", "THIRD-PARTY.md"})
                     for name in archive.namelist():
                         self.assertNotIn(poison, archive.read(name))
                     compose_name = next(name for name in archive.namelist() if Path(name).name == "compose.yaml")
@@ -366,6 +367,12 @@ class InfrastructureTests(unittest.TestCase):
                     self.assertEqual(set(existing), {"services"})
                     self.assertEqual(set(existing["services"]), {"app"})
                     self.assertEqual(existing["services"]["app"], {"volumes": [{"type": "bind", "source": "./data/app", "target": "/data", "bind": {"create_host_path": False}}]})
+                    vault_name = next(name for name in archive.namelist() if Path(name).name == "compose.reception-vault.yaml")
+                    vault = json.loads(archive.read(vault_name))
+                    self.assertEqual(vault['volumes'], {'reception_vault': {}})
+                    self.assertNotIn('name', vault['volumes']['reception_vault'])
+                    self.assertEqual(vault['services']['app']['volumes'], [{'type': 'volume', 'source': 'reception_vault', 'target': '/run/escritura/reception-vault'}])
+                    self.assertIn(b'COFRE A1', archive.read(next(n for n in archive.namelist() if Path(n).name == 'LEIA-ME.txt')))
                     # Assert the shipped bytes, not just equality to a possibly stale template.
                     for service_name, service in bundled_compose["services"].items():
                         self.assertEqual(service["pull_policy"], "always" if service_name == "app" else "missing")

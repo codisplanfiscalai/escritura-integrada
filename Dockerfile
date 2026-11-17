@@ -15,7 +15,15 @@ COPY frontend/src/ ./src/
 COPY frontend/scripts/ ./scripts/
 RUN npm run build
 
-FROM ${RUNTIME_IMAGE} AS app
+FROM ${RUNTIME_IMAGE} AS reception-runtime
+# Metadata copied into a new named volume by Docker. No key is built into images.
+USER 0:0
+RUN mkdir -p /run/escritura/reception-vault \
+    && chown 10001:10001 /run/escritura/reception-vault \
+    && chmod 0700 /run/escritura/reception-vault
+USER 10001:10001
+
+FROM reception-runtime AS app
 ARG APP_VERSION
 ARG SOURCE_REVISION
 ARG CONTENT_ID

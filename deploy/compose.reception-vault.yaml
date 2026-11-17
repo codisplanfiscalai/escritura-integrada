@@ -1,0 +1,19 @@
+{
+  "services": {
+    "app": {
+      "environment": {
+        "ESCRITURA_RECEPTION_VAULT_DIR": "/run/escritura/reception-vault"
+      },
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "reception_vault",
+          "target": "/run/escritura/reception-vault"
+        }
+      ]
+    }
+  },
+  "volumes": {
+    "reception_vault": {}
+  }
+}
