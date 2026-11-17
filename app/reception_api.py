@@ -56,9 +56,6 @@ def register(app,core,actor,check_period):
 
     @app.post('/api/companies/{cid}/reception-credential')
     async def upload(cid:int,request:Request):
-        loopback=request.client and request.client.host in {'127.0.0.1','::1'} and request.url.hostname in {'127.0.0.1','::1','localhost'}
-        if request.url.scheme!='https' and not loopback:
-            raise DomainError('Use HTTPS para configurar o A1.',400,'reception_https_required')
         received=0
         async def limited_receive():
             nonlocal received
