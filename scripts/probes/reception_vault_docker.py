@@ -35,6 +35,7 @@ def main():
     prefix = 'escritura-a1-fixture-' + uuid.uuid4().hex
     base, runtime = prefix + ':base', prefix + ':runtime'
     created = []
+    images = []
     try:
         config = json.loads(docker('compose', '--project-name', prefix, '-f', 'compose.yaml',
                                   '-f', 'deploy/compose.reception-vault.yaml', 'config', '--format', 'json',
@@ -42,14 +43,17 @@ def main():
                                            ESCRITURA_APP_DATA_BIND='/tmp/' + prefix + '/configuration-only')))
         app = config['services']['app']
         mounts = {mount['target']: mount for mount in app['volumes']}
-        assert mounts['/data']['type'] == 'bind' and not mounts['/data']['bind']['create_host_path']
+        # Compose's normalized JSON omits false fields (omitempty).
+        assert mounts['/data']['type'] == 'bind' and not mounts['/data'].get('bind', {}).get('create_host_path', False)
         assert mounts['/run/escritura/reception-vault']['type'] == 'volume'
         assert app['read_only'] and app['cap_drop'] == ['ALL']
         assert config['volumes']['reception_vault']['name'] == prefix + '_reception_vault'
         docker('build', '-f', 'docker/base.Dockerfile', '--build-arg',
                'PYTHON_IMAGE=' + catalog['upstreams']['python']['reference'], '-t', base, '.')
+        images.append(base)
         docker('build', '--target', 'reception-runtime', '--build-arg', 'RUNTIME_IMAGE=' + base,
                '--build-arg', 'NODE_IMAGE=' + catalog['upstreams']['node']['reference'], '-t', runtime, '.')
+        images.append(runtime)
         for name in ('data', 'vault', 'empty-vault', 'wrong-vault', 'backup', 'key-backup', 'restored-data', 'restored-vault'):
             volume = prefix + '-' + name
             docker('volume', 'create', '--label', 'escritura.fixture=' + prefix, volume)
@@ -83,7 +87,8 @@ def main():
         # Explicit names generated in this invocation only. Never delete other volumes.
         for volume in reversed(created):
             subprocess.run(['docker', 'volume', 'rm', volume], stdout=subprocess.DEVNULL, check=False)
-        subprocess.run(['docker', 'image', 'rm', runtime, base], stdout=subprocess.DEVNULL, check=False)
+        if images:
+            subprocess.run(['docker', 'image', 'rm', *reversed(images)], stdout=subprocess.DEVNULL, check=False)
 
 
 if __name__ == '__main__':
