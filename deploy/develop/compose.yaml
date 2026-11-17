@@ -12,7 +12,8 @@
       "environment": {
         "ESCRITURA_DATA_DIR": "/data",
         "ESCRITURA_DEMO": "0",
-        "ESCRITURA_COOKIE_SECURE": "${ESCRITURA_COOKIE_SECURE:-0}"
+        "ESCRITURA_COOKIE_SECURE": "${ESCRITURA_COOKIE_SECURE:-0}",
+        "FORWARDED_ALLOW_IPS": "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
       },
       "volumes": [
         {

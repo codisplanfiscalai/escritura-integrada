@@ -95,7 +95,7 @@ class VaultTests(unittest.TestCase):
         def changed(*args):
             identity=original(*args);self.vault.update(self.a['id'],self.uid,'synthetic',self.options|{'version':1,'environments':{'nfse_adn':['restricted_production']}});return identity
         with patch.object(service.credentials,'load',side_effect=changed):
-            r=self.client.post(self.scope('/reception/nfe_distribution/query'),json={'environment':'homologation','period':'2026-11','idempotency_key':'synthetic-race-0001'})
+            r=self.client.post(self.scope('/reception/nfe_distribution/query'),json={'environment':'homologation','configuration_revision':self.client.get(self.scope('/reception/nfe_distribution'),params={'year':2026}).json()['configuration']['revision'],'period':'2026-11','idempotency_key':'synthetic-race-0001'})
         self.assertEqual(409,r.status_code,r.text);self.assertEqual('stale_credential',r.json()['code']);self.assertEqual([],service.transport.plans)
     @unittest.skipUnless(os.name=='nt','DPAPI requires Windows; no simulation counted as physical validation')
     def test_windows_dpapi_current_user_round_trip_and_tamper(self):

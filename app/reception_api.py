@@ -17,7 +17,7 @@ def register(app,core,actor,check_period):
         return ReceptionWorkspace(core,app.state.reception)
 
     @app.get('/api/companies/{cid}/reception/{provider}')
-    def overview(cid:int,provider:str,request:Request,environment:str,year:int,query:str='',offset:int=0,direction:str='',competence:str=''):
+    def overview(cid:int,provider:str,request:Request,year:int,environment:str|None=None,query:str='',offset:int=0,direction:str='',competence:str=''):
         return workspace().overview(cid,request.state.session['user']['id'],provider,environment,year,query,offset,direction,competence)
 
     @app.get('/api/companies/{cid}/reception/{provider}/report')
@@ -31,8 +31,7 @@ def register(app,core,actor,check_period):
 
     @app.post('/api/companies/{cid}/reception/{provider}/check')
     def check(cid:int,provider:str,request:Request,payload:dict=Body(...)):
-        if set(payload)!={'environment'}:raise DomainError('Informe somente o ambiente.')
-        return workspace().check(cid,request.state.session['user']['id'],provider,payload['environment'])
+        return workspace().check(cid,request.state.session['user']['id'],provider,payload)
 
     @app.post('/api/companies/{cid}/reception/{provider}/query')
     def capture(cid:int,provider:str,request:Request,payload:dict=Body(...)):

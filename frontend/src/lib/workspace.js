@@ -19,7 +19,7 @@ export async function api(path, options = {}) {
     let data; try { data = await response.json(); } catch { data = {}; }
     const detail = data.detail || data.message || `Não foi possível concluir a operação (${response.status}).`;
     const text = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map(e => `${e.loc?.slice(1).join('.') || 'Campo'}: ${e.msg}`).join('\n') : detail.message || JSON.stringify(detail);
-    const error = new Error(text); error.status = response.status; error.detail = detail;
+    const error = new Error(text); error.status = response.status; error.detail = detail; error.code = data.code;
     if (response.status === 401 && !path.match(/login|setup|session/)) state.session = { ...state.session, authenticated: false, user: null };
     if (response.status === 401 && !path.match(/login|setup|session/)) notify('A sessão foi encerrada. Entre novamente para continuar.', 'warning');
     throw error;
