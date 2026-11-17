@@ -239,6 +239,42 @@ def main():
                 section('Configuração e mapeamentos')
                 page.get_by_role('button',name='Salvar mapeamentos nesta empresa',exact=True).click();expect(page.locator('.prosoft-view:visible [role="status"]')).to_contain_text('Mapeamentos salvos nesta empresa')
                 check('Escolha contábil preservada: perfil LC1/LC2 exclui CTA configurado e perfil LC1/LC2+CTA o inclui sem apagar o cadastro')
+                page.get_by_label('Tipo de exportação Prosoft',exact=True).select_option('journals_cta_trc')
+                section('Configuração e mapeamentos')
+                page.get_by_label('Código Prosoft do terceiro Terceiro sintético',exact=True).fill('11222333000181')
+                page.get_by_text('Cadastro opcional TRC PJ · Terceiro sintético',exact=True).click()
+                page.get_by_label('Incluir TRC PJ do terceiro Terceiro sintético: confirme que está ausente no destino',exact=True).check()
+                page.get_by_label('Razão social TRC do terceiro Terceiro sintético',exact=True).fill('Pessoa Juridica Sintetica')
+                page.get_by_label('Apelido TRC do terceiro Terceiro sintético',exact=True).fill('PJ Sintetica')
+                page.get_by_label('UF TRC do terceiro Terceiro sintético',exact=True).fill('SP')
+                page.get_by_role('button',name='Salvar mapeamentos nesta empresa',exact=True).click()
+                expect(page.locator('.prosoft-view:visible [role="status"]')).to_contain_text('Mapeamentos salvos nesta empresa')
+                page.reload();nav('Integração Prosoft');section('Configuração e mapeamentos')
+                expect(page.get_by_label('Tipo de exportação Prosoft',exact=True)).to_have_value('journals_cta_trc')
+                page.get_by_text('Cadastro opcional TRC PJ · Terceiro sintético',exact=True).click()
+                expect(page.get_by_label('Apelido TRC do terceiro Terceiro sintético',exact=True)).to_have_value('PJ Sintetica')
+                shot('accounting-trc-settings-desktop.png')
+                section('Exportação e prévia');page.get_by_role('button',name='Gerar prévia',exact=True).click()
+                expect(preview).to_contain_text('TRC PJ 1')
+                preview.get_by_label('Conferi a empresa, o plano e os mapeamentos no destino.',exact=True).check();confirm.click();expect(link).to_be_visible()
+                trc_txt=download(link,'synthetic-accounting-trc.txt');trc_rows=trc_txt.splitlines()
+                assert list(map(len,trc_rows))==[208,646,448]
+                assert trc_rows[1][:11]==b'TRC00001  0' and trc_rows[1][11:25]==b'11222333000181'
+                assert trc_rows[1][274:276]==b'SP' and trc_rows[1][276:]==b' '*370
+                assert trc_rows[2][73:87]==b'11222333000181'
+                trc_map=json.loads(download(preview.get_by_role('link',name='Baixar mapa de referências',exact=True),'synthetic-accounting-trc-manifest.json'))
+                assert trc_map['record_counts']['TRC']==1 and trc_map['third_registrations'][0]['participant_id']==party['id']
+                assert trc_map['third_registrations'][0]['record_sha256']==hashlib.sha256(trc_rows[1]).hexdigest()
+                page.get_by_label('Tipo de exportação Prosoft',exact=True).select_option('journals')
+                section('Exportação e prévia');page.get_by_role('button',name='Gerar prévia',exact=True).click();expect(preview).to_contain_text('TRC PJ 0')
+                preview.get_by_label('Conferi a empresa, o plano e os mapeamentos no destino.',exact=True).check();confirm.click();expect(link).to_be_visible()
+                assert list(map(len,download(link,'synthetic-accounting-trc-disabled.txt').splitlines()))==[448]
+                page.get_by_label('Tipo de exportação Prosoft',exact=True).select_option('journals_cta_trc')
+                section('Configuração e mapeamentos');expect(page.get_by_label('Apelido TRC do terceiro Terceiro sintético',exact=True)).to_have_value('PJ Sintetica')
+                expect(page.get_by_role('button',name='Salvar mapeamentos nesta empresa',exact=True)).to_be_disabled()
+                persisted_trc=get(f'/companies/{a}/prosoft/settings')['settings']
+                assert persisted_trc['record_types']==['LC1','LC2','CTA','TRC'] and persisted_trc['participants'][str(party['id'])]['create_third']['alias']=='PJ Sintetica'
+                check('TRC PJ opcional persistido, CTA/TRC antes do LC1, CNPJ e posições/ASCII/hash reconciliados com manifesto; desativar TRC mantém cadastro e gera apenas LC1')
                 page.set_viewport_size({'width':390,'height':844});page.wait_for_timeout(400)
                 if page.locator('.sidebar.visible').count():page.get_by_role('button',name='Fechar navegação',exact=True).click()
                 while page.get_by_role('button',name='Fechar aviso',exact=True).count():page.get_by_role('button',name='Fechar aviso',exact=True).first.click()
