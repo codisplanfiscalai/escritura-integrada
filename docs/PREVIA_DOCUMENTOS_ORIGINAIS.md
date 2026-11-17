@@ -92,3 +92,14 @@ Validação final local:
 - Evidências negativas anteriores continuam preservadas em `artifacts/dacte-before-qr-fix` e `artifacts/dacte-before-layout-fix`; resultados atuais, PDFs, XMLs e pixels em `artifacts/document-preview`. Nenhuma falha histórica foi apresentada como aprovação.
 
 Referências específicas: MOC CT-e 4.00 Anexo II §§2.3, 2.6, 2.8 e 2.12 (campos/quebras/continuações), §2.17 (Code128-C, margens, altura e resolução), §§2.18/2.20/2.21.1 (QR, homologação e marca d'água), §2.21.3 (código adicional no rodapé), conforme fonte oficial já vinculada acima. A versão da dependência permanece fixada; não há alteração da instalação compartilhada, XML de origem, escrituração ou transmissão.
+
+
+## Controles da caixa de prévia
+
+A barra reúne páginas, zoom, **Ampliar / Restaurar**, **Baixar PDF** e **Imprimir PDF**. Ampliar ocupa a área disponível do navegador sem abrir uma segunda janela ou alterar a escala do documento; restaurar mantém página e zoom. Em telas estreitas, os controles quebram em linhas e a rolagem fica dentro do documento, preservando as proporções.
+
+Download e impressão usam um Blob privado dos mesmos bytes recebidos pela prévia, antes de o PDF.js transferir o buffer. Não repetem a chamada fiscal nem regeneram o PDF. A impressão usa o leitor PDF do navegador, preservando páginas e tamanho do PDF, não uma captura do canvas. Se esse leitor não estiver disponível, houver falha ou demora na abertura, a caixa orienta baixar e imprimir em um leitor externo. O resultado físico depende do leitor, configuração e impressora; não há homologação de impressão física.
+
+Fechar, trocar documento/contexto ou repetir a carga cancela a preparação de impressão, remove o iframe privado e revoga o Blob. ESC e foco continuam sob BaseModal; não há mudanças em ReportPdfPreview.vue nem na persistência de guias. A imagem de referência real não integra o repositório ou as fixtures.
+
+Reprodução sintética: testes Node de document-preview (bytes, falha, cancelamento e revogação), `scripts/browser_document_preview.py` (grid/editor, ampliar/restaurar, PDF baixado idêntico à resposta, impressão ou diagnóstico conforme capacidade real, móvel, Esc/foco, erro/retry e contexto). O cenário roda também na CI com Chromium completo. Resultados efetivos e limites do ambiente são registrados na PR.

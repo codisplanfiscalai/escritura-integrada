@@ -71,11 +71,35 @@ def main():
                             # Existing fixtures can share a number across models.
                             row=page.get_by_role('row').filter(has=trigger).filter(has_text=doc['partner_name'])
                             trigger=trigger if trigger.count()==1 else row.get_by_role('button',name=f"Visualizar documento original {doc['number']}",exact=True).first
-                            trigger.click()
+                            with page.expect_response(lambda r:r.url.endswith(f"/documents/{doc['id']}/auxiliary") and r.request.method=='GET') as received:
+                                trigger.click()
+                            original_pdf=received.value.body()
                             modal=page.get_by_role('dialog',name=f"{label} · documento {doc['number']}",exact=True)
                             expect(modal.locator('canvas')).to_be_visible(timeout=30000)
                             expect(modal.get_by_text('Página 1 de',exact=False)).to_be_visible()
                             expect(modal.get_by_role('alert')).to_have_count(0)
+                            # Controls operate on the already fetched PDF, without regeneration.
+                            normal_box=modal.bounding_box();canvas_box=modal.locator('canvas').bounding_box()
+                            modal.get_by_role('button',name='Ampliar',exact=True).click()
+                            expect(modal.get_by_role('button',name='Restaurar',exact=True)).to_have_attribute('aria-pressed','true')
+                            assert modal.bounding_box()['width']>normal_box['width']
+                            assert abs(modal.locator('canvas').bounding_box()['width']/modal.locator('canvas').bounding_box()['height']-canvas_box['width']/canvas_box['height'])<0.001
+                            page.screenshot(path=str(OUT/(label+'-'+doc['number']+'-expanded.png')),full_page=True)
+                            modal.get_by_role('button',name='Restaurar',exact=True).click()
+                            expect(modal.get_by_role('button',name='Ampliar',exact=True)).to_have_attribute('aria-pressed','false')
+                            assert abs(modal.bounding_box()['width']-normal_box['width'])<1
+                            with page.expect_download() as download:
+                                modal.get_by_role('link',name='Baixar PDF',exact=True).click()
+                            assert Path(download.value.path()).read_bytes()==original_pdf
+                            assert modal.get_by_role('link',name='Baixar PDF').get_attribute('href').startswith('blob:')
+                            modal.get_by_role('button',name='Imprimir PDF',exact=True).click()
+                            if page.evaluate('navigator.pdfViewerEnabled'):
+                                expect(page.get_by_role('button',name='Imprimir PDF',exact=True)).to_be_enabled(timeout=20000)
+                                expect(modal.get_by_role('alert')).to_have_count(0)
+                                assert page.locator('iframe[title="Impressão do documento original"]').count()==1
+                            else:
+                                expect(modal.get_by_role('alert')).to_contain_text('Use Baixar PDF')
+                            report.setdefault('output_checks',[]).append({'model':label,'download_identical':True,'native_pdf_viewer':page.evaluate('navigator.pdfViewerEnabled')})
                             if label == 'DACTE':
                                 count=int(re.search(r'de (\d+)$',modal.locator('canvas').get_attribute('aria-label'))[1])
                                 base_width=modal.locator('canvas').evaluate('c => parseFloat(c.style.width)')
@@ -113,7 +137,22 @@ def main():
 
                             page.keyboard.press('Escape');expect(page.get_by_role('dialog')).to_have_count(0)
                             expect(trigger).to_be_focused()
+                            expect(page.locator('iframe[title="Impressão do documento original"]')).to_have_count(0)
                         report['checks'].append('DANFE, DANFC-e and DACTE: canvas rendered locally; zoom, Esc and focus return')
+                        # Narrow screens retain visible controls; document scroll stays contained.
+                        page.set_viewport_size({'width':390,'height':844})
+                        first_doc=documents[0][0]
+                        page.get_by_role('button',name=f"Visualizar documento original {first_doc['number']}",exact=True).first.click()
+                        narrow=page.get_by_role('dialog').last
+                        expect(narrow.locator('canvas')).to_be_visible(timeout=30000)
+                        narrow.get_by_label('Zoom',exact=True).select_option('fit')
+                        expect(narrow.locator('.document-pdf-pages')).to_have_attribute('aria-busy','false')
+                        assert narrow.locator('canvas').bounding_box()['width']<=narrow.locator('.document-pdf-pages').bounding_box()['width']
+                        for name in ('Ampliar','Imprimir PDF','Fechar prévia · Esc'):
+                            box=narrow.get_by_role('button',name=name,exact=True).bounding_box()
+                            assert box['x']>=0 and box['x']+box['width']<=391 and box['y']+box['height']<=845,box
+                        page.screenshot(path=str(OUT/'original-preview-mobile.png'),full_page=True)
+                        page.keyboard.press('Escape');page.set_viewport_size({'width':1440,'height':1050})
                         # Open from an edit dialog; closing only the preview keeps editor data.
                         doc,label=documents[0]
                         page.get_by_role('button',name=f"Editar documento {doc['number']}",exact=True).first.click()
