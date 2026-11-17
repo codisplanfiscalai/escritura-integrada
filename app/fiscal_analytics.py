@@ -200,9 +200,10 @@ def fiscal_posting_lines(document):
         for row in doc['analytics']:
             line = _base(doc, row, 'sped_c190')
             taxes = row.get('taxes', {})
+            # Missing/null/blank is unknown, not an explicitly declared zero.
             line.update(document_total=_money(row.get('operation_total', taxes.get('VL_OPR'))),
-                        ipi=_money(taxes.get('VL_IPI')), ipi_informed='VL_IPI' in taxes, book_base=_money(taxes['VL_BC_ICMS']) if 'VL_BC_ICMS' in taxes else None,
-                        book_icms=_money(taxes['VL_ICMS']) if 'VL_ICMS' in taxes else None,
+                        ipi=_money(taxes.get('VL_IPI')), ipi_informed='VL_IPI' in taxes, book_base=_money(taxes['VL_BC_ICMS']) if taxes.get('VL_BC_ICMS') not in (None, '') else None,
+                        book_icms=_money(taxes['VL_ICMS']) if taxes.get('VL_ICMS') not in (None, '') else None,
                         book_ipi=None,
                         declared_taxes=dict(taxes))
             line['pending'].append('OTHER_IPI_TREATMENT_REQUIRED')
