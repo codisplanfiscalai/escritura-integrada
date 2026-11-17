@@ -77,6 +77,14 @@ impedir UID 10001 de abrir SQLite mesmo quando a cópia preservou todos os bytes
    python3 deploy_storage.py check-app --compose-file compose.yaml --project escritura-{environment} --require-health --wait-health-seconds 120
 6. Abra http://127.0.0.1:{port} e crie o administrador no primeiro acesso.
 
+COFRE A1 (OPCIONAL)
+Antes de cadastrar um A1, leia COFRE_A1.md. O override compose.reception-vault.yaml
+mantém a chave em volume separado, privado e isolado por COMPOSE_PROJECT_NAME.
+Use a mesma combinação de arquivos em todas as recriações futuras. Não ative
+um volume vazio em instalação que já cadastrou A1 sem recuperar a chave anterior.
+O backup .eibk do banco NÃO contém essa chave. Nunca use down -v na instalação.
+O override não é ativado automaticamente e não modifica stacks em execução.
+
 Apenas a porta da aplicação é publicada, com bind loopback por padrão.
 Produção mantém a tag versionada; develop segue :develop. O app consulta o
 registro em cada up nos dois pacotes, inclusive se ESCRITURA_IMAGE for :latest
@@ -170,6 +178,7 @@ def package(manifest, output_dir, root=ROOT):
             "compose.yaml": (root / "deploy" / environment / "compose.yaml").read_bytes(),
             "compose.release.yaml": (json.dumps(release_compose(manifest), ensure_ascii=False, indent=2) + "\n").encode(),
             "compose.existing-bind.yaml": (root / "deploy/compose.existing-bind.yaml").read_bytes(),
+            "compose.reception-vault.yaml": (root / "deploy/compose.reception-vault.yaml").read_bytes(),
             ".env": deployment_env(manifest, environment).encode(),
             ".env.example": deployment_env(manifest, environment).encode(),
             "images.json": (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(),
@@ -177,6 +186,7 @@ def package(manifest, output_dir, root=ROOT):
             "DEPLOY.md": (root / "docs/DEPLOY.md").read_text(encoding="utf-8").replace("(DOCKER_STORAGE.md", "(STORAGE.md").encode(),
             "deploy_storage.py": (root / "scripts/deploy_storage.py").read_bytes(),
             "STORAGE.md": (root / "docs/DOCKER_STORAGE.md").read_bytes(),
+            "COFRE_A1.md": (root / "docs/COFRE_A1_DOCKER.md").read_bytes(),
             "THIRD-PARTY.md": (root / "docker/THIRD-PARTY.md").read_bytes(),
         }
         # Allowlist fechada: não inclui app/, banco, `.env` local, logs ou material recuperado.
