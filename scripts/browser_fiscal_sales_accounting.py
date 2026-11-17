@@ -12,9 +12,9 @@ import tempfile
 import time
 import traceback
 import urllib.request
-from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 OUT = ROOT / 'artifacts' / 'browser-fiscal-sales-accounting'
 
 
@@ -24,6 +24,7 @@ def snapshot(folder, cid, tables=('documents', 'journals', 'journal_lines', 'tit
 
 
 def main():
+    from playwright.sync_api import expect, sync_playwright
     OUT.mkdir(parents=True, exist_ok=True)
     report = {'ok': False, 'synthetic_only': True, 'checks': [], 'console_errors': []}
     process = None
