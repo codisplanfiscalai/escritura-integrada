@@ -26,6 +26,7 @@ LABELS = dict(LABELS, number='Lcto.', journal_ids='Lançamentos de origem',
               account_id_filter='Filtro de conta', cost_center_id_filter='Filtro de centro')
 # Frações de largura, em vez de colunas genéricas igualmente espaçadas.
 COLUMNS = {
+ 'bank-movements': [('date', .10), ('bank_account', .18), ('reference', .13), ('description', .35), ('incoming_cents', .12), ('outgoing_cents', .12)],
  'diary': [('date', .10), ('number', .06), ('document', .09), ('classifier', .11),
            ('account_name', .16), ('history', .20), ('debit_cents', .09), ('credit_cents', .09), ('cost_center_name', .10)],
  'consolidated-diary': [('date', .10), ('access_code', .08), ('account_name', .28),
@@ -117,7 +118,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
              p('Período: ' + val('date', result['start']) + ' a ' + val('date', result['end'])),
              p(NOTICE), p(result.get('scope_note', '')),
              p('Filtros: ' + ('; '.join({'account_id':'Conta','cost_center_id':'Centro de custo','query':'Pesquisa','direction':'Operação','status':'Situação'}.get(key,LABELS.get(key,key.replace('_',' ').capitalize()))+': '+str(display(key,value)) for key,value in filters.items() if value not in (None,'')) or 'Sem filtros adicionais.')),
-             p('Valores em reais. Saldos: D = devedor; C = credor. Resultado positivo = lucro; negativo = prejuízo.'), Spacer(1, 8)]
+             p('Valores em reais. Entradas e saídas bancárias; movimento líquido não representa saldo.' if kind=='bank-movements' else 'Valores em reais. Saldos: D = devedor; C = credor. Resultado positivo = lucro; negativo = prejuízo.'), Spacer(1, 8)]
     rows = result.get('rows', [])
     sections = OrderedDict()
     for index, row in enumerate(rows, 1):

@@ -18,7 +18,8 @@ from .importers import ImportProblem
 from .reception_adn import load_adn_json, read_adn_distribution
 from .reception import (ADN_ENDPOINTS, NFE_ENDPOINTS, adn_rejection, adn_request,
                         nfe_request, read_nfe_distribution)
-from .reception_credentials import LocalA1Credentials, _cnpj, query_cnpj
+from .reception_credentials import _cnpj, query_cnpj
+from .reception_vault import CompanyA1Vault
 from .reception_transport import MtlsTransport
 
 STATE_SCOPE = 'fiscal-reception-state-v1'
@@ -31,7 +32,7 @@ UF_CODES = dict(zip(['RO','AC','AM','RR','PA','AP','TO','MA','PI','CE','RN','PB'
 class ReceptionService:
     def __init__(self, core, credentials=None, transport=None, clock=time.time):
         self.core, self.db = core, core.db
-        self.credentials = credentials or LocalA1Credentials()
+        self.credentials = credentials or CompanyA1Vault(self.db)
         self.transport = transport or MtlsTransport()
         self.clock = clock
 
@@ -63,19 +64,8 @@ class ReceptionService:
         if not isinstance(provider,str) or not isinstance(environment,str) or provider not in endpoints or environment not in endpoints[provider]:
             raise DomainError('Provedor ou ambiente de recepção inválido.', 400, 'reception_environment')
 
-    def query(self, cid, payload, actor, uid):
-        if not isinstance(payload, dict) or set(payload) - {'provider','environment','period','idempotency_key'}:
-            raise DomainError('Informe somente provedor, ambiente, competência e chave idempotente; certificados e URLs não são aceitos pela API.')
-        provider, environment = payload.get('provider'), payload.get('environment')
-        self._spec(provider, environment)
-        competence, key = period(payload.get('period')), self._key(payload.get('idempotency_key'))
-        with self.db.read() as conn:
-            company = self._access(conn, uid, cid, 'import')
-            target = query_cnpj(company['tax_id'],provider)
-            identity = digest({'provider':provider,'environment':environment,'period':competence,'target':target})
-            old = self._operation(conn,cid,RUN_SCOPE,key)
-            if old:
-                return self._repeat(old, identity)
+    def local_identity(self,cid,company,provider,environment):
+        target=query_cnpj(company['tax_id'],provider)
         if provider == 'nfe_distribution' and company['state'] not in UF_CODES:
             raise DomainError('Informe a UF da empresa antes de consultar a distribuição NF-e.',409,'reception_company_uf')
         credential = self.credentials.load(cid, target, provider, environment)
@@ -88,10 +78,29 @@ class ReceptionService:
             if target[:8] != _cnpj(credential.tax_id)[:8]:
                 raise DomainError('Certificado NF-e de outra raiz não é permitido.',409,'reception_certificate_identity')
             mode = 'CnpjBase' if target != credential.tax_id else 'InscricaoCertificado'
+        return credential,mode
+
+    def query(self, cid, payload, actor, uid):
+        if not isinstance(payload, dict) or set(payload) - {'provider','environment','period','idempotency_key'}:
+            raise DomainError('Informe somente provedor, ambiente, competência e chave idempotente; certificados e URLs não são aceitos pela API.')
+        provider, environment = payload.get('provider'), payload.get('environment')
+        self._spec(provider, environment)
+        competence, key = period(payload.get('period')), self._key(payload.get('idempotency_key'))
+        with self.db.read() as conn:
+            company = self._access(conn, uid, cid, 'import')
+            target = query_cnpj(company['tax_id'],provider)
+            revision=self.credentials.revision(conn,cid) if hasattr(self.credentials,'revision') else None
+            identity = digest({'provider':provider,'environment':environment,'period':competence,'target':target})
+            old = self._operation(conn,cid,RUN_SCOPE,key)
+            if old:
+                return self._repeat(old, identity)
+        credential,mode=self.local_identity(cid,company,provider,environment)
         state_key = provider + ':' + environment + ':' + target
         lease = uuid.uuid4().hex
         with self.db.transaction() as conn:
             current = self._access(conn, uid, cid, 'import')
+            if hasattr(self.credentials,'revision') and self.credentials.revision(conn,cid)!=revision:
+                raise DomainError('A configuração A1 mudou. Reabra a consulta.',409,'stale_credential')
             if current['tax_id'] != target:
                 raise DomainError('Cadastro da empresa mudou; consulta não executada.',409,'stale_company')
             from .operational_settings import ensure_import_allowed
@@ -108,7 +117,7 @@ class ReceptionService:
             cursor = state['cursor']
             # Reserve the external attempt before sending. An interrupted process
             # leaves a lease and idempotent uncertain run, never an advanced cursor.
-            state.update(lease_id=lease,lease_until=stamp+LEASE_SECONDS,next_allowed_at=stamp+3600)
+            state.update(lease_id=lease,lease_until=stamp+LEASE_SECONDS,next_allowed_at=stamp+(3600 if provider=='nfe_distribution' else 0))
             self._save_state(conn,cid,state_key,state)
             conn.execute('INSERT INTO operations(company_id,scope,key,request_hash,result_json,created_at) VALUES(?,?,?,?,?,?)',
                          (cid,RUN_SCOPE,key,identity,pack({'state':'in_progress','provider':provider,'environment':environment,'period':competence,'cursor_before':cursor}),now()))
@@ -126,11 +135,11 @@ class ReceptionService:
             result, proposed, cooldown = self._interpret(provider,environment,cursor,reply,mode)
         except DomainError as exc:
             return self._finish(cid,uid,actor,key,identity,state_key,lease,target,competence,
-                                {'state':'uncertain','code':exc.code},cursor,3600,self._received_bytes(reply))
+                                {'state':'uncertain','code':exc.code},cursor,3600 if provider=='nfe_distribution' else 0,self._received_bytes(reply))
         except Exception:
             # Do not return driver messages, response bodies, paths or credentials.
             return self._finish(cid,uid,actor,key,identity,state_key,lease,target,competence,
-                                {'state':'uncertain','code':'reception_transport_uncertain'},cursor,3600,self._received_bytes(reply))
+                                {'state':'uncertain','code':'reception_transport_uncertain'},cursor,3600 if provider=='nfe_distribution' else 0,self._received_bytes(reply))
         return self._finish(cid,uid,actor,key,identity,state_key,lease,target,competence,result,proposed,cooldown,reply.body)
 
     def _received_bytes(self, reply):
@@ -146,20 +155,21 @@ class ReceptionService:
         return result | {'duplicate':True}
 
     def _interpret(self, provider, environment, cursor, reply, expected_mode):
+        fallback=3600 if provider=='nfe_distribution' else 0
         metadata = {'http_status':reply.status,'expected_authorization_mode':expected_mode,
                     'authorization_verified':False,'cursor_advanced':False}
         if reply.status in {429,503,502,504}:
-            return metadata|{'state':'remote_unavailable'},cursor,max(3600,reply.retry_after)
+            return metadata|{'state':'remote_unavailable'},cursor,max(fallback,reply.retry_after)
         if 300 <= reply.status < 400:
-            return metadata|{'state':'redirect_refused'},cursor,3600
+            return metadata|{'state':'redirect_refused'},cursor,fallback
         if provider == 'nfe_distribution' and reply.status == 200:
             response = read_nfe_distribution(reply.body)
             if response['environment'] != ('1' if environment == 'production' else '2'):
-                return metadata|{'state':'environment_mismatch'},cursor,3600
+                return metadata|{'state':'environment_mismatch'},cursor,fallback
             proposed = response['reported_last_nsu']
             if response['status_code'] in {'137','138'}:
                 if proposed < cursor or any(entry['nsu'] <= cursor for entry in response['entries']):
-                    return metadata|{'state':'nsu_mismatch'},cursor,3600
+                    return metadata|{'state':'nsu_mismatch'},cursor,fallback
                 return metadata|{'state':'received','status_code':response['status_code'],
                                  'entries':[{k:v for k,v in entry.items() if k!='xml'} for entry in response['entries']],
                                  'review_pending':True},proposed,max(60,response['cooldown_seconds'])
@@ -171,16 +181,16 @@ class ReceptionService:
                 # accompanied by an inconsistent success status/HTTP 200.
                 if isinstance(payload,dict) and payload.get('Erros'):
                     rejection = adn_rejection(payload,cursor)
-                    return metadata|{'state':rejection['state'],'error_codes':rejection['error_codes']},cursor,3600
+                    return metadata|{'state':rejection['state'],'error_codes':rejection['error_codes']},cursor,fallback
                 if reply.status != 200:
                     raise ImportProblem('ADN_RESPONSE_UNSUPPORTED','Retorno ADN pendente.')
                 response = read_adn_distribution(payload,cursor,environment,expected_mode)
                 proposed = response.pop('reported_last_nsu')
-                return metadata|response|{'state':'received'},proposed,3600
+                return metadata|response|{'state':'received'},proposed,0
             except (ValueError,UnicodeError,RecursionError) as error:
                 return metadata|{'state':'received_unparsed' if reply.status == 200 else 'unparsed_rejection',
-                                 'code':getattr(error,'code','ADN_RESPONSE_INVALID'),'review_pending':True},cursor,3600
-        return metadata|{'state':'rejected'},cursor,3600
+                                 'code':getattr(error,'code','ADN_RESPONSE_INVALID'),'review_pending':True},cursor,fallback
+        return metadata|{'state':'rejected'},cursor,fallback
 
     def _finish(self,cid,uid,actor,key,identity,state_key,lease,target,competence,result,proposed,cooldown,raw):
         with self.db.transaction() as conn:
@@ -201,7 +211,7 @@ class ReceptionService:
                     'warning_code':'NFE_EXTERNAL_NSU_COORDINATION',
                     'warning':'Outros sistemas que consultem este CNPJ precisam compartilhar a sequência e os intervalos distNSU. A reserva do Escritura coordena somente esta base; combine a coleta ou importe os XMLs já obtidos.'}
 
-            result.update(provider=provider,environment=environment,period=competence,receipt_key=key,
+            result.update(provider=provider,environment=environment,period=competence,receipt_key=key,target_tax_id=target,
                           cursor_before=state['cursor'],cursor_after=proposed,cursor_advanced=proposed!=state['cursor'])
             if raw:
                 extension = '.xml' if provider == 'nfe_distribution' else '.json'
@@ -218,7 +228,7 @@ class ReceptionService:
                         'adn-'+key+'-'+entry['nsu']+'.xml',xml,actor)
                 if provider == 'nfse_adn' and proposed != state['cursor'] and not entry.get('file_id'):
                     raise DomainError('XML íntegro obrigatório antes de avançar NSU ADN.',409,'reception_original_required')
-            state.update(cursor=proposed,lease_id=None,lease_until=0,next_allowed_at=self.clock()+max(60,cooldown),last_receipt=key)
+            state.update(cursor=proposed,lease_id=None,lease_until=0,next_allowed_at=self.clock()+max(60 if provider=='nfe_distribution' else 0,cooldown),last_receipt=key)
             self._save_state(conn,cid,state_key,state)
             conn.execute('UPDATE operations SET result_json=? WHERE company_id=? AND scope=? AND key=? AND request_hash=?',
                          (pack(result),cid,RUN_SCOPE,key,identity))
@@ -253,7 +263,18 @@ class ReceptionService:
                 raise DomainError('Recepção não localizada nesta empresa.',404,'not_found')
             result=json.loads(row['result_json'])
             entry=next((item for item in result.get('entries',[]) if item.get('nsu')==number),None)
-            if result.get('provider')!='nfse_adn' or not entry or not entry.get('file_id'):
+            if not entry:
+                raise DomainError('XML não disponível neste recibo.',404,'not_found')
+            if result.get('provider')=='nfe_distribution' and result.get('file_id'):
+                envelope=read_file(conn,cid,result['file_id'])
+                if envelope['sha256']!=result['sha256']:
+                    raise DomainError('Integridade do retorno comprometida.',409,'file_integrity')
+                packets=read_nfe_distribution(envelope['content'])
+                packet=next((p for p in packets['entries'] if p['nsu']==number),None)
+                if not packet or packet['sha256']!=entry['sha256']:
+                    raise DomainError('Integridade do XML comprometida.',409,'file_integrity')
+                return entry,packet['xml']
+            if result.get('provider')!='nfse_adn' or not entry.get('file_id'):
                 raise DomainError('XML não disponível neste recibo.',404,'not_found')
             file=read_file(conn,cid,entry['file_id'])
             if file['sha256']!=entry['sha256'] or len(file['content'])!=entry['bytes']:

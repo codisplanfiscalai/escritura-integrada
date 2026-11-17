@@ -3,10 +3,13 @@ import calendar
 from .core import DomainError, company_row, integer, iso_date, period, select_one
 
 class ReportsMixin:
-    def business_report(self,cid,kind,start,end,account_id=None,cost_center_id=None,query='',status='',direction=''):
+    def business_report(self,cid,kind,start,end,account_id=None,cost_center_id=None,query='',status='',direction='',bank_account=''):
         start,end=iso_date(start),iso_date(end)
         if start>end:raise DomainError('Período inicial posterior ao final.')
         query=str(query or '').casefold()
+        if kind=='bank-movements':
+            return self.bank_movement_report(cid,start,end,query,direction,bank_account,account_id,cost_center_id,status)
+        if bank_account:raise DomainError('Filtro de conta bancária disponível somente na movimentação bancária.')
         with self.db.read(snapshot=True) as conn:
             company=company_row(conn,cid)
             clauses=['l.company_id=?'];params=[cid]
@@ -130,3 +133,32 @@ class ReportsMixin:
                     if movements or openings.get(a['id']):ledger_groups.append({'account_id':a['id'],'access_code':a['access_code'],'classifier':a['classifier'],'account_name':a['name'],'opening_cents':openings.get(a['id'],0),'closing_cents':balances.get(a['id'],openings.get(a['id'],0)),'filtered':bool(query),'rows':movements})
                 if query:note+=' Pesquisa restringe os movimentos exibidos; os saldos incluem todos os movimentos da conta no período e centro selecionados.'
             return {'ledger_groups':ledger_groups,'company_code':company['prosoft_code'] or company['code'],'company_tax_id':company['tax_id'],'kind':kind,'company_id':cid,'company_name':company['name'],'start':start,'end':end,'rows':rows,'totals':totals,'scope_note':note,'account_id':account_id,'cost_center_id':cost_center_id,'filters':{'account_id':account_id,'cost_center_id':cost_center_id,'query':query,'status':status,'direction':direction}}
+
+    def bank_movement_report(self,cid,start,end,query='',direction='',bank_account='',account_id=None,cost_center_id=None,status=''):
+        """Imported bank movements, not an inferred bank balance or journal."""
+        from .permissions import effect
+        if account_id is not None or cost_center_id is not None or status:
+            raise DomainError('Movimentação bancária não aceita filtros contábeis ou de situação.')
+        if direction not in {'','incoming','outgoing'}:
+            raise DomainError('Selecione entradas, saídas ou ambas.')
+        with self.db.read(snapshot=True) as conn:
+            company=company_row(conn,cid)
+            effect(conn,cid,'financial.reconciliation','read')
+            clauses=['company_id=?','date BETWEEN ? AND ?'];params=[cid,start,end]
+            if bank_account:
+                clauses.append('bank_account=?');params.append(bank_account)
+            if direction:clauses.append('amount_cents>0' if direction=='incoming' else 'amount_cents<0')
+            rows=[dict(r) for r in conn.execute(
+                'SELECT id AS bank_id,date,bank_account,reference,description,amount_cents FROM bank_transactions WHERE '
+                +' AND '.join(clauses)+' ORDER BY bank_account,date,id',params)]
+            if query:rows=[r for r in rows if query in (' '.join(str(r[k]) for k in ['bank_account','reference','description'])).casefold()]
+            for r in rows:
+                r['incoming_cents']=max(r['amount_cents'],0)
+                r['outgoing_cents']=max(-r['amount_cents'],0)
+            totals={'transactions':len(rows),'incoming_cents':sum(r['incoming_cents'] for r in rows),
+                    'outgoing_cents':sum(r['outgoing_cents'] for r in rows),'net_movement_cents':sum(r['amount_cents'] for r in rows)}
+            return {'kind':'bank-movements','title':'Movimentação bancária','company_id':cid,
+                    'company_code':company['prosoft_code'] or company['code'],'company_name':company['name'],
+                    'company_tax_id':company['tax_id'],'start':start,'end':end,'rows':rows,'totals':totals,
+                    'filters':{'query':query,'direction':direction,'bank_account':bank_account},
+                    'scope_note':'Movimentos bancários importados nas datas e filtros selecionados. Entradas e saídas são do extrato, não débitos e créditos contábeis. Movimento líquido não é saldo bancário: saldos anterior e final não foram informados. Esta consulta não contabiliza nem concilia operações.'}
