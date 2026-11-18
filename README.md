@@ -10,6 +10,8 @@ No módulo Fiscal, **DF-e** e **NFS-e Nacional** têm menus e views próprios pa
 
 A consulta NF-e cobre distribuição do modelo 55 mediante A1 e solicitação explícita. A consulta ADN utiliza os endereços oficiais em produção e produção restrita, com cursor próprio por empresa e ambiente. Automação, CPF/A3, demais modelos e escrituração NFS-e não estão habilitados neste incremento. Não houve homologação fiscal externa. Consulte a [cobertura efetiva, versões, integridade e pendências](docs/RECEPCAO_ACERVO_VERSOES_20261117.md).
 
+O [plano de implementação ADN e relatórios gerenciais](docs/PLANO_ADN_NFSE_GERENCIAL.md) descreve os incrementos de coleta durável, eventos históricos, índice, relatórios e implantação. Ele distingue as correções atuais das capacidades ainda planejadas.
+
 ## Instalar no Windows ou macOS
 
 Na [pré-release de desenvolvimento](https://github.com/codisplanfiscalai/escritura-integrada/releases/tag/develop), a linha 0.7 preserva os instaladores introduzidos na 0.6:

@@ -50,7 +50,10 @@ pelo ajuste.
   NSU é o maior NSU validado do lote. A API não oferece `maxNSU` nesse contrato;
   lote não vazio permite a consulta seguinte, não prova que haverá mais documentos.
 - `NENHUM_DOCUMENTO_LOCALIZADO`/E2220 encerram a coleta. HTTP 404 sem resposta
-  fiscal reconhecida não significa ausência de documentos. `Retry-After` é respeitado.
+  fiscal reconhecida não significa ausência de documentos. Após esgotamento explícito,
+  aplica-se a política conservadora de uma hora, ou `Retry-After` se for maior.
+  Lotes positivos respeitam `Retry-After` quando informado; sem esse cabeçalho,
+  não recebem espera artificial.
 - NSU numérico ou string decimal é tratado sem conversão para float. Campos
   adicionais e alertas não contraditórios não bloqueiam os XMLs. Data de geração
   inválida no envelope é recuperada do XML validado quando possível, ou fica ausente como metadado, sem inventar data contábil.
@@ -75,3 +78,5 @@ Não representam uma consulta real homologada com certificado do cliente.
 Esta descrição substitui o bloqueio de URL/consulta única descrito nos relatórios
 históricos da reconstrução de recepção. O cofre Docker permanece no Compose
 principal; não são adicionados scripts ou arquivos de configuração ao deployment.
+
+O [plano ADN e relatórios gerenciais](PLANO_ADN_NFSE_GERENCIAL.md) especifica a evolução para worker durável, projeção fiscal e relatórios. Esses incrementos não estão habilitados por esta correção.
