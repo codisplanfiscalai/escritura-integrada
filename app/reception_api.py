@@ -12,6 +12,8 @@ from .reception_service import ReceptionService
 
 def register(app,core,actor,check_period):
     app.state.reception = ReceptionService(core)
+    from .reception_automation import ReceptionAutomation
+    app.state.reception_automation = ReceptionAutomation(core, app.state.reception)
 
     def workspace():
         return ReceptionWorkspace(core,app.state.reception)
@@ -41,6 +43,14 @@ def register(app,core,actor,check_period):
     def capture(cid:int,provider:str,request:Request,payload:dict=Body(...)):
         check_period(request,payload.get('period'))
         return workspace().capture(cid,request.state.session['user']['id'],actor(request),provider,payload)
+
+    @app.get('/api/companies/{cid}/reception-automation')
+    def automation_settings(cid:int,request:Request):
+        return app.state.reception_automation.settings(cid,request.state.session['user']['id'])
+
+    @app.put('/api/companies/{cid}/reception-automation/{provider}')
+    def automation_save(cid:int,provider:str,request:Request,payload:dict=Body(...)):
+        return app.state.reception_automation.save(cid,request.state.session['user']['id'],actor(request),provider,payload)
 
     @app.get('/api/companies/{cid}/reception-settings')
     def settings(cid:int,request:Request):

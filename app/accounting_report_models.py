@@ -55,6 +55,9 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
     """
     validate_first_page(first_page)
     kind = result['kind']
+    if kind == 'trial-balance':
+        from .trial_balance_pdf import trial_balance_pdf
+        return trial_balance_pdf(result, first_page)
     if kind not in COLUMNS:
         raise DomainError('Modelo contábil indisponível para este relatório.')
     from reportlab.lib import colors
@@ -117,7 +120,7 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
              p('Empresa: ' + str(result.get('company_code', '')) + ' | CNPJ: ' + str(result.get('company_tax_id', ''))),
              p('Período: ' + val('date', result['start']) + ' a ' + val('date', result['end'])),
              p(NOTICE), p(result.get('scope_note', '')),
-             p('Filtros: ' + ('; '.join({'account_id':'Conta','cost_center_id':'Centro de custo','query':'Pesquisa','direction':'Operação','status':'Situação'}.get(key,LABELS.get(key,key.replace('_',' ').capitalize()))+': '+str(display(key,value)) for key,value in filters.items() if value not in (None,'')) or 'Sem filtros adicionais.')),
+             p('Filtros: ' + ('; '.join({'account_ids':'Contas (IDs)','account_selection':'Contas selecionadas','account_id':'Conta','cost_center_id':'Centro de custo','query':'Pesquisa','direction':'Operação','status':'Situação'}.get(key,LABELS.get(key,key.replace('_',' ').capitalize()))+': '+str(display(key,value)) for key,value in filters.items() if value not in (None,'')) or 'Sem filtros adicionais.')),
              p('Valores em reais. Entradas e saídas bancárias; movimento líquido não representa saldo.' if kind=='bank-movements' else 'Valores em reais. Saldos: D = devedor; C = credor. Resultado positivo = lucro; negativo = prejuízo.'), Spacer(1, 8)]
     rows = result.get('rows', [])
     sections = OrderedDict()

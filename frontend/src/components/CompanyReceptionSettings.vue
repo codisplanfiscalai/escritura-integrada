@@ -2,26 +2,28 @@
 import {ref,computed,watch,onUnmounted} from 'vue';
 import {api,notify,changed} from '../lib/workspace';
 import {services} from '../lib/reception.js';
+import ReceptionAutomationSettings from './ReceptionAutomationSettings.vue';
 const props=defineProps({companyId:{type:Number,required:true}});
 const emit=defineEmits(['dirty','busy']);
 const data=ref(null),preferences=ref(null),enabled=ref({}),allow=ref(false),file=ref(null),password=ref(''),input=ref(null),busy=ref(false),error=ref(''),baseline=ref('');
 let generation=0;
+const automationDirty=ref(false),automationBusy=ref(false);
 const cursorValues=ref({}),cursorConfirmed=ref({});
 const cursorKey=(provider,environment)=>provider+':'+environment;
 const cursorDirty=(provider,environment)=>cursorValues.value[cursorKey(provider,environment)]!==data.value?.cursors?.[provider]?.[environment]?.cursor;
 const cursorsDirty=computed(()=>Object.entries(data.value?.cursors||{}).some(([p,envs])=>Object.keys(envs).some(e=>cursorDirty(p,e))));
 const model=()=>JSON.stringify({preferences:preferences.value,enabled:enabled.value,allow:allow.value});
 const settingsDirty=computed(()=>!!data.value&&(model()!==baseline.value||!!file.value||!!password.value));
-const dirty=computed(()=>settingsDirty.value||cursorsDirty.value);
+const dirty=computed(()=>settingsDirty.value||cursorsDirty.value||automationDirty.value);
 const editable=computed(()=>data.value?.can_edit===true);
-watch(dirty,v=>emit('dirty',v));watch(busy,v=>emit('busy',v));
+watch(dirty,v=>emit('dirty',v));watch([busy,automationBusy],([a,b])=>emit('busy',a||b));
 function clear(){file.value=null;password.value='';if(input.value)input.value.value='';}
 function accept(value,preserveCursors=false){data.value=value;if(!preserveCursors){cursorValues.value=Object.fromEntries(Object.entries(value.cursors||{}).flatMap(([p,envs])=>Object.entries(envs).map(([e,s])=>[cursorKey(p,e),s.cursor])));cursorConfirmed.value={};}preferences.value={...value.preferences};enabled.value={nfe_distribution:[],nfse_adn:[],...Object.fromEntries(Object.entries(value.credential.environments).map(([p,envs])=>[p,[...envs]]))};allow.value=value.credential.allow_adn_procuration;baseline.value=model();}
 async function load(){const g=++generation,cid=props.companyId;clear();data.value=null;preferences.value=null;error.value='';busy.value=true;try{const r=await api('/companies/'+cid+'/reception-settings');if(g===generation)accept(r);}catch(e){if(g===generation)error.value=e.message;}finally{if(g===generation)busy.value=false;}}
 watch(()=>props.companyId,load,{immediate:true});onUnmounted(()=>{generation++;clear();emit('busy',false);emit('dirty',false);});
 function select(event){const value=event.target.files?.[0];error.value='';file.value=null;if(!value)return;if(!/\.(pfx|p12)$/i.test(value.name)||!value.size||value.size>5000000){error.value='Selecione PFX/P12 de até 5 MB.';event.target.value='';return;}file.value=value;}
 async function save(){
- if(!data.value||busy.value||!editable.value)return;
+ if(!data.value||busy.value||automationBusy.value||!editable.value)return;
  const g=generation,cid=props.companyId,options={version:data.value.credential.version,environments:Object.fromEntries(Object.entries(enabled.value).filter(([,values])=>values.length).map(([p,values])=>[p,[...values]])),allow_adn_procuration:allow.value};
  const certificateChanged=!!file.value||JSON.stringify({envs:options.environments,allow:allow.value})!==JSON.stringify({envs:data.value.credential.environments,allow:data.value.credential.allow_adn_procuration});
  if(!file.value&&!data.value.credential.configured&&(allow.value||Object.keys(options.environments).length)){error.value='Selecione o A1 para habilitar os ambientes.';return;}
@@ -38,7 +40,7 @@ async function save(){
 }
 async function saveCursor(provider,environment){
  const key=cursorKey(provider,environment),snapshot=data.value?.cursors?.[provider]?.[environment];
- if(!snapshot||busy.value||!editable.value||!cursorDirty(provider,environment)||!cursorConfirmed.value[key])return;
+ if(!snapshot||busy.value||automationBusy.value||!editable.value||!cursorDirty(provider,environment)||!cursorConfirmed.value[key])return;
  const value=cursorValues.value[key],max=provider==='nfe_distribution'?15:19;
  if(!new RegExp('^[0-9]{1,'+max+'}$').test(value)||provider==='nfse_adn'&&BigInt(value)>9223372036854775807n){error.value='NSU inválido. Use somente dígitos dentro do limite do serviço.';return;}
  const g=generation,cid=props.companyId;busy.value=true;error.value='';
@@ -46,7 +48,7 @@ async function saveCursor(provider,environment){
   const result=await api('/companies/'+cid+'/reception-settings/cursor',{method:'PUT',body:{provider,environment,cursor:value,expected_revision:snapshot.revision,confirmed:true}});
   if(g!==generation)return;
   data.value.cursors[provider][environment]=result;cursorValues.value[key]=result.cursor;cursorConfirmed.value[key]=false;
-  changed();notify('NSU ajustado. Originais e intervalo de consulta preservados; o controle automático continua ativo.');
+  changed();notify('NSU ajustado. Originais e intervalo preservados. Revise o agendamento se houver automação habilitada.');
  }catch(e){if(g===generation)error.value=e.message;}
  finally{if(g===generation)busy.value=false;}
 }
@@ -62,9 +64,10 @@ async function saveCursor(provider,environment){
 <p class="message warning">NF-e e NFS-e utilizam serviços, ambientes e sequências NSU independentes. A consulta usa o A1 e os parâmetros deste cadastro.</p>
 <p class="message info">Usuário e senha do portal não são autenticação comprovada para estas APIs. Não são coletados nem armazenados. A consulta documentada usa certificado de cliente.</p>
 <p class="field-help">A1 e senha ficam cifrados; a chave permanece separada da base e de seus backups. Preserve essa chave com segurança para recuperação da instalação. A API nunca devolve o certificado, a senha ou a chave. Validação local não comprova cadeia ICP-Brasil, procuração ou homologação externa.</p>
-<div class="actions"><button type="button" class="button" :disabled="busy" @click="load">Recarregar configuração</button><button type="submit" class="button primary" :disabled="busy||!editable||!settingsDirty">Salvar recepção fiscal</button></div>
+<div class="actions"><button type="button" class="button" :disabled="busy||automationBusy" @click="load">Recarregar configuração</button><button type="submit" class="button primary" :disabled="busy||automationBusy||!editable||!settingsDirty">Salvar recepção fiscal</button></div>
 <p v-if="!editable" class="field-help">Alterar exige permissão de edição desta empresa.</p>
 </form>
+<ReceptionAutomationSettings v-if="data" :company-id="companyId" :disabled="busy" @dirty="automationDirty=$event" @busy="automationBusy=$event"/>
 <section v-if="data?.cursors" aria-label="Ajuste manual de NSU">
 <h4>Último NSU por serviço e ambiente</h4>
 <p>Os campos refletem a mesma sequência atualizada automaticamente após cada lote salvo. Use o ajuste manual somente quando precisar corrigir essa sequência. Ele não desativa o controle automático.</p>
