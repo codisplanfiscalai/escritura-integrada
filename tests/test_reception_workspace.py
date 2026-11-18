@@ -49,14 +49,20 @@ class WorkspaceTests(unittest.TestCase):
             response=self.overview(provider,env)
             self.assertEqual(200,response.status_code,response.text)
             self.assertEqual([],response.json()['documents'])
-            self.assertEqual(provider=='nfe_distribution',response.json()['capabilities']['remote_available'])
+            self.assertTrue(response.json()['capabilities']['remote_available'])
         with self.core.db.read() as conn:self.assertEqual(before,[tuple(r) for r in conn.execute('SELECT * FROM operations')])
         self.assertEqual(0,self.service.credentials.calls);self.assertEqual([],self.transport.plans)
-    def test_external_adn_is_explicitly_pending_without_touching_credentials_or_cursor(self):
-        r=self.client.post(self.scope('/reception/nfse_adn/query'),json={'environment':'restricted_production','period':'2026-11','idempotency_key':'pending-contract-001'})
-        self.assertEqual(409,r.status_code,r.text)
-        self.assertEqual('reception_contract_pending',r.json()['code'])
-        self.assertEqual(0,self.service.credentials.calls);self.assertEqual([],self.transport.plans)
+    def test_external_adn_uses_saved_configuration_and_downloads(self):
+        self.transport.reply=RemoteReply(200,json.dumps(adn.page()).encode())
+        overview=self.overview('nfse_adn','restricted_production').json()
+        r=self.client.post(self.scope('/reception/nfse_adn/query'),json={
+            'environment':'restricted_production','period':'2026-11','idempotency_key':'available-contract-001',
+            'configuration_revision':overview['configuration']['revision']})
+        self.assertEqual(200,r.status_code,r.text)
+        self.assertEqual('received',r.json()['state'])
+        self.assertEqual(1,len(self.transport.plans))
+        self.assertEqual('000000000000001',r.json()['cursor_after'])
+
     def test_local_nfe_documents_report_packet_download_and_company_isolation(self):
         self.query()
         count=self.service.credentials.calls

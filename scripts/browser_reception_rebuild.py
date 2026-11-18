@@ -38,10 +38,18 @@ def server(data,port):
             conn.execute('INSERT INTO operations(company_id,scope,key,request_hash,result_json,created_at) VALUES(?,?,?,?,?,?)',(ids[0],RUN_SCOPE,f'synthetic-history-{index:03d}',digest(result),pack(result),now()))
     class Transport:
         def send(self,plan,identity):
-            assert plan['provider']=='nfe_distribution' and identity.tax_id==MATRIX
+            assert identity.tax_id==MATRIX
+            if plan['provider']=='nfse_adn':
+                from urllib.parse import urlsplit
+                cursor=int(urlsplit(plan['url']).path.rsplit('/',1)[-1])
+                if cursor<2:
+                    return RemoteReply(200,json.dumps(page([packet(cursor+1,xml=nfse(MATRIX,BRANCH))],environment='PRODUCAO')).encode())
+                return RemoteReply(404,json.dumps({'StatusProcessamento':'NENHUM_DOCUMENTO_LOCALIZADO',
+                    'TipoAmbiente':'PRODUCAO','Erros':[{'Codigo':'E2220'}]}).encode())
+            assert plan['provider']=='nfe_distribution'
             raw=FIXTURE.read_bytes().replace(b'12345678000195',MATRIX.encode())
             if 'www1.nfe.fazenda.gov.br' in plan['url']:raw=raw.replace(b'<tpAmb>2</tpAmb>',b'<tpAmb>1</tpAmb>')
-            return RemoteReply(200,response([('1','procNFe_v4.00.xsd',raw),('2','resNFe_v1.01.xsd',SUMMARY)],last='2',maximum='3',environment='1' if 'www1.nfe.fazenda.gov.br' in plan['url'] else '2'))
+            return RemoteReply(200,response([('1','procNFe_v4.00.xsd',raw),('2','resNFe_v1.01.xsd',SUMMARY)],last='2',maximum='2',environment='1' if 'www1.nfe.fazenda.gov.br' in plan['url'] else '2'))
     app.state.reception.transport=Transport()  # No HTTP/socket implementation.
     uvicorn.run(app,host='127.0.0.1',port=int(port),log_level='warning')
 
@@ -88,7 +96,7 @@ def main():
                         expect(page.get_by_text('Nenhum documento local encontrado para estes filtros.',exact=True)).to_be_visible()
                         nav('NFS-e Nacional');expect(page.get_by_role('heading',name='NFS-e Nacional',exact=True)).to_be_visible()
                         box=page.get_by_role('region',name='Caixa de documentos');expect(box.locator('tbody tr')).to_have_count(4)
-                        expect(page.get_by_role('button',name='Consultar uma página',exact=True)).to_be_disabled()
+                        expect(page.get_by_role('button',name='Consultar e baixar documentos',exact=True)).to_be_enabled()
                         expect(page.locator('select[aria-label="Ambiente de recepção"]')).to_have_count(0)
                         start=len(requests);page.reload();expect(page.locator('#active-company')).to_be_enabled();nav('DF-e');nav('NFS-e Nacional')
                         expect(box.locator('tbody tr')).to_have_count(4)
@@ -142,10 +150,22 @@ def main():
                             dialog.get_by_role('button',name='Salvar recepção fiscal').click()
                         assert saved.value.ok;expect(dialog.get_by_text('A1 protegido no cofre.',exact=False)).to_be_visible()
                         assert PASSWORD.decode() not in page.request.get(url+scope+'/reception-settings').text()
+                        manual=dialog.get_by_role('region',name='Ajuste manual de NSU')
+                        expect(manual.get_by_label('NSU NFS-e Nacional Produção restrita',exact=True)).to_have_value('000000000000006')
+                        manual.get_by_label('NSU DF-e Homologação',exact=True).fill('12')
+                        expect(manual.get_by_role('button',name='Aplicar NSU DF-e Homologação',exact=True)).to_be_disabled()
+                        manual.get_by_role('checkbox',name='Confirmo o ajuste deste serviço e ambiente, sem apagar documentos.',exact=True).check()
+                        with page.expect_response(lambda r:r.url.endswith('/reception-settings/cursor') and r.request.method=='PUT') as adjusted:
+                            manual.get_by_role('button',name='Aplicar NSU DF-e Homologação',exact=True).click()
+                        assert adjusted.value.ok
+                        expect(manual.get_by_label('NSU DF-e Homologação',exact=True)).to_have_value('000000000000012')
+                        expect(manual.get_by_label('NSU DF-e Produção',exact=True)).to_have_value('000000000000000')
+                        shot('company-manual-nsu.png')
+                        report['checks'].append('Campos NSU por fonte/ambiente refletem estado automático e ajuste manual confirmado sem cruzamento')
                         shot('company-a1.png');dialog.get_by_role('button',name='Cancelar',exact=True).click()
                         nav('DF-e');expect(page.locator('.receive-query')).to_contain_text('Ambiente do cadastro: Produção');expect(page.locator('.receive-query select')).to_have_count(0)
                         page.get_by_role('button',name='Conferir A1 local').click();expect(page.get_by_text('A1, identidade e validade conferidos localmente.',exact=False)).to_be_visible()
-                        page.get_by_role('button',name='Consultar uma página',exact=True).click();expect(box.locator('tbody tr')).to_have_count(2)
+                        page.get_by_role('button',name='Consultar e baixar documentos',exact=True).click();expect(box.locator('tbody tr')).to_have_count(2)
                         expect(box).to_contain_text('Resumo; XML íntegro pendente')
                         with page.expect_download() as download:box.get_by_role('link',name='Baixar resumo',exact=True).click()
                         assert b'resNFe' in Path(download.value.path()).read_bytes()
@@ -153,6 +173,12 @@ def main():
                         shot('dfe-local-documents.png')
                         report['checks'].append('Cadastro A1 sintético com senha inválida/válida, cofre sem leitura de segredo, consulta NFe por stub e download sem escrituração')
                         nav('NFS-e Nacional');expect(page.locator('.receive-query')).to_contain_text('Ambiente do cadastro: Produção');expect(box.locator('tbody tr')).to_have_count(0)
+                        page.get_by_role('button',name='Consultar e baixar documentos',exact=True).click()
+                        expect(page.get_by_text('3 lote(s) · 2 documento(s) recebido(s).',exact=False)).to_be_visible()
+                        expect(page.get_by_role('heading',name='Nenhum novo documento',exact=True)).to_be_visible()
+                        expect(page.locator('.receive-query')).to_contain_text('000000000000002')
+                        shot('nfse-stream-completed.png')
+                        report['checks'].append('ADN produção por stub: dois lotes, NSU automático, fim E2220, sem escrituração')
                         nav('Empresas');page.get_by_role('button',name='Ativar empresa '+other['name'],exact=True).click();nav('NFS-e Nacional')
                         expect(box.locator('tbody tr')).to_have_count(0);expect(page.get_by_text('Nenhum documento local encontrado para estes filtros.',exact=True)).to_be_visible()
                         page.set_viewport_size({'width':390,'height':844});page.wait_for_timeout(300);page.locator('#workspace-panel').evaluate('(e)=>e.scrollTop=0');shot('nfse-mobile.png')

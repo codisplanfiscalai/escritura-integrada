@@ -8,7 +8,7 @@ Aplicação única de escrituração fiscal, contábil e financeira para o escri
 
 No módulo Fiscal, **DF-e** e **NFS-e Nacional** têm menus e views próprios para o acervo da empresa ativa, emitidas/recebidas, versões, XMLs, recibos e CSVs de documentos/recepções. A1 e ambientes ficam em **Cadastro → Empresas → Recepção fiscal**. Receber ou baixar não escritura; integração e revisão são etapas distintas em Importações fiscais.
 
-A consulta NF-e cobre distribuição do modelo 55 mediante A1 e solicitação explícita. A consulta externa ADN na nova tela ainda está indisponível por divergência não resolvida no endereço do contrato; o acervo local funciona. Automação, CPF/A3, demais modelos e escrituração NFS-e não estão habilitados neste incremento. Não houve homologação fiscal externa. Consulte a [cobertura efetiva, versões, integridade e pendências](docs/RECEPCAO_ACERVO_VERSOES_20261117.md).
+A consulta NF-e cobre distribuição do modelo 55 mediante A1 e solicitação explícita. A consulta ADN utiliza os endereços oficiais em produção e produção restrita, com cursor próprio por empresa e ambiente. Automação, CPF/A3, demais modelos e escrituração NFS-e não estão habilitados neste incremento. Não houve homologação fiscal externa. Consulte a [cobertura efetiva, versões, integridade e pendências](docs/RECEPCAO_ACERVO_VERSOES_20261117.md).
 
 ## Instalar no Windows ou macOS
 

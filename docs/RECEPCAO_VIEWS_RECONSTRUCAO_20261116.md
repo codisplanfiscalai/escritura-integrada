@@ -1,5 +1,7 @@
 # Views DF-e e NFS-e Nacional — reconstrução local de 16/11/2026
 
+> Atualização: o bloqueio de URL ADN e a consulta limitada a um lote foram substituídos pelo [fluxo contínuo por NSU](RECEPCAO_CONSULTA_CONTINUA.md). Os resultados históricos abaixo não descrevem essa correção.
+
 > Continuação: [acervo, versões e bloqueio ADN em 17/11/2026](RECEPCAO_ACERVO_VERSOES_20261117.md). Este documento mantém a evidência histórica de 16/11; o agrupamento por identidade/versões e a composição atual estão descritos na continuação.
 
 ## Estado e origem

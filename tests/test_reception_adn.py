@@ -82,14 +82,24 @@ class AdnProfileTests(unittest.TestCase):
         cases=[page([]),page([packet(),packet()]),page([packet(0)]),page([packet(1.0)]),page([packet(True)]),
                page([packet(9223372036854775808)]),page([packet(kind='NENHUM')]),page([packet(kind='FUTURE')]),
                page([packet(),packet(2)|{'ArquivoXml':None}]),page([packet(),packet(2)|{'ArquivoXml':'bad gzip'}]),
-               page([packet()|{'NSU':'1'}]),page([packet()|{'Unexpected':True}]),
-               page()|{'Unexpected':1},page()|{'Alertas':[{'Codigo':'A1','Descricao':'private'}]},
+               page()|{'Alertas':[{'Codigo':'E2220'}]},
                page()|{'Erros':[{'Codigo':'E2245'}]},page()|{'DataHoraProcessamento':'2026-11-01'}]
         for payload in cases:
             with self.subTest(payload=list(payload)),self.assertRaises(ImportProblem):decode(payload)
         with self.assertRaises(ImportProblem):decode(page([packet(20)]),cursor='20')
         # Contract is exclusive and NSUs need not be contiguous or ordered.
         self.assertEqual('000000000000030',decode(page([packet(30),packet(21)]),cursor='20')['reported_last_nsu'])
+
+    def test_compatible_metadata_and_string_nsu_do_not_block_download(self):
+        payload=page([packet()|{'NSU':'00001','NewField':True,'DataHoraGeracao':'2026-11-04T12:00:00'}])
+        payload.update(NewEnvelopeField=True,Alertas=[{'Codigo':'A1','Descricao':'not exposed'}])
+        result=decode(payload)
+        self.assertEqual('000000000000001',result['reported_last_nsu'])
+        self.assertEqual(['A1'],result['alert_codes'])
+        self.assertEqual('2026-11-04T12:00:00-03:00',result['entries'][0]['generation_time'])
+        self.assertEqual('xml',result['entries'][0]['generation_time_source'])
+        self.assertTrue(result['has_more'])
+        self.assertNotIn('not exposed',str(result))
 
     def test_json_xml_and_expansion_boundaries(self):
         for raw in [b'{"TipoConsulta":1,"TipoConsulta":2}',b'{"x":NaN}',b'not json',b'\xff']:
@@ -190,13 +200,39 @@ class AdnCaptureTests(unittest.TestCase):
             self.assertEqual(404,self.document(key).status_code)
 
     def test_error_defaults_mismatches_and_unknown_json_cannot_advance(self):
-        for index,payload in enumerate([page(mode='CnpjBase'),page(environment='PRODUCAO'),page()|{'unverified':True},
+        for index,payload in enumerate([page(mode='CnpjBase'),page(environment='PRODUCAO'),
                 page()|{'Erros':[{'Codigo':'E2245','Descricao':'private diagnostic'}]},page()|{'Erros':[{'Codigo':'E2244'}]}]):
             self.clock[0]+=3601;self.transport.reply=RemoteReply(200,json.dumps(payload).encode())
             result=self.query(f'synthetic-mismatch-{index}')
             self.assertFalse(result['authorization_verified']);self.assertFalse(result['cursor_advanced'])
             self.assertNotIn('private diagnostic',json.dumps(result))
         self.assertEqual('000000000000000',self.state()['cursor'])
+
+    def test_explicit_end_and_transport_rate_limits_preserve_cursor(self):
+        self.query()
+        end={'StatusProcessamento':'NENHUM_DOCUMENTO_LOCALIZADO','TipoAmbiente':'HOMOLOGACAO',
+             'Erros':[{'Codigo':'E2220'}]}
+        for i,status in enumerate([200,404]):
+            self.transport.reply=RemoteReply(status,json.dumps(end).encode())
+            result=self.query(f'end-of-stream-{i}')
+            self.assertEqual('no_documents',result['state'])
+            self.assertFalse(result['has_more']);self.assertFalse(result['cursor_advanced'])
+            self.assertEqual('000000000000002',self.state()['cursor'])
+        self.transport.reply=RemoteReply(429,b'gateway',90)
+        result=self.query('limited-stream-001')
+        self.assertEqual('remote_unavailable',result['state'])
+        self.assertEqual(self.clock[0]+90,self.state()['next_allowed_at'])
+        self.query('limited-stream-002',status=429)
+        self.assertEqual(4,len(self.transport.plans))
+
+    def test_opaque_404_is_not_absence_and_mismatched_environment_is_not_accepted(self):
+        for i,reply in enumerate([RemoteReply(404,b'not found'),RemoteReply(404,json.dumps({
+            'StatusProcessamento':'NENHUM_DOCUMENTO_LOCALIZADO','TipoAmbiente':'PRODUCAO',
+            'Erros':[{'Codigo':'E2220'}]}).encode())]):
+            self.transport.reply=reply
+            result=self.query(f'bad-end-stream-{i}')
+            self.assertNotEqual('no_documents',result['state'])
+            self.assertFalse(result['cursor_advanced'])
 
     def test_packet_storage_failure_rolls_back_envelope_xml_and_cursor(self):
         from app.reception_service import store_file as actual

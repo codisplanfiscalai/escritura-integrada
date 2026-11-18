@@ -50,6 +50,10 @@ def register(app,core,actor,check_period):
     def save_settings(cid:int,request:Request,payload:dict=Body(...)):
         return workspace().save_settings(cid,request.state.session['user']['id'],actor(request),payload)
 
+    @app.put('/api/companies/{cid}/reception-settings/cursor')
+    def adjust_cursor(cid:int,request:Request,payload:dict=Body(...)):
+        return workspace().adjust_cursor(cid,request.state.session['user']['id'],actor(request),payload)
+
     @app.put('/api/companies/{cid}/reception-credential')
     def update_credential(cid:int,request:Request,payload:dict=Body(...)):
         return CompanyA1Vault(core.db).update(cid,request.state.session['user']['id'],actor(request),payload)
