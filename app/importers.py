@@ -33,7 +33,7 @@ MAX_XML_DEPTH = 100
 MAX_ISSUES = 250
 
 IMPORTER_SCOPE = {
-    "xml": "NF-e/NFC-e 4.00 (55/65) e CT-e 4.00 (57); extração para conferência, sem validação XSD, assinatura, consulta SEFAZ ou motor fiscal.",
+    "xml": "NF-e/NFC-e 4.00 (55/65), CT-e 4.00 (57) e NFS-e Nacional (NFSe); extração para conferência, sem validação XSD, assinatura, consulta SEFAZ ou motor fiscal.",
     "nfe_distribution": "Retorno NF-e retDistDFeInt 1.01, isolado ou SOAP 1.2: GZip/base64 limitado, XML modelo 55 ao leitor existente; resumos/eventos pendentes e originais preservados. Sem consulta remota ou avanço de NSU.",
     "sped": "EFD ICMS/IPI leiaute 020/2026: 0000, 0150, 0200, C100, C170, C190, C140 e C141. Outros registros ficam identificados como não processados. Não importa ECD, ECF ou EFD-Contribuições.",
     "csv_txt": "Cabeçalho canônico data;valor;historico;documento ou bank_columns explícito. Separador decimal e formato de data configuráveis. TXT posicional exige bank_layout=fixed e posições explícitas.",
@@ -455,6 +455,9 @@ def _party(element):
 
 def _xml_document(filename, data, company, result, digest, state=None):
     root = _xml_tree(data)
+    if root.tag == '{http://www.sped.fazenda.gov.br/nfse}NFSe':
+        from .nfse_import import read_document
+        return read_document(root,filename,company,result,digest)
     from .reception import is_nfe_distribution, read_nfe_distribution
     if is_nfe_distribution(root):
         distribution = read_nfe_distribution(data, state)

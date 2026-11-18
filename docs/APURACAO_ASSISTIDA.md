@@ -12,3 +12,7 @@ A rotina continua sendo uma memória revisada pelo escritório, não um motor de
 - Memórias novas com inventário registrado ficam desatualizadas quando ele muda; finalização e transporte continuam sujeitos aos controles existentes. Chamadas legadas sem fingerprints continuam aceitas. Não houve alteração de arredondamento, centavos, fechamento, idempotência ou compensação entre tributos.
 
 Testes de API e de componentes usam dados sintéticos. A validação local de build e testes não substitui a aceitação visual do navegador ou homologação de cenários fiscais reais.
+
+## Serviços e expansão
+
+O leitor nacional preserva base ISS e, quando presentes, bases PIS/Cofins declaradas. A preparação assistida as sugere sem usar valor contábil, retenção ou imposto como base. O perfil de escrituração não constitui uma regra de crédito e não modifica os fatos declarados. A integração completa CBS/IBS, os modelos recuperados e os geradores SPED estão discriminados em [ESCRITURACAO_RECEPCAO_SPED_APURACAO.md](ESCRITURACAO_RECEPCAO_SPED_APURACAO.md).

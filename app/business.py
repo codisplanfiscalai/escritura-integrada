@@ -123,7 +123,7 @@ class BusinessCore(SharedRegistrationsMixin, ProsoftSettingsMixin, ProsoftFiscal
             self._record_operation(conn, cid, scope, key, hashed, result)
             return result
 
-    def _book_document(self,conn,cid,item_id,payload,actor):
+    def _book_document(self,conn,cid,item_id,payload,actor, *, service_events=None):
         doc=self._document(conn,cid,item_id)
         self._validate_document_links(conn,cid,doc,_existing_document_id=item_id)
         if doc.get('book_cancellation') and any(payload.get(k) for k in ('lines', 'model_id', 'generate_titles', 'installments', 'use_document_installments')):
@@ -153,7 +153,7 @@ class BusinessCore(SharedRegistrationsMixin, ProsoftSettingsMixin, ProsoftFiscal
             parts=self._installments(requested,financed,doc['issue_date'])
             if conn.execute('SELECT 1 FROM titles WHERE company_id=? AND document_id=? AND cancelled=0',(cid,item_id)).fetchone():
                 raise DomainError('Documento já possui títulos. Confira os vínculos antes de gerar parcelas.',409,'titles_exist')
-        result=super()._book_document(conn,cid,item_id,effective,actor)
+        result=super()._book_document(conn,cid,item_id,effective,actor,service_events=service_events)
         titles=[]
         for n,p in enumerate(parts or [],1):
             titles.append(self._create_title(conn,cid,{'kind':'payable' if doc['direction']=='incoming' else 'receivable',

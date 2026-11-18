@@ -230,10 +230,13 @@ class DocumentPreviewTests(unittest.TestCase):
         self.assertEqual(201,response.status_code,response.text)
         doc=response.json()
         self.assertEqual('source_unavailable',self.client.get(self.url(doc)).json()['code'])
-        for model in ('67','58','NFSE','99'):
+        for model in ('67','58','99'):
             with self.core.db.transaction() as conn:
                 conn.execute('UPDATE documents SET model=? WHERE id=?',(model,doc['id']))
             self.assertEqual('renderer_not_validated',self.client.get(self.url(doc)).json()['code'])
+        with self.core.db.transaction() as conn:
+            conn.execute("UPDATE documents SET model='NFSE' WHERE id=?",(doc['id'],))
+        self.assertEqual('source_unavailable',self.client.get(self.url(doc)).json()['code'])
         doc, _, batch=self.imported()
         invalid=b'<invalid'
         hashed=hashlib.sha256(invalid).hexdigest()

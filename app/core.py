@@ -700,7 +700,7 @@ class Core:
         if hasattr(self, '_import_document_masters'):
             payload = self._import_document_masters(conn, cid, payload, actor)
             items = pack(payload.get('items', []))
-        extras = {k: payload[k] for k in ("declared_source", "declared_xml", "declared_document_fields", "declared_protocol", "source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "billing", "receipt_date", "analytics", "raw_fields", "posting_date_proposed", "movement_date", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting", "carrier_id", "master_import_warnings", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review") if k in payload}
+        extras = {k: payload[k] for k in ("declared_source", "declared_xml", "declared_document_fields", "declared_protocol", "source_cfops", "cfop_perspective", "document_type", "issuer", "recipient", "environment", "signature_verified", "schema_validated", "authorization", "transport", "invoices", "billing", "receipt_date", "analytics", "raw_fields", "posting_date_proposed", "movement_date", "declared_new_total", "participant_id", "establishment_id", "document_category", "import_posting", "carrier_id", "master_import_warnings", "fiscal_treatment", "purchase_destination", "posting_date_confirmed", "posting_group_review", "total_review", "declared_competence", "service_bookkeeping") if k in payload}
         extras["declared_series"] = declared_series
         if cancellation:
             extras.update(book_cancellation=cancellation, document_state='cancelled', cancellation_evidence='validated_fiscal_book')
@@ -823,7 +823,7 @@ class Core:
         with self.db.transaction() as conn:
             return self._book_document(conn, cid, item_id, payload, actor)
 
-    def _book_document(self, conn, cid, item_id, payload, actor):
+    def _book_document(self, conn, cid, item_id, payload, actor, *, service_events=None):
         from .operational_settings import get_settings
         cfg = get_settings(conn, cid)
         reason = text(payload.get("reason"), "Observação da escrituração", cfg['require_extra_confirmations'], 1000) or 'Escrituração solicitada pelo operador.'
@@ -843,6 +843,14 @@ class Core:
         if doc["status"] != "reviewed":
             raise DomainError("Confira o documento antes de escriturá-lo.", 409, "invalid_status")
         cancelled = bool(json.loads(doc['extra_json']).get('book_cancellation'))
+        if not cancelled and doc['model']=='NFSE':
+            from .service_bookkeeping import apply as apply_service, settings as service_settings, event_keys
+            environment={'1':'production','2':'restricted_production'}.get(json.loads(doc['extra_json']).get('environment'))
+            related=service_events.get(environment,set()) if service_events is not None and environment else event_keys(conn,cid,environment)
+            if doc['key'] in related: raise DomainError('Há evento relacionado a esta NFS-e. Confira sua situação antes de escriturar.',409,'service_event_review_required')
+            service=apply_service(self._document_values(doc),service_settings(conn,cid))
+            extra=json.loads(doc['extra_json']);extra['service_bookkeeping']=service['service_bookkeeping']
+            conn.execute('UPDATE documents SET extra_json=? WHERE company_id=? AND id=?',(pack(extra),cid,item_id))
         if cancelled and any(payload.get(k) for k in ('lines', 'model_id', 'generate_titles', 'installments', 'use_document_installments')):
             raise DomainError('Documento cancelado não gera efeitos contábeis ou financeiros.')
         if not cancelled and doc["model"] in {"55", "65", "57"}:
@@ -1247,7 +1255,7 @@ class Core:
         bank_account = text(payload.get("bank_account"), "Conta bancária", False, 200)
         with self.db.read() as conn:
             company = company_row(conn, cid)
-        identity = digest({"parser_revision": 4, "sha256": digest(raw), "filename": filename, "period": competence, "options": options, "company_tax_id": company["tax_id"]})
+        identity = digest({"parser_revision": 5, "sha256": digest(raw), "filename": filename, "period": competence, "options": options, "company_tax_id": company["tax_id"]})
         with self.db.transaction() as conn:
             ensure_import_allowed(conn, cid, len(raw))
             from .import_package_cleanup import restore_upload
@@ -1378,13 +1386,19 @@ class Core:
                     if source_doc['_selection'] in selected:
                         ensure_reception_open(conn, cid, source_doc['posting_date'])
             existing_imports = self._fiscal_import_index(conn, cid, parsed['documents']) if posting_mode == 'book' else {}
+            service_events=None
+            if posting_mode=='book' and any(d.get('model')=='NFSE' and d['_selection'] in selected for d in parsed['documents']):
+                from .service_bookkeeping import event_keys
+                # One committing transaction: receipts cannot change between
+                # these checks and the last note. Avoid scanning all events per note.
+                service_events={env:event_keys(conn,cid,env) for env in ('production','restricted_production')}
             for source_doc in parsed.get("documents", []):
                 if source_doc['_selection'] not in selected: continue
                 doc = self._existing_fiscal_import(conn, cid, source_doc, existing_imports) if posting_mode == 'book' else None
                 if doc is None:
                     doc = self._create_document(conn, cid, {k:v for k,v in source_doc.items() if not k.startswith('_')}, actor)
                 if posting_mode == 'book' and not doc.get('duplicate'):
-                    doc = self._post_fiscal_import(conn, cid, doc, actor, posting_reason)
+                    doc = self._post_fiscal_import(conn, cid, doc, actor, posting_reason,service_events=service_events)
                     result['documents_booked'] += 1
                 result["documents_duplicate" if doc.get("duplicate") else "documents_created"] += 1
                 result["document_ids"].append(doc["id"])

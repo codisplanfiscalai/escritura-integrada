@@ -1,5 +1,8 @@
 # Recepção DF-e / NFS-e: consulta mTLS e importação revisada
 
+> Atualização de 18/11/2026: o leitor fiscal de NFS-e Nacional e a escrituração em lote estão implementados no [novo fluxo de recepção](ESCRITURACAO_RECEPCAO_SPED_APURACAO.md), com conferência e perfil por empresa. As referências a leitor/agendamento pendentes nas seções históricas abaixo descrevem os incrementos anteriores; a automação atual está em [RECEPCAO_AUTOMATICA.md](RECEPCAO_AUTOMATICA.md).
+
+
 > Atualização: o bloqueio de URL ADN e a consulta limitada a um lote foram substituídos pelo [fluxo contínuo por NSU](RECEPCAO_CONSULTA_CONTINUA.md). Os resultados históricos abaixo não descrevem essa correção.
 
 > Continuação e estado atual: [acervo, versões e bloqueio ADN de 17/11/2026](RECEPCAO_ACERVO_VERSOES_20261117.md).

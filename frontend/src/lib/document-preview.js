@@ -1,4 +1,4 @@
-export const auxiliaryLabel = model => ({55:'DANFE',65:'DANFC-e',57:'DACTE'})[model] || 'Documento auxiliar';
+export const auxiliaryLabel = model => ({55:'DANFE',65:'DANFC-e',57:'DACTE',NFSE:'DANFSe'})[model] || 'Documento auxiliar';
 
 // Abort is an optimization; the generation check also rejects late responses
 // from transports that have already completed or cannot be cancelled.

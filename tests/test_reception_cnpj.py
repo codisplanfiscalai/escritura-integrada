@@ -68,7 +68,7 @@ class CnpjProtocolTests(unittest.TestCase):
         xml=adn.XML.replace(b'<nNFSe>',('<prest><CNPJ>'+ALPHA+'</CNPJ></prest><nNFSe>').encode())
         result=adn.decode(adn.page([adn.packet(xml=xml)]))
         self.assertEqual(xml,result['entries'][0]['xml'])
-        self.assertEqual('nfse_bookkeeping_reader_pending',result['entries'][0]['reason'])
+        self.assertEqual('nfse_bookkeeping_review_required',result['entries'][0]['reason'])
         self.assertEqual('000000000000001',result['reported_last_nsu'])
 
 

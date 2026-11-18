@@ -14,6 +14,9 @@ O [plano de implementação ADN e relatórios gerenciais](docs/PLANO_ADN_NFSE_GE
 
 A [automação de recepção](docs/RECEPCAO_AUTOMATICA.md) permite habilitar NF-e e NFS-e por empresa, com intervalos independentes e padrão de 24h, continuidade em segundo plano e retomada. NF-e emitida pelo próprio interessado exige os XMLs do emissor; não é fornecida pela distribuição nacional.
 
+A [escrituração em lote a partir da recepção](docs/ESCRITURACAO_RECEPCAO_SPED_APURACAO.md) reúne XMLs no fluxo de conferência existente e acrescenta o leitor de NFS-e Nacional, perfil de serviços por empresa e visualização auxiliar. O menu **SPED** organiza obrigações fiscais e contábeis; o documento registra a cobertura entregue e os geradores integrais ainda necessários.
+
+
 ## Instalar no Windows ou macOS
 
 Na [pré-release de desenvolvimento](https://github.com/codisplanfiscalai/escritura-integrada/releases/tag/develop), a linha 0.7 preserva os instaladores introduzidos na 0.6:

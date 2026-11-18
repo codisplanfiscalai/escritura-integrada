@@ -6,7 +6,7 @@ export function compatibleRules(document, rules, tax, company={}) {
   ['regime','state'].every(k=>!r[k]||r[k]===company[k])&&(!r.municipality||r.municipality===company.ibge));
 }
 export function declaredBase(document,tax) {
- const paths={icms:['ICMSTot.vBC'],iss:['ISSQNtot.vBC','ISSQNtot.vBCISS']}[tax]||[];
+ const paths={icms:['ICMSTot.vBC'],iss:['ISSQNtot.vBC','ISSQNtot.vBCISS','ISS.vBC'],pis:['PIS.vBC'],cofins:['COFINS.vBC'],ibs:['IBSCBS.vBCIBSCBS'],cbs:['IBSCBS.vBCIBSCBS']}[tax]||[];
  const values=paths.filter(k=>Object.hasOwn(document.taxes||{},k)).map(k=>String(document.taxes[k]).trim());
  if(!values.length)return '';
  if(Object.hasOwn(document.taxes||{},'vBC'))values.push(String(document.taxes.vBC).trim());

@@ -180,6 +180,16 @@ def fiscal_posting_lines(document):
     SPED C190 is authoritative and never combined with C170 or C100 amounts.
     """
     doc = _unpack(document)
+    if doc.get('model') == 'NFSE' and not doc.get('book_cancellation'):
+        service = doc.get('service_bookkeeping', {})
+        values = service.get('values', {})
+        total = _money(doc.get('total', _d(doc.get('total_cents')) / 100))
+        line = _base(doc, {}, 'nfse_service_book')
+        line.update(document_total=values.get('accounting',total),
+                    service_base=values.get('base'),service_iss=values.get('iss'),
+                    service_withheld=values.get('iss_withheld'),
+                    treatment=service.get('profile',{}),pending=[] if service.get('profile') else ['SERVICE_PROFILE_REQUIRED'])
+        return [line]
     if doc.get('book_cancellation'):
         line = _base(doc, {}, 'validated_fiscal_book')
         line.update(document_total='0.00', ipi='0.00', ipi_informed=False,

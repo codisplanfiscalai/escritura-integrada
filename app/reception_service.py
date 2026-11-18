@@ -306,7 +306,17 @@ class ReceptionService:
     def preview(self,cid,key,payload,actor,uid):
         result,raw=self._preview_source(cid,key,uid)
         if result['provider'] != 'nfe_distribution':
-            raise DomainError('Recepção ADN preservada; consulte os XMLs disponíveis no recibo. Leitor de escrituração nacional ainda pendente.',409,'nfse_bookkeeping_reader_pending')
+            from .reception_bookkeeping import prepare
+            if result.get('state')!='received':
+                raise DomainError('Retorno ainda não interpretado como documentos completos; original preservado.',409,'reception_not_full_xml')
+            if not isinstance(payload,dict) or set(payload)-{'period','options'}:
+                raise DomainError('Informe somente competência e opções de revisão.')
+            options=payload.get('options',{})
+            if not isinstance(options,dict) or set(options)-{'posting_date'}: raise DomainError('Opções de leitura inválidas.')
+            result=prepare(self.core,self,cid,uid,actor,'nfse_adn',{'period':payload.get('period'),
+                'posting_date':options.get('posting_date') or str(payload.get('period'))+'-01',
+                'environment':result['environment'],'documents':[{'receipt_key':key,'nsu':e['nsu']} for e in result.get('entries',[]) if e.get('document_type')=='NFSE']})
+            return result['batch']
         if not isinstance(payload,dict) or set(payload)-{'period','options'}:
             raise DomainError('Informe somente competência e opções de revisão.')
         return self.core.preview_import(cid,{'filename':'recepcao-'+key+'.xml','period':payload.get('period'),

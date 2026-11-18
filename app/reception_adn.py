@@ -137,7 +137,7 @@ def read_adn_distribution(payload, cursor, environment, expected_mode):
         entries.append({'nsu':number,'document_type':kind,'access_key':key,'event_type':event,
                         'generation_time':generated,'generation_time_source':generation_source,'xml_root':root.tag,'sha256':hashlib.sha256(raw).hexdigest(),
                         'bytes':len(raw),'xml':raw,'review_pending':True,
-                        'reason':'nfse_bookkeeping_reader_pending' if kind=='NFSE' else 'received_xml_without_fiscal_effect'})
+                        'reason':'nfse_bookkeeping_review_required' if kind=='NFSE' else 'received_xml_without_fiscal_effect'})
     return {'contract_profile':PROFILE,'authorization_mode':expected_mode,'authorization_verified':True,
             'processing_time':processed,'alert_codes':alerts,'entries':entries,'reported_last_nsu':adn_nsu(max(seen)),
             'has_more':True,'empty':False,
