@@ -31,7 +31,8 @@ def trial_balance_pdf(result, first_page=1):
         if synthetic:
             commands.extend([('FONTNAME',(0,index),(-1,index),'Courier-Bold'),('TOPPADDING',(0,index),(-1,index),5)])
             if index<len(result['rows']): commands.append(('NOSPLIT',(0,index),(-1,index+1)))
-    story=[]
+    selection=result.get('filters',{}).get('account_selection',[])
+    story=[p('Contas selecionadas: '+'; '.join(selection)),Spacer(1,8)] if selection else []
     if result['rows']:
         # Bound ReportLab table layout cost, including the optional full plan.
         offset=1
@@ -74,7 +75,7 @@ def trial_balance_pdf(result, first_page=1):
         dates=['/'.join(str(result[k]).split('-')[::-1]) for k in ('start','end')]
         canvas.drawString(margin,height-79,'Período: '+dates[0]+' a '+dates[1])
         filters=result.get('filters',{});mode='Todas as contas' if filters.get('activity')=='all' else 'Com movimento (inclui contas com saldo)'
-        canvas.drawString(margin,height-94,mode+' | Conta: '+str(filters.get('account_id') or 'Todas')+' | Centro: '+str(filters.get('cost_center_id') or 'Todos'))
+        canvas.drawString(margin,height-94,mode+' | Conta: '+(str(len(filters['account_ids']))+' selecionadas' if filters.get('account_ids') else str(filters.get('account_id') or 'Todas'))+' | Centro: '+str(filters.get('cost_center_id') or 'Todos'))
         if filters.get('query'):canvas.drawString(margin,height-106,'Pesquisa: '+str(filters['query'])[:90])
         canvas.setFont('Courier',6)
         canvas.drawString(margin,23,'Escritura Integrada | layout não homologado | D: devedor; C: credor | Totais sem duplicar sintéticas')

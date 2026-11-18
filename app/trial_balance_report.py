@@ -5,34 +5,45 @@ from .account_refs import resolve_account
 AMOUNTS = ('opening_cents', 'debit_cents', 'credit_cents', 'closing_cents')
 
 
-def classifier_path(value):
+def classifier_path(value, mask=None):
     text = str(value or '').strip()
     if '.' in text:
         parts = text.split('.')
         while parts and parts[-1] and set(parts[-1]) == {'0'}:
             parts.pop()
         return tuple(parts)
-    # Legacy unformatted classifiers use trailing zero padding.
+    if mask and text.isdigit():
+        sizes=[len(part) for part in mask.split('.')]
+        if len(text)>=sum(sizes) and not text[sum(sizes):].strip('0'):
+            parts=[];position=0
+            for size in sizes:
+                parts.append(text[position:position+size]);position+=size
+            while parts and set(parts[-1])=={'0'}:parts.pop()
+            return tuple(parts)
+    # Without an explicit mask, do not invent dotted segment boundaries.
     return tuple(text.rstrip('0'))
 
 
-def trial_balance(core, cid, start, end, account_id=None, cost_center_id=None, activity='active'):
+def trial_balance(core, cid, start, end, account_id=None, cost_center_id=None, activity='active', account_ids=None):
     if activity not in {'active', 'all'}:
         raise DomainError('Selecione contas com movimento ou saldo, ou todas as contas.')
     with core.db.read(snapshot=True) as conn:
         company = company_row(conn, cid)
         accounts = [dict(a) for a in conn.execute('SELECT * FROM effective_accounts WHERE company_id=?', (cid,))]
-        paths = {a['id']: classifier_path(a['classifier']) for a in accounts}
-        selected = resolve_account(conn, cid, account_id) if account_id is not None else None
+        from .report_account_selection import plan_mask
+        mask=plan_mask(conn,cid)
+        paths = {a['id']: classifier_path(a['classifier'],mask) for a in accounts}
+        from .report_account_selection import selected_accounts
+        selected, allowed = selected_accounts(conn,cid,account_id,account_ids)
         if cost_center_id is not None:
             from .core import select_one, integer
             cost_center_id = select_one(conn, 'cost_centers', cid, integer(cost_center_id, 'Centro'))['id']
-        selected_path = classifier_path(selected['classifier']) if selected else None
+        selected_paths=[classifier_path(a['classifier'],mask) for a in selected if not a['analytical']]
         def in_selection(a):
-            if not selected: return True
-            if selected['analytical']: return a['id'] == selected['id']
-            path = paths[a['id']]
-            return bool(selected_path) and path[:len(selected_path)] == selected_path
+            if allowed is None:return True
+            if a['analytical']:return a['id'] in allowed
+            path=paths[a['id']]
+            return any(p and path[:len(p)]==p for p in selected_paths)
         clauses = ['l.company_id=?', 'j.date<=?']; params = [cid, end]
         if cost_center_id is not None:
             clauses.append('l.cost_center_id=?'); params.append(cost_center_id)
@@ -81,5 +92,5 @@ def trial_balance(core, cid, start, end, account_id=None, cost_center_id=None, a
         return {'kind':'trial-balance','company_id':cid,'company_name':company['name'],
                 'company_code':company['prosoft_code'] or company['code'],'company_tax_id':company['tax_id'],
                 'start':start,'end':end,'rows':rows,'totals':totals,'account_id':account_id,'cost_center_id':cost_center_id,
-                'filters':{'account_id':account_id,'cost_center_id':cost_center_id,'activity':activity},
+                'filters':{'account_id':account_id,'cost_center_id':cost_center_id,'activity':activity,'account_ids':[a['id'] for a in selected],'account_selection':[str(a['access_code'])+' - '+a['name'] for a in selected]},
                 'scope_note':'Com movimento ou saldo inclui saldo anterior, débitos, créditos ou saldo final diferentes de zero. Contas sintéticas são subtotais; os totais consideram apenas contas analíticas, sem duplicação. Saldos devedores positivos e credores negativos. Não altera lançamentos.'}

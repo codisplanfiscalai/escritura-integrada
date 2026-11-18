@@ -65,3 +65,61 @@ class TrialBalanceTests(unittest.TestCase):
         with self.core.db.transaction() as c:
             c.executemany("INSERT INTO accounts(company_id,access_code,classifier,name,nature,analytical,active,requires_cost_center) VALUES(?,?,?,?,?,1,1,0)",[(self.a['id'],'Z'+str(i),'1.9.'+str(i),'ZERADA '+str(i),'debit') for i in range(20000)])
         r=self.report();self.assertEqual([],r['rows']);self.assertFalse(any(r['totals'].values()))
+
+    def test_multiple_accounts_union_overlap_and_clear(self):
+        self.seed()
+        ids=f"{self.parent},{self.aid['3']},{self.aid['5']},{self.aid['3']}"
+        r=self.report('&account_ids='+ids)
+        self.assertEqual(2,len([x for x in r['rows'] if x['analytical']]))
+        self.assertEqual(12345,r['totals']['debit_cents']);self.assertEqual(12345,r['totals']['credit_cents'])
+        self.assertEqual(3,len(r['filters']['account_ids']))
+        self.assertEqual(self.report()['totals'],r['totals'])
+        self.assertEqual(r['totals'],self.report('&account_ids='+ids+'&activity=all')['totals'])
+        for extra in ['&account_ids=bad','&account_ids=1,,2','&account_ids=0','&account_ids='+','.join(['1']*501)]:
+            response=self.client.get(self.scope('/business-reports/trial-balance?start=2026-11-01&end=2026-11-30'+extra));self.assertGreaterEqual(response.status_code,400)
+
+    def test_multiple_accounts_other_reports_and_exports(self):
+        self.seed();ids=f"{self.parent},{self.aid['3']}"
+        with self.core.db.transaction() as c:c.execute("UPDATE accounts SET report_group='asset' WHERE id=?",(self.aid['3'],))
+        for kind in ['diary','ledger','consolidated-diary','cost-centers','balance-sheet','income-statement']:
+            response=self.client.get(self.scope(f'/business-reports/{kind}?start=2026-11-01&end=2026-11-30&account_ids='+ids))
+            self.assertEqual(200,response.status_code,response.text)
+            r=response.json();self.assertEqual(2,len(r['filters']['account_ids']))
+            self.assertTrue(all(x['account_id']==self.aid['3'] for x in r['rows']))
+            if kind not in ['balance-sheet','income-statement']:
+                self.assertEqual(12345,r['totals']['debit_cents']);self.assertEqual(0,r['totals']['credit_cents'])
+        for fmt in ['pdf','csv','xlsx']:
+            response=self.client.get(self.scope('/business-reports/trial-balance?start=2026-11-01&end=2026-11-30&account_ids='+ids+'&format='+fmt))
+            self.assertEqual(200,response.status_code)
+            if fmt=='pdf':
+                text=' '.join(p.extract_text() for p in PdfReader(BytesIO(response.content)).pages)
+                self.assertIn('Contas selecionadas',text);self.assertIn('GRUPO SINTETICO',text);self.assertNotIn('Receitas operacionais',text)
+            elif fmt=='xlsx':
+                from openpyxl import load_workbook
+                wb=load_workbook(BytesIO(response.content));values=list(wb['Valores em centavos'].values)
+                records=[dict(zip(values[0],r)) for r in values[1:]]
+                expected=self.report('&account_ids='+ids)['rows']
+                self.assertEqual([(r['account_id'],r['debit_cents'],r['credit_cents']) for r in expected],[(r['account_id'],r['debit_cents'],r['credit_cents']) for r in records])
+            else:
+                import csv,io
+                from decimal import Decimal
+                records=list(csv.DictReader(io.StringIO(response.content.decode('utf-8-sig')),delimiter=';'))
+                expected=self.report('&account_ids='+ids)['rows']
+                self.assertEqual([(r['account_id'],r['debit_cents'],r['credit_cents']) for r in expected],[(int(r['account_id']),int(Decimal(r['debit_cents'])*100),int(Decimal(r['credit_cents'])*100)) for r in records])
+
+
+    def test_multiple_accounts_reject_foreign_company(self):
+        self.seed();other=self.client.get(self.scope('/accounts',self.b['id'])).json()[0]['id']
+        for kind in ['trial-balance','ledger','diary']:
+            response=self.client.get(self.scope(f'/business-reports/{kind}?start=2026-11-01&end=2026-11-30&account_ids={self.aid["3"]},{other}'))
+            self.assertGreaterEqual(response.status_code,400)
+
+    def test_mixed_classifiers_use_explicit_plan_mask(self):
+        import json
+        self.seed()
+        with self.core.db.transaction() as c:
+            c.execute("INSERT INTO account_plan_properties(company_id,properties_json,extras_json) VALUES(?,?,'{}') ON CONFLICT(company_id) DO UPDATE SET properties_json=excluded.properties_json",(self.a['id'],json.dumps({'mask':'#.#.##.##.##.##'})))
+            c.execute("UPDATE accounts SET classifier='1101010100' WHERE id=?",(self.aid['3'],))
+        r=self.report('&account_ids='+str(self.parent))
+        self.assertEqual([self.aid['3']],[x['account_id'] for x in r['rows'] if x['analytical']])
+        self.assertEqual(12345,next(x for x in r['rows'] if x['account_id']==self.parent)['closing_cents'])

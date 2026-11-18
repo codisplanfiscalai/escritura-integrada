@@ -23,3 +23,11 @@ Testes usam bancos/contas/partidas sintéticos. Nenhuma correção de saldos rea
 - Caso de 20.000 contas zeradas: padrão retorna zero linhas; mudança para todas é explícita.
 - Sintaxe e diff-check aprovados. PDF final de fixture sintética renderizado e inspecionado.
 - Chromium não executado até a UI por bloqueio do executor; aprovação visual UI segue pendente no CI.
+
+## Evolução: seleção múltipla e barra de filtros
+- Conta(s) e Movimento ficam na barra principal, com disposição responsiva; demais opções de impressão continuam recolhíveis.
+- Busca por acesso/classificador/nome, checkboxes, seleção preservada durante busca, chips removíveis, ESC/Concluir e limpar para Todas as contas. Limite explícito de 500 seleções; catálogo pesquisável em janelas de 200 opções.
+- União validada por empresa em balancete, Diário, Razão, Diário consolidado, centros de custo, Balanço e DRE. Sintética + descendente e seleções repetidas não duplicam partidas. Filtros capturados são usados igualmente na visualização e PDF/Excel/CSV.
+- Classificadores compactos e pontuados são reconciliados somente por máscara explicitamente salva no plano local/compartilhado. Não é inferida uma máscara a partir dos números nem afirmada ocorrência em dados reais.
+- Testes acrescentados: união, grupos sobrepostos, limites, sintaxe inválida, conta estrangeira, formatos, múltiplos relatórios e máscara mista explícita. Roteiro Chromium cobre busca sem correspondência preservando seleção, movimento independente, ESC e limpar.
+- Validação da evolução: 85 testes backend de regressão aprovados; após reforço de paridade CSV/Excel, 10 testes específicos aprovados. Frontend final 239 testes e build aprovados. Navegador permanece sujeito ao CI.

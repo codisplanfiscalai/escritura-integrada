@@ -3,21 +3,25 @@ import calendar
 from .core import DomainError, company_row, integer, iso_date, period, select_one
 
 class ReportsMixin:
-    def business_report(self,cid,kind,start,end,account_id=None,cost_center_id=None,query='',status='',direction='',bank_account='',activity='active'):
+    def business_report(self,cid,kind,start,end,account_id=None,cost_center_id=None,query='',status='',direction='',bank_account='',activity='active',account_ids=None):
         start,end=iso_date(start),iso_date(end)
         if start>end:raise DomainError('Período inicial posterior ao final.')
         if kind=='trial-balance':
             if bank_account: raise DomainError('Filtro bancário incompatível com balancete.')
             from .trial_balance_report import trial_balance
-            return trial_balance(self,cid,start,end,account_id,cost_center_id,activity)
+            return trial_balance(self,cid,start,end,account_id,cost_center_id,activity,account_ids)
+        from .report_account_selection import selected_accounts,ACCOUNT_REPORTS
+        if account_ids and kind not in ACCOUNT_REPORTS:raise DomainError('Seleção contábil incompatível com este relatório.')
         query=str(query or '').casefold()
         if kind=='bank-movements':
             return self.bank_movement_report(cid,start,end,query,direction,bank_account,account_id,cost_center_id,status)
         if bank_account:raise DomainError('Filtro de conta bancária disponível somente na movimentação bancária.')
         with self.db.read(snapshot=True) as conn:
             company=company_row(conn,cid)
+            selection,allowed_accounts=selected_accounts(conn,cid,account_id,account_ids) if kind in ACCOUNT_REPORTS else ([],None)
             clauses=['l.company_id=?'];params=[cid]
             for field,value,table in [('account_id',account_id,'accounts'),('cost_center_id',cost_center_id,'cost_centers')]:
+                if field=='account_id' and kind in ACCOUNT_REPORTS:continue
                 if value is not None:
                     record=select_one(conn,table,cid,value if table=='accounts' else integer(value,field))
                     value=record['id']
@@ -30,6 +34,9 @@ class ReportsMixin:
                 l.cost_center_id,c.code AS cost_center_code,c.name AS cost_center_name,l.debit_cents,l.credit_cents
                 FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN effective_accounts a ON a.id=l.account_id
                 LEFT JOIN cost_centers c ON c.id=l.cost_center_id WHERE '''+where+' AND j.date BETWEEN ? AND ? ORDER BY j.date,j.id,l.position',(*params,start,end))]
+            if allowed_accounts is not None:
+                openings={k:v for k,v in openings.items() if k in allowed_accounts}
+                rows=[r for r in rows if r['account_id'] in allowed_accounts]
             totals={'debit_cents':sum(r['debit_cents'] for r in rows),'credit_cents':sum(r['credit_cents'] for r in rows)}
             note='Relatório interno, com base nos movimentos cadastrados. Débito positivo; crédito negativo nos saldos.'
             if kind in {'diary','ledger'}:
@@ -48,7 +55,7 @@ class ReportsMixin:
                 accounts=[dict(r) for r in conn.execute('SELECT * FROM effective_accounts WHERE company_id=? AND analytical=1 ORDER BY classifier',(cid,))]
                 rows=[]
                 for a in accounts:
-                    if account_id and a['id']!=account_id:continue
+                    if allowed_accounts is not None and a['id'] not in allowed_accounts:continue
                     m=movements.get(a['id'],{'debit_cents':0,'credit_cents':0,'journal_ids':set()})
                     opening=openings.get(a['id'],0);closing=opening+m['debit_cents']-m['credit_cents']
                     rows.append({'account_id':a['id'],'access_code':a['access_code'],'classifier':a['classifier'],'account_name':a['name'],
@@ -132,11 +139,11 @@ class ReportsMixin:
                     r['counterpart']=next(iter(others)) if len(others)==1 else 'Diversos' if others else ''
                     by_account.setdefault(r['account_id'],[]).append(r)
                 for a in conn.execute('SELECT id,access_code,classifier,name FROM effective_accounts WHERE company_id=? AND analytical=1 ORDER BY classifier',(cid,)):
-                    if account_id and a['id']!=account_id:continue
+                    if allowed_accounts is not None and a['id'] not in allowed_accounts:continue
                     movements=by_account.get(a['id'],[])
                     if movements or openings.get(a['id']):ledger_groups.append({'account_id':a['id'],'access_code':a['access_code'],'classifier':a['classifier'],'account_name':a['name'],'opening_cents':openings.get(a['id'],0),'closing_cents':balances.get(a['id'],openings.get(a['id'],0)),'filtered':bool(query),'rows':movements})
                 if query:note+=' Pesquisa restringe os movimentos exibidos; os saldos incluem todos os movimentos da conta no período e centro selecionados.'
-            return {'ledger_groups':ledger_groups,'company_code':company['prosoft_code'] or company['code'],'company_tax_id':company['tax_id'],'kind':kind,'company_id':cid,'company_name':company['name'],'start':start,'end':end,'rows':rows,'totals':totals,'scope_note':note,'account_id':account_id,'cost_center_id':cost_center_id,'filters':{'account_id':account_id,'cost_center_id':cost_center_id,'query':query,'status':status,'direction':direction}}
+            return {'ledger_groups':ledger_groups,'company_code':company['prosoft_code'] or company['code'],'company_tax_id':company['tax_id'],'kind':kind,'company_id':cid,'company_name':company['name'],'start':start,'end':end,'rows':rows,'totals':totals,'scope_note':note,'account_id':account_id,'cost_center_id':cost_center_id,'filters':{'account_id':account_id,'account_ids':[a['id'] for a in selection],'account_selection':[str(a['access_code'])+' - '+a['name'] for a in selection],'cost_center_id':cost_center_id,'query':query,'status':status,'direction':direction}}
 
     def bank_movement_report(self,cid,start,end,query='',direction='',bank_account='',account_id=None,cost_center_id=None,status=''):
         """Imported bank movements, not an inferred bank balance or journal."""

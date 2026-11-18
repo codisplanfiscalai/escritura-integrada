@@ -11,3 +11,14 @@ test('trial balance defaults to movement independently of account selection and 
  assert.match(source,/activity.value='active'/);
  assert.match(source,/synthetic-account/);
 });
+test('account union is explicit and retained independently of movement',()=>{
+ assert.match(source,/account=ref\(\[\]\)/);
+ assert.match(source,/p.set\('account_ids',account.value.join\(','\)\)/);
+ assert.match(source,/AccountMultiSelect v-model="account"/);
+ const component=readFileSync(new URL('../src/components/AccountMultiSelect.vue',import.meta.url),'utf8');
+ assert.match(component,/new Set\(props.modelValue\)/);
+ assert.match(component,/@keydown.esc="close"/);
+ assert.match(component,/type="checkbox"/);
+ assert.match(component,/As seleções anteriores são mantidas/);
+ assert.match(component,/role="group" aria-label="Contas do relatório"/);
+});
