@@ -1,10 +1,12 @@
+> Continuação implementada: [automação NF-e/NFS-e por empresa, intervalo padrão de 24h](RECEPCAO_AUTOMATICA.md). Uma PR complementar à PR86 acrescenta worker durável e cadastro de agendamentos; índice fiscal e relatórios completos seguem planejados. As referências abaixo descrevem a análise inicial e o plano completo.
+
 # Implementação da recepção ADN NFS-e e relatórios gerenciais no Escritura
 
 Data: 18/11/2026. Destino: `codisplanfiscalai/escritura-integrada`, branch `develop`.
 Base conferida: **0.9.0-dev.59**, commit `10f56045298aae92fb0b26654f468db32fb9e9f9`.
 O ZIP enviado foi comparado com a árvore desse commit: **757 arquivos idênticos**, sem arquivos ausentes ou divergentes. Não foi usado um pacote antigo para substituir a aplicação.
 
-**Decisão:** evoluir os serviços Python/FastAPI, o cofre A1, os arquivos imutáveis, o RBAC e a interface Vue existentes. O módulo Perfex é referência de regras e regressões; não é dependência do Escritura. Este documento especifica a implementação completa em incrementos. A PR que o acompanha entrega apenas as correções explicitadas na seção 17; fila durável, projeção fiscal e novos relatórios continuam como trabalho planejado.
+**Decisão:** evoluir os serviços Python/FastAPI, o cofre A1, os arquivos imutáveis, o RBAC e a interface Vue existentes. O módulo Perfex é referência de regras e regressões; não é dependência do Escritura. Este documento especifica a implementação completa em incrementos. A continuação em PR complementar entrega as correções da seção 17 e o agendamento durável descrito em RECEPCAO_AUTOMATICA.md. Índice/projeção fiscal e novos relatórios continuam planejados.
 
 ## 1. Resultado esperado e limites
 
@@ -31,7 +33,7 @@ O histórico é aquele que o ADN disponibiliza para a inscrição e autorizaçã
 | `app/api.py` | Lifespan já administra tarefas de integração/limpeza; auditor e backup têm workers | Integrar ciclo de vida da recepção no mesmo processo |
 | `app/report_exports.py`, `report_tables.py`, relatórios fiscais | Exportação e modelos de relatório existentes | Reutilizar apresentação e formatos, com fonte NFS-e própria |
 
-O CSV atual descreve documentos/recepções, mas não apura valores de serviços, ISS, retenções ou situação fiscal por eventos. A propriedade `automation_available` é falsa. O histórico da UI não constitui uma fila de sincronização durável.
+O CSV atual descreve documentos/recepções, mas não apura valores de serviços, ISS, retenções ou situação fiscal por eventos. Na base originalmente analisada, `automation_available` era falsa e o histórico da UI não era uma fila durável. A continuação acrescentou agendamento persistente por empresa/serviço e habilitou essa capacidade, sem substituir os recibos canônicos.
 
 O runtime operacional desta base usa SQLite. `app/postgres_backend.py` declara infraestrutura preparatória ainda não conectada a `create_app`. **Não tornar a entrega dependente de migrar para PostgreSQL, MySQL, Redis, RabbitMQ, MinIO, Celery ou de instalar serviço Windows.** O uso desses componentes, se desejado em outra frente, precisa de integração e homologação próprias.
 
@@ -248,7 +250,7 @@ Manter o empacotamento/Compose/tray e fluxo SemVer da `develop`. A PR corretiva 
 | Incremento | Implementação | Critério verificável |
 | --- | --- | --- |
 | **P0 — Correção de base (esta PR)** | Pausa somente após ausência explícita; Retry-After em lote positivo; fallback de nome do emitente com identidade coincidente; testes e este plano | Regressões falham antes/passam depois; cursor/arquivos/RBAC preservados |
-| **P1 — Coleta durável** | Runs/attempts, worker lifespan, lease/token, retomada, UI de execução, seleção de período/histórico | Uma solicitação percorre vários lotes sem view aberta, até E2220; restart retoma e duas instâncias não duplicam tentativa |
+| **P1 — Coleta durável (PR complementar)** | Runs/attempts, worker lifespan, lease/token, retomada, UI de execução, seleção de período/histórico | Uma solicitação percorre vários lotes sem view aberta, até E2220; restart retoma e duas instâncias não duplicam tentativa |
 | **P2 — Índice e fatos NFS-e** | Migração/backfill, parser versionado, datas/participantes/valores, namespace/correlação, ambas as tags de registro de evento | Mais de um ano consultável; metadados corretos; consulta da primeira página não lê todos os XMLs |
 | **P3 — Eventos e situação** | Projeção de eventos, conflitos, evento antes da nota, substituição, atualização por chave autorizada | Pedido não cancela; cancelamento só com evento confirmado; conflito nunca sobrescreve original/lançamento |
 | **P4 — Gerencial e arquivos** | Matriz de relatórios, permissões, snapshots, CSV/XLSX/PDF, DANFSe/pacotes validados | Totais exatos reconciliáveis com XML, sem duplicidade de recebimentos ou papéis; exportação e grid usam os mesmos filtros |
@@ -274,18 +276,19 @@ Cada incremento deve ter PR pequena sobre a `develop` corrente. P2 pode preparar
 
 Homologação fiscal remota no Escritura é etapa própria: certificado/autorização apropriados, uma empresa piloto e comparação com acervo do serviço. A validação real do módulo Perfex não substitui esse teste nem autoriza transportar suas credenciais. Testes locais e CI usam apenas dados sintéticos.
 
-## 17. Escopo e evidência da PR corretiva
+## 17. Escopo e evidência da PR86 e da continuação
 
-Correções pequenas, sem migração de banco:
+Correções e continuação implementadas, sem migração de banco:
 
 - `ReceptionService._interpret`: ausência ADN explicitamente reconhecida aplica `max(3600, Retry-After)`; resposta positiva preserva Retry-After; nenhuma pausa artificial é adicionada aos demais lotes positivos.
 - `reception_metadata.classify`: nome em `infNFSe/emit/xNome` é aproveitado somente quando existe um único emitente e a identidade completa coincide com o prestador; nome existente em prestador mantém prioridade.
 - Testes de regressão cobrem ausência 200/404 reconhecida, repetição idempotente, pausa maior que uma hora, positivo com/sem pausa e emitente de outra filial/ambíguo/namespace estranho.
-- Mantidos endpoints, helper nativo, autenticação, criptografia, arquivos/cursor transacionais, todos os dados/migrações, loop atual e APIs existentes.
+- Worker durável para NF-e e NFS-e no lifespan, agendamento independente por empresa com padrão de 24h, retomada/replay, configuração e situação na tela da empresa. Implementação e cobertura em [RECEPCAO_AUTOMATICA.md](RECEPCAO_AUTOMATICA.md).
+- Mantidos endpoints fiscais, helper nativo, autenticação, criptografia, arquivos/cursor transacionais, dados/migrações, loop manual e APIs existentes.
 
 Antes da alteração, a suíte inicial de seis testes reproduziu falhas de ausência sem pausa, Retry-After ignorado e nome nacional ausente. Os casos negativos de identidade já permaneciam restritos. Foi acrescentado um sétimo teste para o lote misto com eventos históricos `nDFe` e atuais `nDFSe`, comprovando preservação literal dos XMLs e avanço do cursor sem efeitos de escrituração/cancelamento. Os sete testes passaram após a correção. As contagens ampliadas e limitações são registradas no resumo da PR, após a execução dos testes.
 
-**Não entregue por esta PR:** worker durável, novas tabelas/backfill, parser fiscal completo/eventos, novos relatórios/PDF, novos grants ou homologação remota. A documentação não altera `automation_available` para true nem simula essas capacidades.
+**Não entregue por estas PRs:** índice/backfill fiscal, parser fiscal completo/eventos, novos relatórios/PDF, novos grants ou homologação remota. O worker e o agendamento agora são funcionais; os demais incrementos permanecem planejados. A automação começa desabilitada e só consulta após habilitação explícita.
 
 ## 18. Fontes e decisões de contrato
 

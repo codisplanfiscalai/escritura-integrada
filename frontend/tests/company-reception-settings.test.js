@@ -12,7 +12,7 @@ test('A1 salvo mantém versão após conflito de preferências, limpa segredo e 
  const mock=`data:text/javascript;base64,${Buffer.from('export const {api,notify,changed}=globalThis.__receptionSettingsTest;').toString('base64')}`;
  const receptionUrl=new URL('../src/lib/reception.js',import.meta.url).href;
  const source=await readFile(new URL('../src/components/CompanyReceptionSettings.vue',import.meta.url),'utf8');
- let code=compileScript(parse(source).descriptor,{id:'reception-settings-test'}).content.replace(/from ['"]vue['"]/g,`from '${vueUrl}'`).replace(/from ['"]\.\.\/lib\/workspace['"]/g,`from '${mock}'`).replace(/from ['"]\.\.\/lib\/reception.js['"]/g,`from '${receptionUrl}'`);
+ let code=compileScript(parse(source).descriptor,{id:'reception-settings-test'}).content.replace(/import ReceptionAutomationSettings from [^;]+;/,'const ReceptionAutomationSettings={};').replace(/from ['"]vue['"]/g,`from '${vueUrl}'`).replace(/from ['"]\.\.\/lib\/workspace['"]/g,`from '${mock}'`).replace(/from ['"]\.\.\/lib\/reception.js['"]/g,`from '${receptionUrl}'`);
  const component=(await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default;
  let v;const setup=component.setup;component.setup=(props,context)=>{v=setup(props,context);return ()=>null;};
  const props=reactive({companyId:1}),renderer=createRenderer({createComment:()=>({}),insert:()=>{},remove:()=>{},parentNode:()=>null,nextSibling:()=>null}),app=renderer.createApp(component,props);app.mount({});
@@ -36,7 +36,7 @@ test('NSU por ambiente acompanha estado salvo, confirma ajuste e preserva rascun
  const mock=`data:text/javascript;base64,${Buffer.from('export const {api,notify,changed}=globalThis.__manualCursorTest;').toString('base64')}`;
  const receptionUrl=new URL('../src/lib/reception.js',import.meta.url).href;
  const source=await readFile(new URL('../src/components/CompanyReceptionSettings.vue',import.meta.url),'utf8');
- let code=compileScript(parse(source).descriptor,{id:'manual-cursor-test'}).content.replace(/from ['"]vue['"]/g,`from '${vueUrl}'`).replace(/from ['"]\.\.\/lib\/workspace['"]/g,`from '${mock}'`).replace(/from ['"]\.\.\/lib\/reception.js['"]/g,`from '${receptionUrl}'`);
+ let code=compileScript(parse(source).descriptor,{id:'manual-cursor-test'}).content.replace(/import ReceptionAutomationSettings from [^;]+;/,'const ReceptionAutomationSettings={};').replace(/from ['"]vue['"]/g,`from '${vueUrl}'`).replace(/from ['"]\.\.\/lib\/workspace['"]/g,`from '${mock}'`).replace(/from ['"]\.\.\/lib\/reception.js['"]/g,`from '${receptionUrl}'`);
  const component=(await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default;
  let v;const setup=component.setup;component.setup=(props,context)=>{v=setup(props,context);return ()=>null;};
  const props=reactive({companyId:1}),renderer=createRenderer({createComment:()=>({}),insert:()=>{},remove:()=>{},parentNode:()=>null,nextSibling:()=>null}),app=renderer.createApp(component,props);app.mount({});

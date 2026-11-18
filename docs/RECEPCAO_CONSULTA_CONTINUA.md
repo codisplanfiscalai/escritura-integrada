@@ -1,3 +1,5 @@
+> Atualização: a [automação por empresa](RECEPCAO_AUTOMATICA.md) acrescenta coleta durável independente da tela. O loop manual descrito abaixo continua disponível.
+
 # Consulta e download por NSU
 
 As telas **DF-e** e **NFS-e Nacional** consultam serviços independentes, com
@@ -79,4 +81,4 @@ Esta descrição substitui o bloqueio de URL/consulta única descrito nos relat�
 históricos da reconstrução de recepção. O cofre Docker permanece no Compose
 principal; não são adicionados scripts ou arquivos de configuração ao deployment.
 
-O [plano ADN e relatórios gerenciais](PLANO_ADN_NFSE_GERENCIAL.md) especifica a evolução para worker durável, projeção fiscal e relatórios. Esses incrementos não estão habilitados por esta correção.
+O [plano ADN e relatórios gerenciais](PLANO_ADN_NFSE_GERENCIAL.md) especifica a evolução para worker durável, projeção fiscal e relatórios. A coleta durável e o agendamento por empresa foram acrescentados no incremento de automação; os relatórios gerenciais e a projeção fiscal completa permanecem planejados.
