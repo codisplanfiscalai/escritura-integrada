@@ -26,6 +26,9 @@ from .reception_transport import MtlsTransport
 STATE_SCOPE = 'fiscal-reception-state-v1'
 RUN_SCOPE = 'fiscal-reception-run-v1'
 LEASE_SECONDS = 600
+# End-of-stream only, matching the national module's conservative policy.
+# Positive pages continue immediately unless the server supplies Retry-After.
+ADN_EMPTY_COOLDOWN_SECONDS = 3600
 UF_CODES = dict(zip(['RO','AC','AM','RR','PA','AP','TO','MA','PI','CE','RN','PB','PE','AL','SE','BA','MG','ES','RJ','SP','PR','SC','RS','MS','MT','GO','DF'],
                     ['11','12','13','14','15','16','17','21','22','23','24','25','26','27','28','29','31','32','33','35','41','42','43','50','51','52','53']))
 
@@ -189,7 +192,7 @@ class ReceptionService:
                 payload = load_adn_json(reply.body)
                 absence=read_adn_absence(payload,reply.status,environment)
                 if absence is not None:
-                    return metadata|absence,cursor,reply.retry_after
+                    return metadata|absence,cursor,max(ADN_EMPTY_COOLDOWN_SECONDS,reply.retry_after)
                 # Rejection defaults are never proof of authorization, even if
                 # accompanied by an inconsistent success status/HTTP 200.
                 if isinstance(payload,dict) and payload.get('Erros'):
@@ -199,7 +202,7 @@ class ReceptionService:
                     raise ImportProblem('ADN_RESPONSE_UNSUPPORTED','Retorno ADN pendente.')
                 response = read_adn_distribution(payload,cursor,environment,expected_mode)
                 proposed = response.pop('reported_last_nsu')
-                return metadata|response|{'state':'received'},proposed,0
+                return metadata|response|{'state':'received'},proposed,max(0,reply.retry_after)
             except (ValueError,UnicodeError,RecursionError) as error:
                 return metadata|{'state':'received_unparsed' if reply.status == 200 else 'unparsed_rejection',
                                  'code':getattr(error,'code','ADN_RESPONSE_INVALID'),'review_pending':True},cursor,fallback

@@ -218,6 +218,8 @@ class AdnCaptureTests(unittest.TestCase):
             self.assertEqual('no_documents',result['state'])
             self.assertFalse(result['has_more']);self.assertFalse(result['cursor_advanced'])
             self.assertEqual('000000000000002',self.state()['cursor'])
+            self.assertEqual(self.clock[0]+3600,self.state()['next_allowed_at'])
+            self.clock[0]+=3601
         self.transport.reply=RemoteReply(429,b'gateway',90)
         result=self.query('limited-stream-001')
         self.assertEqual('remote_unavailable',result['state'])

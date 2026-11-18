@@ -53,6 +53,13 @@ def classify(raw,provider,target):
             result['issuer_tax_id']=value
             result['issuer_name']=text(node,'xNome',namespace) if node is not None else ''
         if value==target:result['company_roles'].append(role)
+    # National XML may keep the legal name in infNFSe/emit instead of DPS/prest.
+    # Never borrow a name from another branch or an ambiguous emitter group.
+    if provider == 'nfse_adn' and not result.get('issuer_name') and parties.get('issuer'):
+        national = path(root, 'infNFSe', NFSE)
+        emitters = path(national[0], 'emit', NFSE) if len(national) == 1 else []
+        if len(emitters) == 1 and identity(emitters[0], NFSE) == parties['issuer']:
+            result['issuer_name'] = text(emitters[0], 'xNome', NFSE)
     emitted='issuer' in result['company_roles']
     received=bool(set(result['company_roles'])&{'recipient','intermediary'})
     result['direction']='both' if emitted and received else 'issued' if emitted else 'received' if received else 'unknown'
