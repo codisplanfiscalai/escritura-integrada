@@ -62,6 +62,12 @@ jobs:
           python tests/test_postgres_backend.py
           python tests/test_postgres_migration_stage.py
           python tests/test_postgres_operational.py
+      - name: Provar bloqueio de retorno SQLite e recuperação nativa acima de 512 MiB
+        env:
+          PYTHONPATH: .
+          ESCRITURA_POSTGRES_TEST_DSN: host=127.0.0.1 port=5432 dbname=escritura_backend_test user=fixture password=Fixture-only-postgres-test
+          ESCRITURA_POSTGRES_TEST_CONTAINER: ${{ job.services.postgres.id }}
+        run: python scripts/probes/postgres_recovery.py
 
   linux:
     name: Linux, testes e interface
