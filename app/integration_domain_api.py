@@ -63,7 +63,7 @@ def register(application, database, service, bearer):
         with database.read() as conn:
             return [dict(row) for row in conn.execute('''SELECT w.id,w.credential_id,w.resource,w.url,w.start_seq,w.revoked
                 FROM integration_webhooks w JOIN integration_credentials c ON c.id=w.credential_id
-                WHERE c.company_id=? ORDER BY w.rowid DESC LIMIT 100''',(cid,))]
+                WHERE c.company_id=? ORDER BY w.start_seq DESC,w.id DESC LIMIT 100''',(cid,))]
 
     @application.post('/api/companies/{cid}/integrations/webhooks/{ident}/redrive')
     def redrive(cid: int, ident: str, request: Request, payload: dict = Body(...)):

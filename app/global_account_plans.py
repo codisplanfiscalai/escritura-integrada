@@ -4,6 +4,8 @@ Shared versions never change underneath a journal. Shared definitions are not
 copied into companies: only used accounts allocate minimal FK targets. Own
 forks explicitly copy the definition, preserving every previously used ID.
 """
+from .sql_support import dialect
+from .sql_support import insert_id
 import json
 from collections import Counter
 
@@ -80,13 +82,7 @@ class GlobalAccountPlansMixin:
             binding = conn.execute('SELECT * FROM company_account_plan_bindings WHERE company_id=?', (cid,)).fetchone()
             # The list needs metadata only. Do not transfer original BLOBs or
             # decode every account in every immutable version into Python.
-            rows = conn.execute('''SELECT p.id,p.name,p.description,p.parent_id,p.filename,
-                p.format,p.sha256,p.created_at,p.created_by,
-                json_extract(p.plan_json,'$.properties') AS properties_json,
-                COUNT(g.id) AS record_count,COUNT(DISTINCT g.classifier) AS classifier_count
-                FROM global_account_plans p
-                LEFT JOIN global_account_entries g ON g.global_plan_id=p.id
-                GROUP BY p.id ORDER BY p.id DESC''')
+            rows = conn.execute(dialect(conn, "SELECT p.id,p.name,p.description,p.parent_id,p.filename,\n                p.format,p.sha256,p.created_at,p.created_by,\n                json_extract(p.plan_json,'$.properties') AS properties_json,\n                COUNT(g.id) AS record_count,COUNT(DISTINCT g.classifier) AS classifier_count\n                FROM global_account_plans p\n                LEFT JOIN global_account_entries g ON g.global_plan_id=p.id\n                GROUP BY p.id ORDER BY p.id DESC", "SELECT p.id,p.name,p.description,p.parent_id,p.filename,\n                p.format,p.sha256,p.created_at,p.created_by,\n                ((p.plan_json::jsonb->>'properties')) AS properties_json,\n                COUNT(g.id) AS record_count,COUNT(DISTINCT g.classifier) AS classifier_count\n                FROM global_account_plans p\n                LEFT JOIN global_account_entries g ON g.global_plan_id=p.id\n                GROUP BY p.id ORDER BY p.id DESC"))
             plans = []
             for row in rows:
                 item = dict(row)
@@ -130,11 +126,11 @@ class GlobalAccountPlansMixin:
             if parent is not None:
                 parent = integer(parent, 'Versão de origem'); global_plan(conn, parent)
             # Retry-safe: the same reviewed source/name/parent is one immutable publication.
-            previous = conn.execute('SELECT * FROM global_account_plans WHERE source_company_id=? AND source_batch_id=? AND name=? AND description=? AND parent_id IS ?',
+            previous = conn.execute('SELECT * FROM global_account_plans WHERE source_company_id=? AND source_batch_id=? AND name=? AND description=? AND parent_id IS NOT DISTINCT FROM ?',
                                     (cid, batch_id, name, description, parent)).fetchone()
             if previous: return summary(dict(previous)) | {'duplicate': True}
-            item_id = conn.execute('''INSERT INTO global_account_plans(name,description,source_company_id,source_batch_id,parent_id,plan_json,filename,format,original,sha256,created_at,created_by)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''', (name, description, cid, batch_id, parent, batch['plan_json'], batch['filename'], batch['format'], batch['original'], batch['sha256'], now(), actor)).lastrowid
+            item_id = insert_id(conn,'''INSERT INTO global_account_plans(name,description,source_company_id,source_batch_id,parent_id,plan_json,filename,format,original,sha256,created_at,created_by)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',(name, description, cid, batch_id, parent, batch['plan_json'], batch['filename'], batch['format'], batch['original'], batch['sha256'], now(), actor))
             for raw in plan['accounts']:
                 a=account_values(raw);extras={k:v for k,v in a.items() if k not in {*FIELDS,'prosoft'}}
                 conn.execute(f"INSERT INTO global_account_entries(global_plan_id,{','.join(FIELDS)},prosoft_json,extras_json) VALUES({','.join('?' for _ in range(len(FIELDS)+3))})",(item_id,*(a[k] for k in FIELDS),pack(a['prosoft']),pack(extras)))
@@ -175,8 +171,7 @@ class GlobalAccountPlansMixin:
             effect(conn, cid, 'accounting.accounts', 'read')
             row = global_plan(conn, item_id); result = self._global_account_preview(conn, cid, row, mode, scope)
             fingerprint = digest({'global_plan_id': item_id, 'sha256': row['sha256'], 'state': result['state_hash'], 'mode': mode,'copy_scope':scope})
-            pid = conn.execute('''INSERT INTO global_account_plan_previews(company_id,global_plan_id,mode,state_hash,preview_hash,created_at,created_by,copy_scope) VALUES(?,?,?,?,?,?,?,?)''',
-                               (cid, item_id, mode, result['state_hash'], fingerprint, now(), actor,scope)).lastrowid
+            pid = insert_id(conn,'''INSERT INTO global_account_plan_previews(company_id,global_plan_id,mode,state_hash,preview_hash,created_at,created_by,copy_scope) VALUES(?,?,?,?,?,?,?,?)''',(cid, item_id, mode, result['state_hash'], fingerprint, now(), actor,scope))
             return {k: v for k,v in result.items() if k not in {'to_create','state_hash','conflicts'}} | {'id': pid, 'preview_hash': fingerprint, 'conflict_count': len(result['conflicts']), 'conflicts': result['conflicts'][:100], 'plan': summary(row)}
 
     def confirm_global_account_plan(self, cid, preview_id, payload, actor):
@@ -200,7 +195,7 @@ class GlobalAccountPlansMixin:
             # Shared adoption writes only this binding/preview/audit, not accounts,
             # metadata, properties, source BLOBs or per-company plan JSON.
             conn.execute('''INSERT INTO company_account_plan_bindings(company_id,global_plan_id,mode,attached_at,attached_by,copy_scope) VALUES(?,?,?,?,?,?)
-                ON CONFLICT(company_id) DO UPDATE SET global_plan_id=excluded.global_plan_id,mode=excluded.mode,version=version+1,attached_at=excluded.attached_at,attached_by=excluded.attached_by,copy_scope=excluded.copy_scope''', (cid, row['id'], preview['mode'], now(), actor,preview['copy_scope']))
+                ON CONFLICT(company_id) DO UPDATE SET global_plan_id=excluded.global_plan_id,mode=excluded.mode,version=company_account_plan_bindings.version+1,attached_at=excluded.attached_at,attached_by=excluded.attached_by,copy_scope=excluded.copy_scope''', (cid, row['id'], preview['mode'], now(), actor,preview['copy_scope']))
             confirmed = {k:v for k,v in result.items() if k not in {'to_create','state_hash','conflicts'}} | {'global_plan_id': row['id'], 'batch_id': batch, 'created':physical_created, 'available':result['record_count'], 'references_materialized':0}
             conn.execute('UPDATE global_account_plan_previews SET result_json=? WHERE id=?', (pack(confirmed), preview_id))
             audit(conn, cid, actor, 'attach-global' if preview['mode']=='shared' else 'duplicate-global', 'account_plan', row['id'], confirmed | {'reason': reason})
@@ -212,14 +207,14 @@ class GlobalAccountPlansMixin:
         raw=row['original'];sha=row['sha256'];format=row['format'];filename=row['filename']
         if scope=='used':
             raw=pack(source_plan).encode('utf-8');sha=digest(raw);format='native';filename=f'plano-proprio-usadas-{cid}.json'
-        batch=conn.execute('''INSERT INTO account_plan_batches(company_id,filename,format,sha256,original,options_json,plan_json,preview_hash,state_hash,status,confirmation_json,created_at,created_by)
-            VALUES(?,?,?,?,?,?,?,?,?,'confirmed',?,?,?)''',(cid,filename,format,sha,raw,pack({'identity_mode':'access','copy_scope':scope,'source_global_plan_id':row['id'],'source_global_sha256':row['sha256']}),pack(source_plan),fingerprint,state_hash,pack({'global_plan_id':row['id'],'own_copy':True}),now(),actor)).lastrowid
+        batch=insert_id(conn,'''INSERT INTO account_plan_batches(company_id,filename,format,sha256,original,options_json,plan_json,preview_hash,state_hash,status,confirmation_json,created_at,created_by)
+            VALUES(?,?,?,?,?,?,?,?,?,'confirmed',?,?,?)''',(cid,filename,format,sha,raw,pack({'identity_mode':'access','copy_scope':scope,'source_global_plan_id':row['id'],'source_global_sha256':row['sha256']}),pack(source_plan),fingerprint,state_hash,pack({'global_plan_id':row['id'],'own_copy':True}),now(),actor))
         created=0;selected_codes={a['access_code'] for a in selected}
         for entry in conn.execute('SELECT * FROM global_account_entries WHERE global_plan_id=? ORDER BY access_code',(row['id'],)):
             if entry['access_code'] not in selected_codes:continue
             old=conn.execute('SELECT id,shared_entry_id FROM accounts WHERE company_id=? AND access_code=?',(cid,entry['access_code'])).fetchone()
             if old is None:
-                aid=conn.execute(f"INSERT INTO accounts(company_id,{','.join(FIELDS)},shared_entry_id) VALUES({','.join('?' for _ in range(len(FIELDS)+2))})",(cid,*(entry[k] for k in FIELDS),entry['id'])).lastrowid
+                aid=insert_id(conn,f"INSERT INTO accounts(company_id,{','.join(FIELDS)},shared_entry_id) VALUES({','.join('?' for _ in range(len(FIELDS)+2))})",(cid,*(entry[k] for k in FIELDS),entry['id']))
                 created+=1
             else:
                 aid=old['id']

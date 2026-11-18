@@ -3,6 +3,7 @@
 Only UUID-scoped volumes/images created here are removed; no prune, host chmod,
 real certificates, fiscal hosts, published ports or Docker socket in containers.
 """
+import argparse
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,10 @@ def docker(*args, env=None):
 
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--proxy-ca',type=Path,help='CA bundle supplied only as a BuildKit secret')
+    args=parser.parse_args()
+    secret=['--secret','id=proxy_ca,src='+str(args.proxy_ca.resolve(strict=True))] if args.proxy_ca else []
     # CI's local daemon only; never follow a developer's remote Docker context.
     endpoint = os.environ.get('DOCKER_HOST')
     if not endpoint:
@@ -39,19 +44,19 @@ def main():
     try:
         config = json.loads(docker('compose', '--project-name', prefix, '-f', 'compose.yaml',
                                   'config', '--format', 'json',
-                                  env=dict(os.environ, ESCRITURA_IMAGE=runtime,
+                                  env=dict(os.environ, ESCRITURA_IMAGE=runtime, POSTGRES_PASSWORD="Fixture-only-compose-test",
                                            ESCRITURA_APP_DATA_BIND='/tmp/' + prefix + '/configuration-only')))
         app = config['services']['app']
         mounts = {mount['target']: mount for mount in app['volumes']}
         # Compose's normalized JSON omits false fields (omitempty).
-        assert mounts['/data']['type'] == 'bind' and not mounts['/data'].get('bind', {}).get('create_host_path', False)
+        assert mounts['/data']['type'] == 'bind' and mounts['/data']['source'] == '/tmp/' + prefix + '/configuration-only'
         assert mounts['/run/escritura/reception-vault']['type'] == 'volume'
         assert app['read_only'] and app['cap_drop'] == ['ALL']
         assert config['volumes']['reception_vault']['name'] == prefix + '_reception_vault'
-        docker('build', '-f', 'docker/base.Dockerfile', '--build-arg',
+        docker('build', *secret, '-f', 'docker/base.Dockerfile', '--build-arg',
                'PYTHON_IMAGE=' + catalog['upstreams']['python']['reference'], '-t', base, '.')
         images.append(base)
-        docker('build', '--target', 'reception-runtime', '--build-arg', 'RUNTIME_IMAGE=' + base,
+        docker('build', *secret, '--target', 'reception-runtime', '--build-arg', 'RUNTIME_IMAGE=' + base,
                '--build-arg', 'NODE_IMAGE=' + catalog['upstreams']['node']['reference'], '-t', runtime, '.')
         images.append(runtime)
         for name in ('data', 'vault', 'empty-vault', 'wrong-vault', 'backup', 'key-backup', 'restored-data', 'restored-vault'):

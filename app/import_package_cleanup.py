@@ -70,7 +70,7 @@ def restore_upload(conn, cid, raw, actor):
             elif hashlib.sha256(f['content']).hexdigest() != sha:
                 raise DomainError('Integridade da cópia original comprometida.', 409, 'original_integrity_mismatch')
         if tomb['history_hidden']:
-            conn.execute('INSERT OR IGNORE INTO import_package_history VALUES(?,?,?,?)', (row['id'], cid, tomb['removed_at'], tomb['removed_by']))
+            conn.execute('INSERT INTO import_package_history VALUES(?,?,?,?) ON CONFLICT DO NOTHING', (row['id'], cid, tomb['removed_at'], tomb['removed_by']))
         conn.execute('UPDATE imports SET original=? WHERE company_id=? AND id=?', (raw, cid, row['id']))
         conn.execute('DELETE FROM import_package_tombstones WHERE company_id=? AND import_id=?', (cid, row['id']))
         audit(conn, cid, actor, 'restore-original', 'import', row['id'], {'sha256': sha, 'bytes': len(raw), 'movements_preserved': True, 'removed_at': tomb['removed_at']})

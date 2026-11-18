@@ -1,4 +1,5 @@
 """Catálogos locais versionados; migração dos serviços CatalogController/seed do Auditor 1.2.2."""
+from .sql_support import insert_id
 import gzip
 import json
 import re
@@ -98,8 +99,8 @@ def revise_catalog(core, cid, payload, actor, iid=None):
         if start > end: raise DomainError('Vigência final anterior à inicial.')
         name = text(payload.get('name'), 'Nome da versão', True, 150)
         hashed = digest({'entries': entries, 'reference': reference, 'source': source, 'valid_from': start, 'valid_to': end})
-        new = conn.execute('''INSERT INTO auditor_catalogs(company_id,name,source,valid_from,valid_to,content_json,reference_json,sha256,created_at,created_by,parent_id,source_id)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''', (cid,name,source,start,end,pack(entries),pack(reference),hashed,now(),actor,iid,source_id)).lastrowid
+        new = insert_id(conn,'''INSERT INTO auditor_catalogs(company_id,name,source,valid_from,valid_to,content_json,reference_json,sha256,created_at,created_by,parent_id,source_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',(cid,name,source,start,end,pack(entries),pack(reference),hashed,now(),actor,iid,source_id))
         audit(conn,cid,actor,'revision' if iid else 'import_reference','auditor_catalog',new,{'parent_id':iid,'sha256':hashed,'historical':reference.get('historical')})
     return catalog_detail(core,cid,new)
 

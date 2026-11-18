@@ -22,7 +22,7 @@ def store_file(db, conn, cid, year, category, filename, content, actor):
     if category == 'originals':
         from .import_package_cleanup import reject_removed_upload
         reject_removed_upload(conn, cid, sha)
-    conn.execute('INSERT OR IGNORE INTO stored_files(company_id,year,category,filename,sha256,content,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)', (cid,year,category,filename,sha,content,now(),actor))
+    conn.execute('INSERT INTO stored_files(company_id,year,category,filename,sha256,content,created_at,created_by) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', (cid,year,category,filename,sha,content,now(),actor))
     row = conn.execute('SELECT * FROM stored_files WHERE company_id=? AND year=? AND category=? AND sha256=?',(cid,year,category,sha)).fetchone()
     materialize(db,row)
     return row['id']

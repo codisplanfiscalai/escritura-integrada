@@ -1,4 +1,5 @@
 """Lossless report references; declared parameters never become tax rules."""
+from .sql_support import insert_id
 from collections import Counter
 from copy import deepcopy
 from functools import lru_cache
@@ -170,8 +171,7 @@ class CfopSourceMixin:
                 created += 1
             data = {'bundle': bundle, 'date': day, 'parameters_active': False, 'reason': reason, 'responsible': actor,
                     'comparison': {k: v for k, v in preview.items() if k != 'rows'}}
-            item_id = conn.execute('INSERT INTO masters(company_id,kind,code,name,data_json,active,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?)',
-                                   (cid, SOURCE_KIND, bundle['bundle_id'], bundle['name'], pack(data), now(), now())).lastrowid
+            item_id = insert_id(conn,'INSERT INTO masters(company_id,kind,code,name,data_json,active,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?)',(cid, SOURCE_KIND, bundle['bundle_id'], bundle['name'], pack(data), now(), now()))
             audit(conn, cid, actor, 'import', 'cfop_source_load', item_id, {'bundle_id': bundle['bundle_id'], 'reason': reason, 'created': created, 'preserved': preserved, 'records': bundle['record_count'], 'parameters_active': False})
             return {'id': item_id, 'duplicate': False, 'created': created, 'preserved': preserved, 'record_count': bundle['record_count']}
 

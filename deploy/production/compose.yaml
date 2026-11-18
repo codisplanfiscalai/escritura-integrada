@@ -14,17 +14,16 @@
         "ESCRITURA_DEMO": "0",
         "ESCRITURA_COOKIE_SECURE": "${ESCRITURA_COOKIE_SECURE:-0}",
         "FORWARDED_ALLOW_IPS": "${FORWARDED_ALLOW_IPS:-127.0.0.1}",
-        "ESCRITURA_RECEPTION_VAULT_DIR": "/run/escritura/reception-vault"
+        "ESCRITURA_RECEPTION_VAULT_DIR": "/run/escritura/reception-vault",
+        "ESCRITURA_DATABASE_BACKEND": "postgresql",
+        "ESCRITURA_DATABASE_SCHEMA": "${ESCRITURA_DATABASE_SCHEMA:-public}",
+        "POSTGRES_HOST": "postgres",
+        "POSTGRES_DB": "${POSTGRES_DB:-escritura}",
+        "POSTGRES_USER": "${POSTGRES_USER:-escritura}",
+        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:?Defina uma senha PostgreSQL no .env}"
       },
       "volumes": [
-        {
-          "type": "bind",
-          "source": "${ESCRITURA_APP_DATA_BIND:?Execute deploy_storage.py prepare-app antes de atualizar; init prepara instalacao nova}",
-          "target": "/data",
-          "bind": {
-            "create_host_path": false
-          }
-        },
+        "${ESCRITURA_APP_DATA_BIND:-app_data}:/data",
         {
           "type": "volume",
           "source": "reception_vault",
@@ -58,6 +57,11 @@
         "timeout": "5s",
         "start_period": "30s",
         "retries": 3
+      },
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy"
+        }
       }
     },
     "redis": {
@@ -103,23 +107,13 @@
       "image": "${POSTGRES_IMAGE:-ghcr.io/codisplanfiscalai/escritura-integrada-postgres:17.11-bookworm-479e959b5363ce7a}",
       "pull_policy": "missing",
       "platform": "linux/amd64",
-      "profiles": [
-        "postgres"
-      ],
       "environment": {
         "POSTGRES_DB": "${POSTGRES_DB:-escritura}",
         "POSTGRES_USER": "${POSTGRES_USER:-escritura}",
-        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:-}"
+        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:?Defina uma senha PostgreSQL no .env}"
       },
       "volumes": [
-        {
-          "type": "bind",
-          "source": "./data/${COMPOSE_PROJECT_NAME:-escritura-production}/postgres",
-          "target": "/var/lib/postgresql/data",
-          "bind": {
-            "create_host_path": false
-          }
-        }
+        "${ESCRITURA_POSTGRES_DATA_BIND:-postgres_data}:/var/lib/postgresql/data"
       ],
       "networks": [
         "internal"
@@ -240,6 +234,8 @@
     }
   },
   "volumes": {
-    "reception_vault": {}
+    "reception_vault": {},
+    "app_data": {},
+    "postgres_data": {}
   }
 }

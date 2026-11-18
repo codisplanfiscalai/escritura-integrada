@@ -26,7 +26,8 @@ def smoke_existing_bind(manifest):
     checks = []
     with tempfile.TemporaryDirectory(prefix="escritura-existing-bind-") as temporary:
         root = Path(temporary)
-        base = json.loads((ROOT / "deploy/develop/compose.yaml").read_text())
+        from smoke_storage import legacy_sqlite_layout
+        base = legacy_sqlite_layout(json.loads((ROOT / "deploy/develop/compose.yaml").read_text()))
         base["services"]["app"]["ports"] = ["127.0.0.1::8000/tcp"]
         current = copy.deepcopy(base)
         current["services"]["app"]["volumes"] = ["./data/app:/data"]  # The user's existing syntax.

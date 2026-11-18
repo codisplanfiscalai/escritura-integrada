@@ -1,4 +1,5 @@
 """Opt-in operational restrictions; authentication and integrity stay mandatory."""
+from .sql_support import insert_id
 import base64
 import json
 from fastapi import Body, Request
@@ -131,7 +132,7 @@ def register(app,core,actor):
             name=text(payload.get('name'),'Nome do modelo',True,120)
             description=text(payload.get('description'),'Descrição',False,1000)
             cfg=get_settings(conn,cid)
-            iid=conn.execute('INSERT INTO operational_setting_templates(name,description,settings_json,source_company_id,created_at,created_by) VALUES(?,?,?,?,?,?)',(name,description,pack(cfg),cid,now(),actor(request))).lastrowid
+            iid=insert_id(conn,'INSERT INTO operational_setting_templates(name,description,settings_json,source_company_id,created_at,created_by) VALUES(?,?,?,?,?,?)',(name,description,pack(cfg),cid,now(),actor(request)))
             audit(conn,cid,actor(request),'create','operational-template',iid,{'name':name,'settings':cfg})
             return describe(conn,cid,request.state.session['user']['id'])|{'created_template_id':iid}
 

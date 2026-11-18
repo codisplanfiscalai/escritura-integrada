@@ -106,7 +106,7 @@ class IntegrationTests(unittest.TestCase):
         # Existing admin is changed into an explicitly delegated operator; no global integration rights.
         with self.db.transaction() as conn:
             conn.execute("UPDATE users SET role='operator' WHERE id=?",(self.uid,))
-            conn.execute('INSERT OR IGNORE INTO user_companies(user_id,company_id) VALUES(?,?)',(self.uid,self.cid))
+            conn.execute('INSERT INTO user_companies(user_id,company_id) VALUES(?,?) ON CONFLICT DO NOTHING',(self.uid,self.cid))
             for routine,action in [('system.integrations','create'),('accounting.cost_centers','read'),('accounting.cost_centers','export')]:
                 conn.execute("INSERT INTO user_permissions(user_id,company_id,routine,action,effect) VALUES(?,?,?,?,'allow')",(self.uid,self.cid,routine,action))
         route = self.external('cost-centers')

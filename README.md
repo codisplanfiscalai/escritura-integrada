@@ -1,3 +1,5 @@
+> **Docker/PostgreSQL operacional (PR draft):** consulte [o procedimento explícito de inicialização, migração e restauração](docs/POSTGRES_OPERACIONAL.md). As instruções SQLite históricas abaixo não descrevem o Compose desta branch.
+
 # Escritura Integrada
 
 Aplicação única de escrituração fiscal, contábil e financeira para o escritório. Empresa ativa e exercício por módulo acompanham documentos, partidas, títulos, conciliação e relatórios. A competência é escolhida na operação. Bloqueios mensais e demais restrições operacionais são opcionais por empresa e começam desativados.

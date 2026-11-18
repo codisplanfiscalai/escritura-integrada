@@ -1,4 +1,5 @@
 """Pontos de integração da evolução modular 0.7."""
+from .sql_support import insert_id
 import base64
 import json
 from fastapi import Body, Request
@@ -122,7 +123,7 @@ def register_evolution_routes(app,core,db,actor,check_period):
         preview=normalize_xlsx(raw)
         with db.transaction() as conn:
             fid=store_file(db,conn,cid,year(request,None),'audit',payload.get('filename','catalogo.xlsx'),raw,actor(request))
-            sid=conn.execute('INSERT INTO auditor_catalog_sources(company_id,file_id,preview_json,created_at) VALUES(?,?,?,?)',(cid,fid,pack(preview),now())).lastrowid
+            sid=insert_id(conn,'INSERT INTO auditor_catalog_sources(company_id,file_id,preview_json,created_at) VALUES(?,?,?,?)',(cid,fid,pack(preview),now()))
             audit(conn,cid,actor(request),'preview','auditor_catalog_source',sid,{'file_id':fid,'rows':preview['rows'],'excluded':preview['excluded']})
         return preview|{'source_id':sid,'file_id':fid}
 
@@ -169,7 +170,12 @@ def register_evolution_routes(app,core,db,actor,check_period):
         from pathlib import Path
         from .snapshots import create_snapshot
         with TemporaryDirectory(prefix='escritura-export-') as tmp:
-            path=Path(tmp)/'escritura-backup.zip';create_snapshot(db.path,path)
+            path=Path(tmp)/'escritura-backup.zip'
+            if db.backend == 'postgresql':
+                from .postgres_transfer import capture
+                capture(db,path)
+            else:
+                create_snapshot(db.path,path)
             return Response(path.read_bytes(),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="escritura-backup-integral.zip"'})
 
     @app.get('/api/companies/{cid}/storage')

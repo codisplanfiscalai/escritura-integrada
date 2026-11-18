@@ -3,6 +3,7 @@
 The database is the installation/organization boundary. Never federate identities
 across databases or infer a grant from a matching tax identifier.
 """
+from .sql_support import insert_id, has_table
 import json
 
 from .cadastros import tax_identity
@@ -40,13 +41,13 @@ def migrate(conn):
 
 def register_local(conn,row):
     """Called by legacy imports/CRUD in their transaction, after schema creation."""
-    if row['kind']!='participant' or not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shared_registration_links'").fetchone():
+    if row['kind']!='participant' or not has_table(conn, 'shared_registration_links'):
         return
     if conn.execute('SELECT 1 FROM shared_registration_links WHERE company_id=? AND master_id=?',(row['company_id'],row['id'])).fetchone():
         return
     data=json.loads(row['data_json'])
-    rid=conn.execute("""INSERT INTO shared_registrations(name,tax_id,kind,data_json,active,created_at,updated_at)
-        VALUES(?,?,'third-party',?,?,?,?)""",(row['name'],row['tax_id'],pack({k:data[k] for k in FIELDS if k in data}),row['active'],now(),now())).lastrowid
+    rid=insert_id(conn,"""INSERT INTO shared_registrations(name,tax_id,kind,data_json,active,created_at,updated_at)
+        VALUES(?,?,'third-party',?,?,?,?)""",(row['name'],row['tax_id'],pack({k:data[k] for k in FIELDS if k in data}),row['active'],now(),now()))
     conn.execute('INSERT INTO shared_registration_links VALUES(?,?,?)',(rid,row['company_id'],row['id']))
 
 
@@ -121,7 +122,7 @@ class SharedRegistrationsMixin:
             if old:
                 conn.execute('UPDATE shared_registrations SET name=?,data_json=?,active=?,version=version+1,updated_at=? WHERE id=?',(name,pack(data),active,now(),rid))
             else:
-                rid=conn.execute('INSERT INTO shared_registrations(kind,name,tax_id,data_json,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(kind,name,tax_id,pack(data),active,now(),now())).lastrowid
+                rid=insert_id(conn,'INSERT INTO shared_registrations(kind,name,tax_id,data_json,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(kind,name,tax_id,pack(data),active,now(),now()))
             for company_id in {cid} | {link['company_id'] for link in conn.execute('SELECT company_id FROM shared_registration_links WHERE registration_id=?',(rid,))}:
                 audit(conn,company_id,actor,'update' if old else 'create','shared_registration',rid,{'kind':kind,'name':name,'active':active})
             return self._registration(conn,cid,kind,rid)
@@ -145,8 +146,8 @@ class SharedRegistrationsMixin:
                 code=f'GLOBAL-{rid}-{suffix}'
         if conn.execute("SELECT 1 FROM masters WHERE company_id=? AND kind='participant' AND (code=? OR (tax_id<>'' AND tax_id=?))",(cid,code,tax_id)).fetchone():
             raise DomainError('Já existe código ou identidade nesta empresa. Revise o cadastro local; não foi criada duplicidade.',409)
-        mid=conn.execute("""INSERT INTO masters(company_id,kind,code,name,tax_id,data_json,created_at,updated_at)
-            VALUES(?,'participant',?,?,?,?,?,?)""",(cid,code,name,tax_id,pack(data | {'roles':['customer','supplier']}),now(),now())).lastrowid
+        mid=insert_id(conn,"""INSERT INTO masters(company_id,kind,code,name,tax_id,data_json,created_at,updated_at)
+            VALUES(?,'participant',?,?,?,?,?,?)""",(cid,code,name,tax_id,pack(data | {'roles':['customer','supplier']}),now(),now()))
         conn.execute('INSERT INTO shared_registration_links VALUES(?,?,?)',(rid,cid,mid))
         sync_third_party(conn,cid,mid,actor,'Vínculo explícito ao cadastro compartilhado.')
         return mid
@@ -168,7 +169,7 @@ class SharedRegistrationsMixin:
             if kind=='accountant' and conn.execute("SELECT 1 FROM shared_registrations r JOIN shared_registration_links l ON l.registration_id=r.id WHERE l.company_id=? AND r.kind='accountant' AND r.tax_id=?",(target,row['tax_id'])).fetchone():
                 raise DomainError('Já existe contador com esta identidade no destino. Revise os cadastros; nenhuma união foi realizada.',409)
             mid=self._registration_master(conn,target,rid,row['name'],row['tax_id'],row['data'],actor,payload) if kind=='third-party' else None
-            conn.execute('INSERT OR IGNORE INTO shared_registration_links VALUES(?,?,?)',(rid,target,mid))
+            conn.execute('INSERT INTO shared_registration_links VALUES(?,?,?) ON CONFLICT DO NOTHING',(rid,target,mid))
             audit(conn,target,actor,'link','shared_registration',rid,{'kind':kind})
             return self._registration(conn,cid,kind,rid)
 

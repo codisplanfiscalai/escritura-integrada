@@ -1,4 +1,5 @@
 """Intercâmbio parcial de notas Prosoft; não gera EFD nem altera a escrituração."""
+from .sql_support import insert_id
 from calendar import monthrange
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -232,7 +233,6 @@ class ProsoftFiscalMixin:
                 raise DomainError('Confira empresa, plano e mapeamentos no destino antes de gerar o lote.')
             existing = conn.execute('SELECT id FROM export_batches WHERE company_id=? AND layout=? AND fingerprint=?', (cid, LAYOUT, fingerprint)).fetchone()
             if existing: return result | {'id': existing['id'], 'duplicate': True}
-            item_id = conn.execute('INSERT INTO export_batches(company_id,period,layout,fingerprint,filename,content,manifest_json,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',
-                                   (cid, competence, LAYOUT, fingerprint, result['filename'], raw, pack(manifest), now(), actor)).lastrowid
+            item_id = insert_id(conn,'INSERT INTO export_batches(company_id,period,layout,fingerprint,filename,content,manifest_json,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',(cid, competence, LAYOUT, fingerprint, result['filename'], raw, pack(manifest), now(), actor))
             audit(conn, cid, actor, 'export', 'prosoft-fiscal', item_id, {'fingerprint': fingerprint, 'sha256': digest(raw), 'layout': LAYOUT})
             return result | {'id': item_id}

@@ -6,6 +6,7 @@
 !docker/*.Dockerfile
 !docker/images.lock.json
 !docker/runtime.lock
+!docker/postgres.lock
 !docker/*-entrypoint.sh
 !docker/mirrors/
 !docker/mirrors/*.Dockerfile
@@ -14,6 +15,8 @@
 !app/*.py
 !app/data/
 !app/data/*.json
+!app/data/postgres/
+!app/data/postgres/**
 !app/auditor_engine/
 !app/auditor_engine/**
 !scripts/

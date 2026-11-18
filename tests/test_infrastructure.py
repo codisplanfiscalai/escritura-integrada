@@ -162,6 +162,10 @@ class InfrastructureTests(unittest.TestCase):
                 self.assertEqual(service["pull_policy"], "always" if name == "app" else "missing")
                 self.assertIn("healthcheck", service)
                 for mount in service.get("volumes", []):
+                    if isinstance(mount,str):
+                        self.assertIn(name, {'app','postgres'})
+                        self.assertEqual(mount, '${ESCRITURA_APP_DATA_BIND:-app_data}:/data' if name=='app' else '${ESCRITURA_POSTGRES_DATA_BIND:-postgres_data}:/var/lib/postgresql/data')
+                        continue
                     if name == "app" and mount["target"] == "/run/escritura/reception-vault":
                         self.assertEqual(mount, {"type":"volume", "source":"reception_vault", "target":"/run/escritura/reception-vault"})
                         continue
@@ -174,7 +178,12 @@ class InfrastructureTests(unittest.TestCase):
                     self.assertEqual(mount["bind"], {"create_host_path": False})
                 count += len(service.get("ports", []))
                 if name != "app":
-                    self.assertEqual(service["profiles"], [name])
+                    if name=='postgres':
+                        self.assertNotIn('profiles',service)
+                        self.assertEqual(data['services']['app']['environment']['ESCRITURA_DATABASE_BACKEND'],'postgresql')
+                        self.assertEqual(data['services']['app']['depends_on']['postgres']['condition'],'service_healthy')
+                    else:
+                        self.assertEqual(service["profiles"], [name])
                     self.assertEqual(service["networks"], ["internal"])
                     self.assertNotIn("ports", service)
             self.assertEqual(count, 1)
@@ -188,7 +197,7 @@ class InfrastructureTests(unittest.TestCase):
         self.assertNotEqual(prod["name"], dev["name"])
         self.assertNotEqual(prod["services"]["app"]["ports"], dev["services"]["app"]["ports"])
         for data in (prod, dev):
-            self.assertEqual({"reception_vault": {}}, data["volumes"])
+            self.assertEqual({"reception_vault": {}, "app_data": {}, "postgres_data": {}}, data["volumes"])
         self.assertNotEqual(prod["services"]["redis"]["volumes"], dev["services"]["redis"]["volumes"])
         self.assertEqual((ROOT / "compose.yaml").read_bytes(), (ROOT / "deploy/production/compose.yaml").read_bytes())
 
@@ -211,8 +220,8 @@ class InfrastructureTests(unittest.TestCase):
         for environment in ("production", "develop"):
             text = (ROOT / "deploy" / environment / "compose.yaml").read_text()
             required = re.findall(r"\$\{([A-Z_]+):?\?", text)
-            self.assertEqual(required, ["ESCRITURA_IMAGE", "ESCRITURA_APP_DATA_BIND"])
-            for name in ("REDIS_PASSWORD", "POSTGRES_PASSWORD", "MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD", "MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD"):
+            self.assertEqual(required, ["ESCRITURA_IMAGE", "POSTGRES_PASSWORD", "POSTGRES_PASSWORD"])
+            for name in ("REDIS_PASSWORD", "MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD", "MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD"):
                 self.assertIn("${" + name + ":-}", text)
 
     def test_deploy_examples_follow_current_content_tags(self):
@@ -320,7 +329,7 @@ class InfrastructureTests(unittest.TestCase):
                         self.assertEqual(manifest['images'][name]['reference'],values[key])
                 elif env_path.name.startswith('develop-'):
                     self.assertEqual(manifest['images']['app']['repository']+':develop',values['ESCRITURA_IMAGE'])
-                self.assertEqual('',values['POSTGRES_PASSWORD'])
+                self.assertEqual('synthetic-compose-check-only',values['POSTGRES_PASSWORD'])
                 self.assertEqual('',values['REDIS_PASSWORD'])
                 self.assertNotIn("up", command)  # Configuration check never deploys the moving alias.
             return subprocess.CompletedProcess(command, 0, "", "")
@@ -375,9 +384,9 @@ class InfrastructureTests(unittest.TestCase):
                     bundled_compose = json.loads(archive.read(compose_name))
                     template = json.loads((root / "deploy" / entry["environment"] / "compose.yaml").read_text())
                     self.assertEqual(bundled_compose, template)
-                    self.assertEqual(bundled_compose['volumes'], {'reception_vault': {}})
+                    self.assertEqual(bundled_compose['volumes'], {'reception_vault': {}, 'app_data': {}, 'postgres_data': {}})
                     self.assertNotIn('name', bundled_compose['volumes']['reception_vault'])
-                    vault_mounts = [m for m in bundled_compose['services']['app']['volumes'] if m['target']=='/run/escritura/reception-vault']
+                    vault_mounts = [m for m in bundled_compose['services']['app']['volumes'] if isinstance(m,dict) and m['target']=='/run/escritura/reception-vault']
                     self.assertEqual(vault_mounts, [{'type': 'volume', 'source': 'reception_vault', 'target': '/run/escritura/reception-vault'}])
                     self.assertEqual('/run/escritura/reception-vault', bundled_compose['services']['app']['environment']['ESCRITURA_RECEPTION_VAULT_DIR'])
                     self.assertIn(b'COFRE A1', archive.read(next(n for n in archive.namelist() if Path(n).name == 'LEIA-ME.txt')))
@@ -400,10 +409,10 @@ class InfrastructureTests(unittest.TestCase):
                     self.assertNotIn("(DOCKER_STORAGE.md", deploy_doc)
                     readme_name = next(name for name in archive.namelist() if Path(name).name == "LEIA-ME.txt")
                     readme = archive.read(readme_name).decode()
-                    self.assertIn("docker compose up -d --pull never", readme)
-                    self.assertIn("fixe no .env ESCRITURA_IMAGE", readme)
+                    self.assertIn("python -m app.postgres_transfer initialize", readme)
+                    self.assertIn("ESCRITURA_IMAGE", readme)
                     self.assertNotIn("-f compose.", readme)
-                    self.assertIn("docker compose --profile redis up -d --pull never", readme)
+                    self.assertIn("--acknowledge-stopped-sqlite", readme)
                     self.assertIsInstance(bundled_compose["services"]["app"]["ports"][0], str)
                 self.assertTrue((output / (entry["file"] + ".sha256")).is_file())
             self.assertEqual(result, package(data, output, root=root))

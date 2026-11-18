@@ -1,4 +1,5 @@
 """CFOP wording reference and explicit company import mappings."""
+from .sql_support import insert_id
 from functools import lru_cache
 import json
 from pathlib import Path
@@ -175,7 +176,7 @@ class CfopMixin:
             if old:
                 conn.execute('UPDATE masters SET code=?,name=?,data_json=?,active=?,version=version+1,updated_at=? WHERE id=? AND company_id=?', (code, source + ' → ' + target['code'], pack(values), active, now(), item_id, cid))
             else:
-                item_id = conn.execute("INSERT INTO masters(company_id,kind,code,name,data_json,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)", (cid, MAPPING_KIND, code, source + ' → ' + target['code'], pack(values), active, now(), now())).lastrowid
+                item_id = insert_id(conn,"INSERT INTO masters(company_id,kind,code,name,data_json,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",(cid, MAPPING_KIND, code, source + ' → ' + target['code'], pack(values), active, now(), now()))
             audit(conn, cid, actor, 'update' if old else 'create', 'fiscal_import_cfop', item_id, {'before': old, 'after': values, 'active': active})
             return next(r for r in self.import_cfop_mappings(cid, conn) if r['id'] == item_id)
 

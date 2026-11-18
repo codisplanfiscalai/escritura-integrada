@@ -88,7 +88,7 @@ class VaultTests(unittest.TestCase):
         self.assertEqual(403,self.client.post(self.scope('/reception-credential'),data=data,files=files).status_code)
         self.client.headers['X-CSRF-Token']=token
         with self.core.db.transaction() as conn:
-            conn.execute("UPDATE users SET role='operator' WHERE id=?",(self.uid,));conn.execute('INSERT OR IGNORE INTO user_companies(user_id,company_id) VALUES(?,?)',(self.uid,self.a['id']))
+            conn.execute("UPDATE users SET role='operator' WHERE id=?",(self.uid,));conn.execute('INSERT INTO user_companies(user_id,company_id) VALUES(?,?) ON CONFLICT DO NOTHING',(self.uid,self.a['id']))
             conn.execute('INSERT INTO user_permissions(user_id,company_id,routine,action,effect) VALUES(?,?,?,?,?)',(self.uid,self.a['id'],'system.companies','read','allow'))
         self.assertFalse(self.client.get(self.scope('/reception-settings')).json()['can_edit'])
         self.assertEqual(403,self.client.post(self.scope('/reception-credential'),data=data,files=files).status_code)

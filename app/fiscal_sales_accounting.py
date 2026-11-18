@@ -5,6 +5,7 @@ saved in the existing immutable audit trail, independently of import retention.
 """
 import json
 from fastapi import Body, Request
+from .sql_support import dialect
 from .core import (DomainError, audit, check_version, company_row, decimal_text,
                    digest, ensure_open, integer, now, pack, text)
 from .permissions import effect, readable
@@ -267,7 +268,7 @@ class FiscalSalesAccountingMixin:
             effect(conn, cid, 'fiscal.documents', 'read')
             journal = self._journal(conn, cid, item_id)
             events = [dict(r) for r in conn.execute(
-                "SELECT action,details_json FROM audit WHERE company_id=? AND action IN (?,?) AND (json_extract(details_json,'$.journal_id')=? OR json_extract(details_json,'$.source_journal_id')=?) ORDER BY id",
+                dialect(conn, "SELECT action,details_json FROM audit WHERE company_id=? AND action IN (?,?) AND (json_extract(details_json,'$.journal_id')=? OR json_extract(details_json,'$.source_journal_id')=?) ORDER BY id", "SELECT action,details_json FROM audit WHERE company_id=? AND action IN (?,?) AND ((details_json::jsonb->'journal_id')=to_jsonb(?::bigint) OR (details_json::jsonb->'source_journal_id')=to_jsonb(?::bigint)) ORDER BY id"),
                 (cid, SOURCE, REVERSAL, item_id, item_id))]
             sources = [json.loads(r['details_json']) for r in events if r['action'] == SOURCE]
             if not readable(conn, cid, 'accounting.histories'):
@@ -306,7 +307,7 @@ class FiscalSalesAccountingMixin:
         # Source journals and their compensations must stay under document control,
         # even after the last document has been reversed and detached.
         with self.db.read() as conn:
-            if conn.execute("SELECT 1 FROM audit WHERE company_id=? AND action IN (?,?) AND json_extract(details_json,'$.journal_id')=? LIMIT 1",
+            if conn.execute(dialect(conn, "SELECT 1 FROM audit WHERE company_id=? AND action IN (?,?) AND json_extract(details_json,'$.journal_id')=? LIMIT 1", "SELECT 1 FROM audit WHERE company_id=? AND action IN (?,?) AND (details_json::jsonb->'journal_id')=to_jsonb(?::bigint) LIMIT 1"),
                             (cid, SOURCE, REVERSAL, item_id)).fetchone():
                 raise DomainError('Estorne pelo documento de origem para preservar a integração.', 409, 'linked_journal')
         return super().reverse_journal(cid, item_id, payload, actor)

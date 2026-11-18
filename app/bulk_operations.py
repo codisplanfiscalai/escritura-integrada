@@ -9,6 +9,7 @@ import re
 import secrets
 import time
 
+from .sql_support import foreign_keys, check_foreign_keys, dialect
 from .core import DomainError, audit, digest, ensure_open, now, pack, period, text
 from .permissions import require
 from .db import request_context
@@ -233,21 +234,21 @@ class BulkOperations:
             # Enumerate actual FKs, including new migrations: unknown dependencies fail closed.
             owned = ('document_sources', 'document_id') if kind == 'documents' else ('journal_lines', 'journal_id')
             children[owned[0]] = [dict(r) for r in conn.execute(f'SELECT * FROM {owned[0]} WHERE {owned[1]} IN ({marks}) ORDER BY id', (pack(ids),))]
-            for table_row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'"):
-                table = table_row[0]
+            for fk in foreign_keys(conn):
+                table = fk['child']
                 safe_table = '"' + table.replace('"', '""') + '"'
-                for fk in conn.execute(f'PRAGMA foreign_key_list({safe_table})'):
-                    if fk['table'] != kind or fk['to'] != 'id' or table == owned[0]:
-                        continue
-                    field = '"' + fk['from'].replace('"', '""') + '"'
-                    references = list(conn.execute(f'SELECT rowid AS ref_id, {field} AS target_id FROM {safe_table} WHERE {field} IN ({marks})', (pack(ids),)))
-                    if table == 'documents' and kind == 'journals' and selected_documents:
-                        references = [r for r in references if r['ref_id'] not in selected_documents]
-                    if table == 'journals' and kind == 'journals':
-                        references = [r for r in references if r['ref_id'] not in effective_id_set]
-                    if references:
-                        for target_id in sorted({r['target_id'] for r in references}):
-                            block('dependent_records', f"{table}.{fk['from']}: {len(references)} dependência(s), IDs {', '.join(str(r['ref_id']) for r in references[:10])}. Resolva explicitamente; não serão apagadas implicitamente.", target_id)
+                if fk['table'] != kind or fk['to'] != 'id' or table == owned[0]:
+                    continue
+                field = '"' + fk['from'].replace('"', '""') + '"'
+                ref = dialect(conn, 'rowid', 'id' if fk['has_id'] else 'ctid::text')
+                references = list(conn.execute(f'SELECT {ref} AS ref_id, {field} AS target_id FROM {safe_table} WHERE {field} IN ({marks})', (pack(ids),)))
+                if table == 'documents' and kind == 'journals' and selected_documents:
+                    references = [r for r in references if r['ref_id'] not in selected_documents]
+                if table == 'journals' and kind == 'journals':
+                    references = [r for r in references if r['ref_id'] not in effective_id_set]
+                if references:
+                    for target_id in sorted({r['target_id'] for r in references}):
+                        block('dependent_records', f"{table}.{fk['from']}: {len(references)} dependência(s), IDs {', '.join(str(r['ref_id']) for r in references[:10])}. Resolva explicitamente; não serão apagadas implicitamente.", target_id)
         linked_ids = sorted({r['journal_id'] for r in rows if kind == 'documents' and r['journal_id']}) if req.get('include_linked_journals') else []
         if linked_ids:
             linked_req = {'scope': req.get('scope', 'selection'), 'kind': 'journals', 'action': 'delete', 'ids': linked_ids, 'period': req['period'], 'changes': {}, 'include_reversal_pairs': req.get('include_reversal_pairs', False)}
@@ -367,7 +368,7 @@ class BulkOperations:
             if req['action'] == 'delete':
                 self._invalidate_replays(conn, cid, effective_req, rows, saved['id'])
             self._apply(conn, cid, effective_req, rows, actor, reason)
-            if conn.execute('PRAGMA foreign_key_check').fetchone():
+            if check_foreign_keys(conn):
                 raise DomainError('Integridade referencial inválida; lote revertido.', 409, 'foreign_key_integrity')
             outcome = {'id': saved['id'], 'kind': req['kind'], 'action': req['action'], 'period': req['period'], 'scope': req.get('scope', 'selection'), 'selected_count': result['selected_count'], 'affected_periods': result['affected_periods'], 'affected_counts': result['affected_counts'], 'warnings': result['warnings'], 'preserved_count': result.get('preserved_count', 0), 'preserved_rows': result.get('preserved_rows', []), 'completed': True, 'duplicate': False}
             audit(conn, cid, actor, 'bulk-' + req['action'], req['kind'], saved['id'], {'scope': req.get('scope', 'selection'), 'ids': result['effective_ids'], 'effective_ids': result['effective_ids'], 'linked_journal_ids': result['linked_journal_ids'], 'affected_periods': result['affected_periods'], 'reason': reason, 'preview_hash': saved['preview_hash'], 'affected_counts': result['affected_counts'], 'changes': req['changes'], 'irreversible_acknowledged': req['action'] == 'delete'})

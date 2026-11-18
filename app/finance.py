@@ -1,4 +1,5 @@
 """Títulos, baixas, encargos, estornos e renegociação com efeitos explícitos."""
+from .sql_support import insert_id
 import json
 from .core import (DomainError, audit, check_version, decimal_text, digest, integer,
                    iso_date, money, now, pack, select_one, text, ensure_open)
@@ -110,8 +111,8 @@ class FinanceMixin:
             if total!=amount+charges['interest']+charges['fine']:
                 raise DomainError('Partidas devem contemplar principal, encargos e desconto: total contábil = principal + juros + multa.')
             journal=self._create_journal(conn,cid,{'date':day,'document':title['document'],'history':reason,'idempotency_key':'settlement:'+key,'lines':payload['lines']},actor)
-        sid=conn.execute('''INSERT INTO settlements(company_id,title_id,date,amount_cents,reason,journal_id,idempotency_key,request_hash,created_at,interest_cents,fine_cents,discount_cents,cash_cents)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(cid,item_id,day,amount,reason,journal['id'] if journal else None,key,hashed,now(),charges['interest'],charges['fine'],charges['discount'],cash)).lastrowid
+        sid=insert_id(conn,'''INSERT INTO settlements(company_id,title_id,date,amount_cents,reason,journal_id,idempotency_key,request_hash,created_at,interest_cents,fine_cents,discount_cents,cash_cents)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(cid,item_id,day,amount,reason,journal['id'] if journal else None,key,hashed,now(),charges['interest'],charges['fine'],charges['discount'],cash))
         conn.execute('UPDATE titles SET paid_cents=paid_cents+?,version=version+1 WHERE id=? AND company_id=?',(amount,item_id,cid))
         audit(conn,cid,actor,'settle','title',item_id,{'settlement_id':sid,'principal_cents':amount,'cash_cents':cash,'charges':charges,'journal_id':journal['id'] if journal else None})
         return {'title':self._title(conn,cid,item_id),'settlement':dict(conn.execute('SELECT * FROM settlements WHERE id=?',(sid,)).fetchone()),'journal':journal}
@@ -183,8 +184,7 @@ class FinanceMixin:
             principal=sum(t['balance_cents'] for t in titles)
             total=principal+interest-discount
             parts=self._installments(payload.get('installments'),total,day)
-            rid=conn.execute('INSERT INTO renegotiations(company_id,date,reason,original_ids_json,principal_cents,interest_cents,discount_cents,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',
-                (cid,day,reason,pack(ids),principal,interest,discount,now(),actor)).lastrowid
+            rid=insert_id(conn,'INSERT INTO renegotiations(company_id,date,reason,original_ids_json,principal_cents,interest_cents,discount_cents,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',(cid,day,reason,pack(ids),principal,interest,discount,now(),actor))
             created=[]
             for n,p in enumerate(parts,1):
                 created.append(self._create_title(conn,cid,{'kind':titles[0]['kind'],'description':f'Renegociação {rid} - parcela {n}',

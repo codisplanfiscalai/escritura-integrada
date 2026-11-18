@@ -1,5 +1,7 @@
 """Only synthetic booked sales, charts, requests and temporary SQLite databases."""
+from app.sql_support import insert_id
 import json
+from app.sql_support import check_foreign_keys
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
@@ -350,8 +352,7 @@ class FiscalSalesAccountingTests(unittest.TestCase):
 
     def operator(self, permissions):
         with self.core.db.transaction() as conn:
-            uid = conn.execute("INSERT INTO users(username,password_hash,created_at,role,active) VALUES(?,?,?,'operator',1)",
-                ('sales-operator', self.core._password_hash('Synthetic-password-456!'), '2026-11-01')).lastrowid
+            uid = insert_id(conn,"INSERT INTO users(username,password_hash,created_at,role,active) VALUES(?,?,?,'operator',1)",('sales-operator', self.core._password_hash('Synthetic-password-456!'), '2026-11-01'))
             conn.execute('INSERT INTO user_companies(user_id,company_id) VALUES(?,?)', (uid, self.a['id']))
             for routine, actions in permissions.items():
                 for action in actions:
@@ -510,7 +511,7 @@ class FiscalSalesAccountingTests(unittest.TestCase):
         self.assertEqual(1, len(trace['accounting_sources']))
         self.assertEqual(0, self.generate([doc], model, 'after-cleanup')['created_count'])
         with self.core.db.read() as conn:
-            self.assertEqual([], conn.execute('PRAGMA foreign_key_check').fetchall())
+            self.assertFalse(check_foreign_keys(conn))
     def test_existing_titles_unchanged_and_reversal_cancels_only_own_titles(self):
         self.mode(); model = self.model()
         doc = self.post('/documents', self.document('TITLE') | {'direction': 'outgoing', 'cfop': '5102'}, 201)

@@ -1,4 +1,5 @@
 """Importadores CSV versionados, independentes do módulo fiscal."""
+from .sql_support import insert_id
 import base64
 import csv
 import io
@@ -115,7 +116,7 @@ class ModuleImportsMixin:
                     conn.execute('ROLLBACK TO validate_import');conn.execute('RELEASE validate_import')
                 result.append({'_selection':str(index),'source_rows':group['source_rows'],'payload':data,'validation_error':error})
             fid=store_file(self.db,conn,cid,year,'originals',payload.get('filename','importacao.csv'),raw,actor)
-            iid=conn.execute('INSERT INTO module_imports(company_id,module,year,layout,file_id,fingerprint,preview_json,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',(cid,module,year,layout,fid,fingerprint,pack({'records':result}),now(),actor)).lastrowid
+            iid=insert_id(conn,'INSERT INTO module_imports(company_id,module,year,layout,file_id,fingerprint,preview_json,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',(cid,module,year,layout,fid,fingerprint,pack({'records':result}),now(),actor))
             audit(conn,cid,actor,'preview','module_import',iid,{'layout':layout,'year':year,'sha256':fingerprint})
             return self._module_preview(conn,cid,select_one(conn,'module_imports',cid,iid))
 

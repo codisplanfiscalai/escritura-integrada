@@ -112,6 +112,6 @@ def register_auditor_routes(app,core,actor,year):
             if current['deleted_at']:raise DomainError('Auditoria excluída.',409)
             f=read_file(conn,cid,fid)
             if not f['content'].startswith(b'%PDF'):raise DomainError('Arquivo não é PDF.')
-            conn.execute('INSERT OR IGNORE INTO auditor_attachments(company_id,job_id,document_ref,file_id,reason,created_at,created_by) VALUES(?,?,?,?,?,?,?)',(cid,jid,ref,fid,reason,now(),actor(request)))
+            conn.execute('INSERT INTO auditor_attachments(company_id,job_id,document_ref,file_id,reason,created_at,created_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING',(cid,jid,ref,fid,reason,now(),actor(request)))
             audit(conn,cid,actor(request),'associate_pdf','auditor_job',jid,{'file_id':fid,'document_ref':ref,'reason':reason,'sha256':f['sha256']})
         return {'document_ref':ref,'file_id':fid,'sha256':f['sha256']}

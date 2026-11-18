@@ -1,4 +1,5 @@
 """Versioned, company-scoped destination mappings; never writes accounting data."""
+from .sql_support import insert_id
 import json
 import re
 from .core import DomainError, audit, company_row, now, pack
@@ -148,7 +149,6 @@ class ProsoftSettingsMixin:
                 conn.execute('UPDATE masters SET data_json=?,version=version+1,updated_at=? WHERE id=?', (pack(config), stamp, row['id']))
                 item_id = row['id']
             else:
-                item_id = conn.execute('INSERT INTO masters(company_id,kind,code,name,data_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
-                                       (cid,KIND,mode,'Mapeamentos Prosoft '+mode,pack(config),stamp,stamp)).lastrowid
+                item_id = insert_id(conn,'INSERT INTO masters(company_id,kind,code,name,data_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(cid,KIND,mode,'Mapeamentos Prosoft '+mode,pack(config),stamp,stamp))
             audit(conn,cid,actor,'configure','prosoft-settings',item_id,{'mode':mode,'version':version+1})
             return describe(conn,cid,mode)

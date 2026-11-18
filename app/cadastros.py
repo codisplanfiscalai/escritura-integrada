@@ -1,4 +1,5 @@
 """Cadastros por empresa e modelos revisáveis, sem enquadramento fiscal presumido."""
+from .sql_support import insert_id
 import json
 import re
 from .core import (DomainError, audit, boolean, check_version, company_row, integer,
@@ -155,7 +156,7 @@ class CadastrosMixin:
             if old:
                 conn.execute('UPDATE masters SET code=?,name=?,tax_id=?,data_json=?,active=?,updated_at=?,version=version+1 WHERE id=? AND company_id=?',(*values,item_id,cid))
             else:
-                item_id = conn.execute('INSERT INTO masters(code,name,tax_id,data_json,active,updated_at,company_id,kind,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(*values,cid,kind,now())).lastrowid
+                item_id = insert_id(conn,'INSERT INTO masters(code,name,tax_id,data_json,active,updated_at,company_id,kind,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(*values,cid,kind,now()))
             from .third_parties import sync_third_party
             sync_third_party(conn, cid, item_id, actor, 'Cadastro local revisado explicitamente.')
             audit(conn,cid,actor,'update' if old else 'create',kind,item_id,{'before':old,'after':payload})
@@ -194,9 +195,7 @@ class CadastrosMixin:
                 suffix += 1
                 code = initial[:40] + '-' + str(suffix)
             stamp = now()
-            mid = conn.execute(
-                'INSERT INTO masters(company_id,kind,code,name,tax_id,data_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
-                (cid, kind, code, name, tax_id, pack(data), stamp, stamp)).lastrowid
+            mid = insert_id(conn,'INSERT INTO masters(company_id,kind,code,name,tax_id,data_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(cid, kind, code, name, tax_id, pack(data), stamp, stamp))
             from .third_parties import sync_third_party
             sync_third_party(conn, cid, mid, actor, 'Identidade vinculada pela importação; origem local preservada.')
             audit(conn, cid, actor, 'create', kind, mid,

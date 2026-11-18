@@ -5,6 +5,7 @@ import json
 import re
 from zipfile import BadZipFile
 
+from .sql_support import dialect
 from .core import DomainError, company_row, integer, select_one
 from .permissions import effect
 
@@ -85,10 +86,7 @@ def master_evidence(core, cid, kind, item_id, *, offset=0, limit=25):
                 if details.get('imported'):
                     initial_hash = details.get('source_hash')
         if kind in {'product', 'service'}:
-            sql = """SELECT * FROM documents WHERE company_id=? AND (EXISTS (
-                SELECT 1 FROM json_each(documents.items_json) item
-                WHERE json_extract(item.value, '$.master_id')=?) OR source_hash=?)
-                ORDER BY issue_date DESC,id DESC"""
+            sql = dialect(conn, "SELECT * FROM documents WHERE company_id=? AND (EXISTS (\n                SELECT 1 FROM json_each(documents.items_json) item\n                WHERE json_extract(item.value, '$.master_id')=?) OR source_hash=?)\n                ORDER BY issue_date DESC,id DESC", "SELECT * FROM documents WHERE company_id=? AND (EXISTS (\n                SELECT 1 FROM jsonb_array_elements(documents.items_json::jsonb) item\n                WHERE (item.value::jsonb->'master_id')=to_jsonb(?::bigint)) OR source_hash=?)\n                ORDER BY issue_date DESC,id DESC")
             parameters = (cid, item_id, initial_hash or '')
         else:
             # Candidate narrowing only. The full CPF/CNPJ is checked below.
