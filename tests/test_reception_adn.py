@@ -62,7 +62,7 @@ class AdnProfileTests(unittest.TestCase):
         entry=result['entries'][0]
         self.assertEqual(XML,entry['xml'])
         self.assertEqual(hashlib.sha256(XML).hexdigest(),entry['sha256'])
-        self.assertEqual('nfse_bookkeeping_reader_pending',entry['reason'])
+        self.assertEqual('nfse_bookkeeping_review_required',entry['reason'])
         self.assertNotIn('posting_date',entry)
         self.assertNotIn('issued_date',entry)
         self.assertNotIn('amount',entry)
@@ -162,7 +162,9 @@ class AdnCaptureTests(unittest.TestCase):
             self.assertEqual(3,conn.execute('SELECT COUNT(*) FROM stored_files WHERE company_id=?',(self.a['id'],)).fetchone()[0])
         self.assertEqual([],self.core.documents(self.a['id']));self.assertEqual([],self.core.journals(self.a['id']))
         preview=self.client.post(self.scope('/imports/reception/receipts/synthetic-adn-001/preview'),json={'period':'2026-11'})
-        self.assertEqual('nfse_bookkeeping_reader_pending',preview.json()['code'])
+        self.assertEqual(200,preview.status_code)
+        self.assertFalse(preview.json()['can_confirm'])  # Synthetic transport fixture is not a complete fiscal NFSe.
+        self.assertEqual([],self.core.documents(self.a['id']))
         self.assertTrue(self.query()['duplicate']);self.assertEqual(1,len(self.transport.plans))
         self.clock[0]+=3601;self.transport.reply=RemoteReply(200,json.dumps(page([packet(3)])).encode())
         self.assertTrue(self.query(key='synthetic-adn-002')['cursor_advanced'])

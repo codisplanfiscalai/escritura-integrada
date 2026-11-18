@@ -76,7 +76,9 @@ def main():
 
                     def navigate(name):
                         nav = page.get_by_role('navigation', name='Navegação principal')
-                        button = nav.get_by_role('button', name=name, exact=True, include_hidden=True)
+                        # Fiscal and Accounting each expose their own SPED workspace.
+                        target = nav.locator('details').filter(has=page.locator('summary').filter(has_text=re.compile('^Fiscal$'))) if name == 'SPED' else nav
+                        button = target.get_by_role('button', name=name, exact=True, include_hidden=True)
                         parent = button.locator('xpath=ancestor::details')
                         if parent.count() and parent.get_attribute('open') is None:
                             parent.locator('summary').click()
@@ -515,9 +517,14 @@ def main():
                         shot('mobile-controls.png')
                         assert page.evaluate('document.documentElement.scrollWidth') <= 391
                         page.set_viewport_size({'width':1440,'height':1000})
-                        navigate('Gerador SPED')
+                        navigate('SPED')
+                        workspace=page.locator('.sped-workspace')
+                        expect(workspace.get_by_role('heading',name='SPED',exact=True)).to_be_visible()
+                        workspace.get_by_role('tab',name='PIS/Cofins',exact=True).click()
+                        expect(workspace.get_by_text('Gerador integral ainda não disponível.',exact=False)).to_be_visible()
+                        workspace.get_by_role('tab',name='EFD ICMS/IPI',exact=True).click()
                         sped=page.locator('.sped-generator-view')
-                        expect(sped.get_by_role('heading',name='Gerador SPED',exact=True)).to_be_visible()
+                        expect(sped.get_by_role('heading',name='Bloco C de NFC-e próprias',exact=True)).to_be_visible()
                         sped.get_by_role('combobox',name='Perfil da EFD',exact=True).select_option('A')
                         sped.get_by_role('combobox',name='Atividade',exact=True).select_option('1')
                         sped.get_by_role('combobox',name='Finalidade',exact=True).select_option('0')

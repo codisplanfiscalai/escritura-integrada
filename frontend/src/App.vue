@@ -14,7 +14,7 @@ import CfopView from './views/CfopView.vue';
 import AuditorView from './views/AuditorView.vue';
 import ModuleImportView from './views/ModuleImportView.vue';
 import DfeView from './views/DfeView.vue';
-import SpedGeneratorView from './views/SpedGeneratorView.vue';
+import SpedWorkspaceView from './views/SpedWorkspaceView.vue';
 import NfseNationalView from './views/NfseNationalView.vue';
 import GroupsView from './views/GroupsView.vue';
 import MastersView from './views/MastersView.vue';
@@ -29,7 +29,7 @@ const menus=[
 {id:'sales-accounting',label:'Integração Contábil',icon:'journal',component:FiscalSalesAccountingView,module:'fiscal',routine:'fiscal.documents'},
 {id:'dfe',label:'DF-e',icon:'download',component:DfeView,module:'fiscal',routine:'fiscal.imports'},
 {id:'nfse-national',label:'NFS-e Nacional',icon:'download',component:NfseNationalView,module:'fiscal',routine:'fiscal.imports'},
-{id:'sped-generator',label:'Gerador SPED',icon:'book',component:SpedGeneratorView,module:'fiscal',routine:'fiscal.documents'},
+{id:'sped-generator',label:'SPED',icon:'book',component:SpedWorkspaceView,module:'fiscal',routine:'fiscal.documents',props:{area:'fiscal'}},
 {id:'imports',label:'Importações fiscais',icon:'import',component:ImportView,module:'fiscal',routine:'fiscal.imports'},
 {id:'companies',label:'Empresas',icon:'building',component:CompaniesView,module:'registrations'},
 {id:'third-parties',label:'Terceiros',icon:'building',component:SharedRegistrationsView,module:'registrations',routine:'fiscal.shared_parties',props:{kind:'third-party'}},
@@ -42,6 +42,7 @@ const menus=[
 {id:'assessments',label:'Apurações e ajustes',icon:'reports',component:AssessmentsView,module:'fiscal',routine:'fiscal.assessments'},
 {id:'fiscal-reports',label:'Livros e relatórios fiscais',icon:'reports',component:ReportsView,module:'fiscal',routine:'fiscal.reports',props:{area:'fiscal'}},
 {id:'periods',label:'Competências fiscais',icon:'periods',component:PeriodsView,module:'fiscal',routine:'fiscal.periods',props:{module:'fiscal'}},
+{id:'accounting-sped',label:'SPED',icon:'book',component:SpedWorkspaceView,module:'accounting',routine:'accounting.journals',props:{area:'accounting'}},
 {id:'journal',label:'Lançamentos contábeis',icon:'journal',component:JournalView,module:'accounting',routine:'accounting.journals',props:{initialSection:'journals'}},
 {id:'fiscal-accounting',label:'Integração Fiscal',icon:'documents',component:FiscalSalesAccountingView,module:'accounting',routine:'accounting.journals'},
 {id:'accounts',label:'Plano de contas',icon:'book',component:JournalView,module:'accounting',routine:'accounting.accounts',props:{initialSection:'accounts'}},

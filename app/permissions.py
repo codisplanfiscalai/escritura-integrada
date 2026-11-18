@@ -168,6 +168,9 @@ def route_policy(path, method, query, payload, session):
         return 'system.companies', 'edit' if write else 'read', False
     if root == 'reception':
         return 'fiscal.imports', 'export' if tail.endswith('/report') else 'import' if write else 'read', False
+    if root == 'service-bookkeeping-profile':
+        if tail.endswith('/report'): return 'fiscal.reports','export',False
+        return ('fiscal.parameters','edit',False) if write else ('fiscal.imports','read',False)
     if root == 'operational-settings':
         return ('system.companies', 'edit', True) if write else (None, 'read', False)
     if root == 'bulk-operations':

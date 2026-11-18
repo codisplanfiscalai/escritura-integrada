@@ -42,7 +42,7 @@ def project(cid,provider,environment,occurrences):
 
 
 def matches(item,year,query='',direction='',competence=''):
-    if str(item['reference_period'])[:4]!=str(year):return False
+    if year is not None and str(item['reference_period'])[:4]!=str(year):return False
     if direction and item.get('direction')!=direction and not (direction in {'issued','received'} and item.get('direction')=='both'):return False
     if competence and not str(item.get('declared_competence','')).startswith(competence):return False
     term=query.casefold().strip()

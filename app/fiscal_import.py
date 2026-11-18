@@ -107,6 +107,10 @@ class FiscalImportMixin:
             raise DomainError('Associações do lote devem relacionar origem e CFOP de destino.')
         batch_destination = purchase_destination(payload.get('purchase_destination', ''))
         settings = self.fiscal_import_settings(cid, conn)
+        from .service_bookkeeping import settings as service_settings, apply as apply_service
+        service_profile = service_settings(conn,cid)
+        from .service_bookkeeping import event_keys
+        service_events = {env:event_keys(conn,cid,env) for env in ('production','restricted_production')} if any(d.get('model')=='NFSE' for d in parsed['documents']) else {}
         company = company_row(conn, cid)
         saved = self.import_cfop_mappings(cid, conn)
         catalogs = self._company_cfop_catalogs(conn, cid)
@@ -134,6 +138,10 @@ class FiscalImportMixin:
                 if any(i.get('code') == 'RTC_TOTAL_REVIEW' for i in related) and not decision:
                     raise DomainError('Confira vNF e vNFTot: declare fonte, responsável e motivo para escriturar pela base vNF. A decisão não certifica o tratamento legal RTC.')
                 rows = doc.get('items') if doc.get('items') and doc['model'] in {'55', '65'} else doc.get('analytics') or [doc]
+                if doc['model'] == 'NFSE':
+                    if doc.get('key') in service_events.get('production' if doc.get('environment')=='1' else 'restricted_production',set()): raise DomainError('Há evento relacionado a esta NFS-e. Confira sua situação antes de escriturar.',409,'service_event_review_required')
+                    apply_service(doc,service_profile)
+                    rows = []  # Municipal service book: never invent a goods CFOP.
                 for item in rows:
                     source = item.get('source_cfop') or item.get('cfop') or (doc.get('source_cfops') or [''])[0]
                     if source: cfop_at(source, doc['posting_date'])
@@ -206,7 +214,7 @@ class FiscalImportMixin:
             doc['import_posting'] = info
             prepared.append(doc)
         parsed['documents'] = prepared
-        parsed['posting_hash'] = digest({'preview_hash': batch['preview_hash'], 'generated_payables': generated_options, 'documents': semantic_value(prepared), 'edition': reference()['edition'], 'mappings': overrides, 'document_overrides': document_overrides, 'purchase_destination': batch_destination, 'settings': settings, 'total_review': batch_total_review})
+        parsed['posting_hash'] = digest({'preview_hash': batch['preview_hash'], 'generated_payables': generated_options, 'documents': semantic_value(prepared), 'edition': reference()['edition'], 'mappings': overrides, 'document_overrides': document_overrides, 'purchase_destination': batch_destination, 'settings': settings, **({'service_profile':service_profile} if any(d['model']=='NFSE' for d in prepared) else {}), 'total_review': batch_total_review})
         return parsed
 
     def fiscal_posting_preview(self, cid, item_id, payload):
@@ -226,8 +234,8 @@ class FiscalImportMixin:
             if not 0 <= index < len(documents):
                 raise DomainError('Documento não pertence à prévia.', 404, 'not_found')
             document = documents[index]
-            if document.get('model') not in {'55', '65', '57'} or not document.get('source', {}).get('file', '').lower().endswith('.xml'):
-                raise DomainError('Documento auxiliar disponível somente para XML de NF-e, NFC-e ou CT-e suportado.', 422, 'renderer_not_validated')
+            if document.get('model') not in {'55', '65', '57', 'NFSE'} or not document.get('source', {}).get('file', '').lower().endswith('.xml'):
+                raise DomainError('Documento auxiliar disponível somente para XML de NF-e, NFC-e, CT-e ou NFS-e Nacional suportado.', 422, 'renderer_not_validated')
             raw, filename = batch['original'], batch['filename']
         # Reuse bounded archive readers and verify the exact source, even for
         # repeated member basenames. Nothing is written or imported by viewing.
@@ -253,13 +261,16 @@ class FiscalImportMixin:
         if item_id: return self._document(conn, cid, item_id) | {'duplicate': True, 'preserved_revision': True}
         return None
 
-    def _post_fiscal_import(self, conn, cid, document, actor, reason):
+    def _post_fiscal_import(self, conn, cid, document, actor, reason, *, service_events=None):
         if document.get('duplicate'): return document
         effect(conn, cid, 'fiscal.documents', 'book')
         # No assertion that a human reviewed the source: the import consent is
         # recorded separately and the document remains flagged for later review.
         conn.execute("UPDATE documents SET status='reviewed' WHERE id=? AND company_id=?", (document['id'], cid))
-        self._book_document(conn, cid, document['id'], {'version': document['version'], 'reason': reason}, actor)
+        if service_events is None:
+            self._book_document(conn, cid, document['id'], {'version': document['version'], 'reason': reason}, actor)
+        else:
+            self._book_document(conn, cid, document['id'], {'version': document['version'], 'reason': reason}, actor,service_events=service_events)
         conn.execute('UPDATE documents SET reviewed_by=NULL,review_reason=NULL WHERE id=? AND company_id=?', (document['id'], cid))
         audit(conn, cid, actor, 'import-book', 'document', document['id'], {'reason': reason, 'source_hash': document['source_hash'], 'posting': document['import_posting'], 'legal_validation': False, 'accounting_created': False, 'financial_created': False})
         return self._document(conn, cid, document['id'])

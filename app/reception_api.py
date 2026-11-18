@@ -18,6 +18,48 @@ def register(app,core,actor,check_period):
     def workspace():
         return ReceptionWorkspace(core,app.state.reception)
 
+    @app.get('/api/companies/{cid}/service-bookkeeping-profile')
+    def service_profile(cid:int,request:Request):
+        from .service_bookkeeping import settings
+        from .permissions import require
+        with core.db.read() as conn:
+            require(conn,request.state.session['user']['id'],cid,'fiscal.imports','read')
+            return settings(conn,cid)
+
+    @app.put('/api/companies/{cid}/service-bookkeeping-profile')
+    def save_service_profile(cid:int,request:Request,payload:dict=Body(...)):
+        from .service_bookkeeping import save
+        return save(core.db,cid,request.state.session['user']['id'],actor(request),payload)
+
+    @app.get('/api/companies/{cid}/service-bookkeeping-profile/report')
+    def service_report(cid:int,request:Request,period:str):
+        import csv,io
+        from .service_bookkeeping import report
+        from .permissions import require
+        check_period(request,period)
+        with core.db.read() as conn: require(conn,request.state.session['user']['id'],cid,'fiscal.reports','export')
+        result=report(core,cid,period);out=io.StringIO(newline='');writer=csv.writer(out,delimiter=';')
+        columns=['id','number','direction','partner','issue_date','posting_date','declared_competence','accounting','base','iss','iss_withheld','profile_version']
+        writer.writerow(columns)
+        for row in result['rows']:
+            values=[str(row.get(k) if row.get(k) is not None else '') for k in columns]
+            writer.writerow(["'"+v if v.lstrip().startswith(('=','+','-','@')) else v for v in values])
+        return Response(out.getvalue().encode('utf-8-sig'),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename="servicos-'+period+'.csv"','Cache-Control':'no-store'})
+
+    @app.post('/api/companies/{cid}/reception/{provider}/bookkeeping-preview')
+    def bookkeeping_preview(cid:int,provider:str,request:Request,payload:dict=Body(...)):
+        from .reception_bookkeeping import prepare
+        check_period(request,payload.get('period'))
+        return prepare(core,app.state.reception,cid,request.state.session['user']['id'],actor(request),provider,payload)
+
+    @app.get('/api/companies/{cid}/imports/reception/receipts/{key}/documents/{nsu}/auxiliary')
+    def reception_auxiliary(cid:int,key:str,nsu:str,request:Request):
+        from .auxiliary import render_danfe
+        metadata,raw=app.state.reception.document(cid,key,nsu,request.state.session['user']['id'])
+        pdf,renderer=render_danfe(raw,document_preview=True)
+        return Response(pdf,media_type='application/pdf',headers={'Content-Disposition':'inline; filename="documento-auxiliar.pdf"',
+            'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Document-Renderer':renderer})
+
     @app.get('/api/companies/{cid}/reception/{provider}')
     def overview(cid:int,provider:str,request:Request,year:int,environment:str|None=None,query:str='',offset:int=0,direction:str='',competence:str=''):
         return workspace().overview(cid,request.state.session['user']['id'],provider,environment,year,query,offset,direction,competence)

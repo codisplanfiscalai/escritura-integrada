@@ -7,7 +7,7 @@ from zipfile import BadZipFile
 from .core import DomainError
 from .permissions import effect
 
-SUPPORTED = {'55': 'DANFE', '65': 'DANFC-e', '57': 'DACTE'}
+SUPPORTED = {'55': 'DANFE', '65': 'DANFC-e', '57': 'DACTE', 'NFSE':'DANFSe'}
 
 
 def document_auxiliary(core, cid, item_id):
@@ -20,7 +20,7 @@ def document_auxiliary(core, cid, item_id):
         effect(conn, cid, 'fiscal.documents', 'export')
         document = core._document(conn, cid, item_id)
         if document['model'] not in SUPPORTED:
-            raise DomainError('Modelo sem prévia de layout suportada na escrituração. CT-e OS, MDF-e e NFS-e exigem integração específica; nenhum espelho será apresentado como documento oficial.', 422, 'renderer_not_validated')
+            raise DomainError('Modelo sem prévia de layout suportada na escrituração. CT-e OS, MDF-e e outros modelos exigem integração específica; nenhum espelho será apresentado como documento oficial.', 422, 'renderer_not_validated')
         source_hash = document.get('source_hash')
         if not isinstance(source_hash, str) or not re.fullmatch(r'[0-9a-f]{64}', source_hash):
             raise DomainError('Documento sem XML original preservado. Não é possível gerar a prévia a partir dos campos da escrituração.', 422, 'source_unavailable')
@@ -38,6 +38,13 @@ def document_auxiliary(core, cid, item_id):
                     if hashlib.sha256(raw).hexdigest() != source_hash:
                         continue
                     root = _xml_tree(raw)
+                    if document['model']=='NFSE':
+                        from .nfse_import import NS,node
+                        if root.tag!='{'+NS+'}NFSe': continue
+                        info=node(root,'infNFSe',True)
+                        if info.get('Id')!='NFS'+document['key']: continue
+                        pdf,renderer=render_danfe(raw,document_preview=True)
+                        return pdf,renderer,source_hash
                     ns = 'http://www.portalfiscal.inf.br/' + ('cte' if document['model'] == '57' else 'nfe')
                     tag = 'infCte' if document['model'] == '57' else 'infNFe'
                     infos = list(root.iter('{'+ns+'}'+tag))
