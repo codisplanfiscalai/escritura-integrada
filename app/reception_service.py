@@ -134,6 +134,7 @@ class ReceptionService:
         try:
             if provider == 'nfse_adn':
                 plan = adn_request(target,environment,cursor,certificate_tax_id=credential.tax_id,allow_procuration=credential.allow_procuration)
+                mode = plan['expected_authorization_mode']
             else:
                 plan = nfe_request(target,UF_CODES[company['state']],environment,cursor)
             plan['provider'] = provider
@@ -198,6 +199,11 @@ class ReceptionService:
                 if isinstance(payload,dict) and payload.get('Erros'):
                     rejection = adn_rejection(payload,cursor)
                     return metadata|{'state':rejection['state'],'error_codes':rejection['error_codes']},cursor,fallback
+                if isinstance(payload,dict) and payload.get('StatusProcessamento') == 'REJEICAO':
+                    if payload.get('TipoAmbiente') != {'production':'PRODUCAO','restricted_production':'HOMOLOGACAO'}[environment]:
+                        raise ImportProblem('ADN_ENVIRONMENT_MISMATCH','Ambiente ADN divergente.')
+                    return metadata|{'state':'rejected','code':'ADN_REJECTION_WITHOUT_DETAILS',
+                                     'review_pending':True},cursor,max(fallback,reply.retry_after)
                 if reply.status != 200:
                     raise ImportProblem('ADN_RESPONSE_UNSUPPORTED','Retorno ADN pendente.')
                 response = read_adn_distribution(payload,cursor,environment,expected_mode)

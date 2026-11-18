@@ -2,6 +2,16 @@ import {reactive} from 'vue';
 export const services={nfe_distribution:{label:'DF-e',environments:{homologation:'Homologação',production:'Produção'}},nfse_adn:{label:'NFS-e Nacional',environments:{restricted_production:'Produção restrita',production:'Produção'}}};
 export const directions={issued:'Emitidas',received:'Recebidas',both:'Emitidas e recebidas',unknown:'A conferir'};
 export const receiptStates={received:'Recebido para conferência',no_documents:'Nenhum novo documento',cursor_synchronized:'NSU sincronizado com a SEFAZ; aguardando intervalo',in_progress:'Tentativa em andamento',uncertain:'Resultado não confirmado',authorization_pending:'Procuração/autorização pendente',received_unparsed:'Retorno preservado, interpretação pendente',unparsed_rejection:'Recusa pendente de interpretação',remote_unavailable:'Serviço indisponível',rejected:'Consulta recusada',redirect_refused:'Redirecionamento recusado',environment_mismatch:'Ambiente divergente',nsu_mismatch:'Sequência divergente'};
+export function receiptDiagnostic(receipt){
+ if(!receipt)return '';
+ const parts=[];
+ if(Number.isInteger(receipt.http_status)&&receipt.http_status>=100&&receipt.http_status<=599)parts.push('HTTP '+receipt.http_status);
+ if(receipt.provider==='nfe_distribution'&&typeof receipt.status_code==='string'&&/^[0-9]{3}$/.test(receipt.status_code))parts.push('cStat '+receipt.status_code);
+ if(receipt.provider==='nfe_distribution'&&receipt.status_code==='404')parts.push('A SEFAZ rejeitou o XML da consulta por uso de prefixo de namespace. Atualize a aplicação antes de consultar novamente.');
+ else if(receipt.provider==='nfse_adn'&&receipt.code==='ADN_REJECTION_WITHOUT_DETAILS')parts.push('O ADN recusou a consulta sem informar códigos de erro. Isso não confirma ausência de documentos. O retorno original e o NSU foram preservados.');
+ else if(['received_unparsed','unparsed_rejection'].includes(receipt.state))parts.push('Não foi possível interpretar este retorno. Isso não confirma ausência de documentos. Confira o original preservado.');
+ return parts.join(' · ');
+}
 export function createReception({state,api,can,scope,provider}){
  if(!services[provider])throw new Error('Serviço inválido.');
  const defaults=()=>Object.keys(services[provider].environments)[0];

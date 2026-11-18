@@ -59,8 +59,8 @@ class CredentialTests(unittest.TestCase):
         for target,holder,mode in [(MATRIX,MATRIX,'InscricaoCertificado'),(BRANCH,MATRIX,'CnpjBase'),(MATRIX,BRANCH,'CnpjBase')]:
             self.assertEqual(mode,adn_access_mode(target,holder))
             request=adn_request(target,'restricted_production','0',certificate_tax_id=holder)
-            self.assertEqual(mode,request['expected_authorization_mode'])
-            self.assertEqual(target!=holder,'cnpjConsulta='+target in request['url'])
+            self.assertEqual('CnpjBase',request['expected_authorization_mode'])
+            self.assertIn('cnpjConsulta='+target,request['url'])
             self.assertFalse(request['authorization_verified'])
         with self.assertRaises(DomainError):adn_access_mode(THIRD,MATRIX)
         self.assertEqual('Procuracao',adn_access_mode(THIRD,MATRIX,True))
@@ -228,7 +228,7 @@ class CaptureApiTests(unittest.TestCase):
     def test_matrix_branch_queries_share_certificate_without_sharing_cursor(self):
         self.transport.reply=RemoteReply(400,json.dumps({'Erros':[{'Codigo':'E2220'}]}).encode())
         own=self.query(provider='nfse_adn',environment='restricted_production')
-        self.assertNotIn('cnpjConsulta',self.transport.plans[-1]['url'])
+        self.assertIn('cnpjConsulta='+MATRIX,self.transport.plans[-1]['url'])
         self.activate(self.b['id'])
         r=self.client.post(self.scope('/imports/reception/query',self.b['id']),json={'provider':'nfse_adn','environment':'restricted_production','period':'2026-11','idempotency_key':'synthetic-branch'})
         self.assertEqual(200,r.status_code,r.text)

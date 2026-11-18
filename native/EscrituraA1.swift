@@ -120,7 +120,7 @@ if provider == "nfse_adn" {
     guard target.prefix(8) == holder.prefix(8) || allow.boolValue else { fail("reception_certificate_identity") }
     let endpoints = ["production":"https://adn.nfse.gov.br/contribuintes", "restricted_production":"https://adn.producaorestrita.nfse.gov.br/contribuintes"]
     guard let base = endpoints[environment] else { fail("reception_endpoint") }
-    endpoint = base + "/DFe/" + number + (target == holder ? "?lote=true" : "?cnpjConsulta=" + target + "&lote=true")
+    endpoint = base + "/DFe/" + number + "?cnpjConsulta=" + target + "&lote=true"
     method = "GET"
 } else if provider == "nfe_distribution" {
     guard target.prefix(8) == holder.prefix(8), digits(number,15,15),

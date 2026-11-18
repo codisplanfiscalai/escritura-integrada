@@ -67,15 +67,18 @@ def nfe_request(tax_id, uf_code, environment, last_nsu):
         raise ImportProblem('RECEPTION_ENVIRONMENT', 'Escolha produção ou homologação para NF-e.')
     if uf_code not in {'11','12','13','14','15','16','17','21','22','23','24','25','26','27','28','29','31','32','33','35','41','42','43','50','51','52','53'}:
         raise ImportProblem('RECEPTION_UF', 'Código IBGE da UF inválido.')
-    envelope = ET.Element(f'{{{SOAP_NS}}}Envelope')
-    body = ET.SubElement(envelope, f'{{{SOAP_NS}}}Body')
-    operation = ET.SubElement(body, f'{{{WSDL_NS}}}nfeDistDFeInteresse')
-    message = ET.SubElement(operation, f'{{{WSDL_NS}}}nfeDadosMsg')
-    request = ET.SubElement(message, f'{{{NFE_NS}}}distDFeInt', versao='1.01')
+    # The SEFAZ rejects namespace prefixes in the data area (cStat 404).
+    # Explicit default namespaces avoid ElementTree's ns0/ns1/ns2 aliases,
+    # without mutating its process-global namespace registry in worker threads.
+    envelope = ET.Element('Envelope', xmlns=SOAP_NS)
+    body = ET.SubElement(envelope, 'Body')
+    operation = ET.SubElement(body, 'nfeDistDFeInteresse', xmlns=WSDL_NS)
+    message = ET.SubElement(operation, 'nfeDadosMsg')
+    request = ET.SubElement(message, 'distDFeInt', xmlns=NFE_NS, versao='1.01')
     for name, value in [('tpAmb', '1' if environment == 'production' else '2'),
                         ('cUFAutor', uf_code), ('CNPJ' if len(tax_id) == 14 else 'CPF', tax_id)]:
-        ET.SubElement(request, f'{{{NFE_NS}}}{name}').text = value
-    ET.SubElement(ET.SubElement(request, f'{{{NFE_NS}}}distNSU'), f'{{{NFE_NS}}}ultNSU').text = nsu(last_nsu)
+        ET.SubElement(request, name).text = value
+    ET.SubElement(ET.SubElement(request, 'distNSU'), 'ultNSU').text = nsu(last_nsu)
     return {'method': 'POST', 'url': NFE_ENDPOINTS[environment],
             'content_type': 'application/soap+xml; charset=utf-8',
             'body': ET.tostring(envelope, encoding='utf-8', xml_declaration=True),
@@ -91,7 +94,11 @@ def adn_request(tax_id, environment, last_nsu, *, certificate_tax_id=None, allow
     if certificate_tax_id is not None:
         from .reception_credentials import adn_access_mode
         mode = adn_access_mode(tax_id, certificate_tax_id, allow_procuration)
-    params = {} if mode == 'InscricaoCertificado' else {'cnpjConsulta' if len(tax_id) == 14 else 'cpfConsulta': tax_id}
+        # A complete explicit same-root CNPJ uses CnpjBase, including the
+        # certificate holder itself. Never infer authorization from a rejection.
+        if mode == 'InscricaoCertificado':
+            mode = 'CnpjBase'
+    params = {'cnpjConsulta' if len(tax_id) == 14 else 'cpfConsulta': tax_id}
     query = urlencode(params | {'lote':'true'})
     return {'method': 'GET', 'url': ADN_ENDPOINTS[environment] + '/DFe/' + adn_nsu(last_nsu) + ('?' + query if query else ''),
             'expected_authorization_mode': mode,

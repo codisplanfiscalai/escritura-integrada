@@ -1,7 +1,7 @@
 <script setup>
 import {computed} from 'vue';
 import {state,company,can,navigate} from '../lib/workspace';
-import {services,directions,receiptStates} from '../lib/reception.js';
+import {services,directions,receiptStates,receiptDiagnostic} from '../lib/reception.js';
 import {dateTime} from '../lib/format';
 import Icon from './Icon.vue';
 const props=defineProps({controller:{type:Object,required:true},title:{type:String,required:true}});
@@ -10,6 +10,7 @@ const allowed=computed(()=>c.readable()),queryAllowed=computed(()=>can('fiscal.i
 const waiting=computed(()=>m.data?.state.busy||m.data?.state.next_allowed_at>Date.now()/1000);
 const stamp=n=>n?new Date(n*1000).toLocaleString('pt-BR'):'Disponível';
 const status=value=>receiptStates[value]||'Retorno pendente';
+const diagnostic=computed(()=>receiptDiagnostic(m.receipt));
 async function configure(){await navigate('companies');if(state.tab==='companies')state.receptionCompany={companyId:state.companyId,uid:state.session?.user?.id};}
 </script>
 <template><div class="view reception-workspace">
@@ -24,6 +25,7 @@ async function configure(){await navigate('companies');if(state.tab==='companies
 <p v-if="m.data&&!m.data.capabilities.remote_available" class="message warning" role="status">{{m.data.capabilities.coverage}}</p>
 <div class="receive-actions"><button class="button" :disabled="m.busy||!m.configuration||!queryAllowed" @click="c.check">Conferir A1 local</button><button class="button primary" :disabled="m.collecting||m.busy||m.loading||!queryAllowed||!m.data?.capabilities.remote_available||waiting||!!m.intent" @click="c.collect()"><Icon name="download"/>Consultar e baixar documentos</button><button v-if="can('system.companies','edit')" class="button" :disabled="m.busy" @click="configure">Configurar empresa</button></div>
 <p v-if="m.collecting||m.pages" role="status">{{m.pages}} lote(s) · {{m.downloaded}} documento(s) recebido(s). O NSU é atualizado automaticamente após salvar cada lote. <button v-if="m.collecting" class="button" @click="c.stop()">Parar após o lote atual</button></p>
+<p v-if="m.receipt" class="message" :class="['received','no_documents'].includes(m.receipt.state)?'info':'warning'" role="status">Resultado da consulta: {{status(m.receipt.state)}}. {{diagnostic}}</p>
 <p v-if="m.check" class="message" :class="m.check.ready?'success':'warning'" role="status">{{m.check.message}}</p>
 <div v-if="m.intent" class="message warning"><p>Tentativa sem confirmação nesta tela. Conferir o recibo não consulta o Fisco.</p><button class="button" :disabled="m.busy" @click="c.receipt(m.intent.body.idempotency_key,true)">Conferir tentativa</button><button class="button" :disabled="m.busy" @click="c.capture(true)">Repetir a mesma tentativa</button></div>
 <p class="field-help">A consulta percorre os lotes disponíveis e para quando o serviço informa fim, espera ou erro. Você pode interromper após o lote atual e continuar do NSU salvo. Receber documentos não gera escrituração automática.</p>
