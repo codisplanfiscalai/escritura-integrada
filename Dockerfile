@@ -21,6 +21,12 @@ USER 0:0
 RUN mkdir -p /run/escritura/reception-vault \
     && chown 10001:10001 /run/escritura/reception-vault \
     && chmod 0700 /run/escritura/reception-vault
+COPY docker/postgres.lock /usr/share/escritura/postgres.lock
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=secret,id=proxy_ca \
+    if [ -s /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
+    python -m pip install --only-binary=:all: --require-hashes --no-deps -r /usr/share/escritura/postgres.lock \
+    && python -m pip check
 USER 10001:10001
 
 FROM reception-runtime AS app
@@ -29,7 +35,7 @@ ARG SOURCE_REVISION
 ARG CONTENT_ID
 ARG SOURCE_URL=https://github.com/codisplanfiscalai/escritura-integrada
 LABEL org.opencontainers.image.title="Escritura Integrada" \
-      org.opencontainers.image.description="Aplicativo fiscal, contábil e financeiro; persistência SQLite" \
+      org.opencontainers.image.description="Aplicativo fiscal, contábil e financeiro; PostgreSQL operacional e SQLite desktop" \
       org.opencontainers.image.source=${SOURCE_URL} \
       org.opencontainers.image.revision=${SOURCE_REVISION} \
       org.opencontainers.image.version=${APP_VERSION} \
@@ -39,6 +45,8 @@ COPY --chown=root:root app/ ./app/
 COPY --chown=root:root scripts/run_container.py ./scripts/run_container.py
 COPY --chown=root:root VERSION ./VERSION
 COPY --from=interface --chown=root:root /frontend/dist/ ./frontend/dist/
+USER 0:0
+RUN chmod -R a+rX /app
 USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

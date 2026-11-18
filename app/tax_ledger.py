@@ -1,4 +1,5 @@
 """Finalização revisável e transporte por empresa/tributo, sem compensação cruzada."""
+from .sql_support import insert_id
 import json
 from .core import DomainError,audit,digest,ensure_open,integer,now,pack,period,select_one,text
 
@@ -43,8 +44,8 @@ class TaxLedgerMixin:
             saved=json.loads(assessment['snapshot_json']);snapshot=self._assessment_snapshot(conn,cid,saved['request'])
             if digest(snapshot)!=assessment['fingerprint']:raise DomainError('A origem mudou. Gere e revise uma nova memória antes de finalizar.',409,'stale_assessment')
             previous=snapshot.get('opening_source',{}).get('ledger_id')
-            lid=conn.execute('''INSERT INTO tax_ledgers(company_id,period,tax,assessment_id,previous_id,opening_credit_cents,carry_credit_cents,payable_cents,snapshot_json,fingerprint,reason,created_at,created_by)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(cid,p,tax,item_id,previous,snapshot['opening_credit_cents'],snapshot['carry_credit_cents'],snapshot['payable_cents'],pack(snapshot),assessment['fingerprint'],reason,now(),actor)).lastrowid
+            lid=insert_id(conn,'''INSERT INTO tax_ledgers(company_id,period,tax,assessment_id,previous_id,opening_credit_cents,carry_credit_cents,payable_cents,snapshot_json,fingerprint,reason,created_at,created_by)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(cid,p,tax,item_id,previous,snapshot['opening_credit_cents'],snapshot['carry_credit_cents'],snapshot['payable_cents'],pack(snapshot),assessment['fingerprint'],reason,now(),actor))
             result={'id':lid,'assessment_id':item_id,'period':p,'tax':tax,'snapshot':snapshot}
             audit(conn,cid,actor,'finalize','tax_ledger',lid,{'reason':reason,'assessment_id':item_id,'previous_id':previous,'period':p,'tax':tax,'fingerprint':assessment['fingerprint']})
             self._record_operation(conn,cid,'finalize-assessment',key,hashed,result);return result

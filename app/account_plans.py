@@ -1,4 +1,5 @@
 """Intercâmbio contábil aditivo: prévia imutável, origem e confirmação atômica."""
+from .sql_support import insert_id
 import base64
 import binascii
 from functools import lru_cache
@@ -108,8 +109,7 @@ class AccountPlansMixin:
             ensure_import_allowed(conn, cid, len(raw))
             result = self._plan_preview(conn, cid, plan, format == 'default', options.get('identity_mode') == 'access')
             fingerprint = digest({'raw':digest(raw), 'format':format, 'options':options, 'state':result['state_hash'], 'plan':plan})
-            batch = conn.execute('INSERT INTO account_plan_batches(company_id,filename,format,sha256,original,options_json,plan_json,preview_hash,state_hash,status,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-                (cid,filename,format,digest(raw),raw,pack(options),pack(plan),fingerprint,result['state_hash'],'preview',now(),actor)).lastrowid
+            batch = insert_id(conn,'INSERT INTO account_plan_batches(company_id,filename,format,sha256,original,options_json,plan_json,preview_hash,state_hash,status,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(cid,filename,format,digest(raw),raw,pack(options),pack(plan),fingerprint,result['state_hash'],'preview',now(),actor))
             audit(conn,cid,actor,'preview','account_plan',batch,{'sha256':digest(raw),'format':format,'records':len(plan['accounts'])})
             return {k:v for k,v in result.items() if k not in {'to_create','state_hash','conflicts'}} | {'conflicts':result['conflicts'][:100], 'conflict_count':len(result['conflicts']), 'id':batch,'preview_hash':fingerprint,'filename':filename,'record_count':len(plan['accounts']),
                 'accounts':plan['accounts'][:100], 'properties':plan['properties'], 'warnings':plan.get('warnings',[])[:100], 'warning_count':len(plan.get('warnings',[])), 'encoding':plan.get('encoding'), 'sha256':digest(raw)}
@@ -139,7 +139,7 @@ class AccountPlansMixin:
             if result['conflicts']: raise DomainError('Há conflitos de acesso, classificação ou propriedades. Nenhuma conta foi gravada.',409,'account_plan_conflict')
             for row in result['to_create']:
                 values = [row[k] for k in FIELDS]
-                aid = conn.execute(f"INSERT INTO accounts(company_id,{','.join(FIELDS)}) VALUES({','.join('?' for _ in range(len(FIELDS)+1))})",(cid,*values)).lastrowid
+                aid = insert_id(conn,f"INSERT INTO accounts(company_id,{','.join(FIELDS)}) VALUES({','.join('?' for _ in range(len(FIELDS)+1))})",(cid,*values))
                 extras={k:v for k,v in row.items() if k not in {*FIELDS,'prosoft'}}
                 conn.execute('INSERT INTO account_plan_metadata(company_id,account_id,prosoft_json,extras_json,batch_id) VALUES(?,?,?,?,?)',(cid,aid,pack(row['prosoft']),pack(extras),item_id))
             extras={k:v for k,v in plan.items() if k not in {'schema','properties','accounts','format','encoding'}}

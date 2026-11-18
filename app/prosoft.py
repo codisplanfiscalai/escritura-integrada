@@ -1,4 +1,5 @@
 """Exportação CTBLCTOS CTA/TRC PJ/LC1/LC2 conforme o PDF fornecido, sem escrita no destino."""
+from .sql_support import insert_id
 import base64
 import json
 import re
@@ -270,7 +271,6 @@ class ProsoftMixin:
             if payload.get('destination_reviewed') is not True:raise DomainError('Confirme a empresa, as contas, terceiros e centros no destino.')
             existing=conn.execute('SELECT id FROM export_batches WHERE company_id=? AND layout=? AND fingerprint=?',(cid,LAYOUT,fingerprint)).fetchone()
             if existing:return result|{'id':existing['id'],'duplicate':True}
-            item_id=conn.execute('INSERT INTO export_batches(company_id,period,layout,fingerprint,filename,content,manifest_json,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',
-                (cid,competence,LAYOUT,fingerprint,filename,raw,pack(manifest),now(),actor)).lastrowid
+            item_id=insert_id(conn,'INSERT INTO export_batches(company_id,period,layout,fingerprint,filename,content,manifest_json,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',(cid,competence,LAYOUT,fingerprint,filename,raw,pack(manifest),now(),actor))
             audit(conn,cid,actor,'export','prosoft',item_id,{'fingerprint':fingerprint,'sha256':digest(raw),'layout':LAYOUT,'journals':[j['id'] for j in journals]})
             return result|{'id':item_id}

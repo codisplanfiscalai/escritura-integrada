@@ -12,7 +12,7 @@ class Resource:
     routine: str
     fields: str
     version: str = ''
-    predicate: str = '1'
+    predicate: str = '1=1'
     identity: str = '{p}id'
     company: str = 'company_id'
     period: str = ''
@@ -106,7 +106,7 @@ def event_type(name):
 def page(conn, cid, name, after=None, limit=100, period=None, item=None):
     spec = resource(name)
     key = spec.sql(spec.identity)
-    fields = ','.join('r.'+field for field in spec.fields.split())
+    fields = ','.join('r."'+field+'"' for field in spec.fields.split())
     where = [f'r.{spec.company}=?','('+spec.sql(spec.predicate)+')']
     args = [cid]
     cursor = item if item is not None else after

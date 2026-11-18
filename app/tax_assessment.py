@@ -1,4 +1,5 @@
 """Pré-apuração explícita: decisões fiscais revisadas, memória imutável e detecção de alteração."""
+from .sql_support import insert_id
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from .core import (DomainError, audit, digest, ensure_open, integer, money, now, pack, period, select_one, text, company_row)
@@ -108,8 +109,7 @@ class TaxAssessmentMixin:
             fingerprint=digest(snapshot)
             if payload.get('preview_fingerprint') and payload['preview_fingerprint'] != fingerprint:
                 raise DomainError('Bases, regras, ajustes ou saldo anterior mudaram. Confira uma nova prévia.',409,'stale_preview')
-            item_id=conn.execute('INSERT INTO tax_assessments(company_id,period,tax,source,responsible,snapshot_json,fingerprint,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',
-                (cid,snapshot['period'],snapshot['tax'],source,responsible,pack({'result':snapshot,'request':payload}),fingerprint,now(),actor)).lastrowid
+            item_id=insert_id(conn,'INSERT INTO tax_assessments(company_id,period,tax,source,responsible,snapshot_json,fingerprint,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',(cid,snapshot['period'],snapshot['tax'],source,responsible,pack({'result':snapshot,'request':payload}),fingerprint,now(),actor))
             result={'id':item_id,'snapshot':snapshot,'fingerprint':fingerprint,'source':source,'responsible':responsible}
             audit(conn,cid,actor,'assess','tax_assessment',item_id,{'fingerprint':fingerprint,'tax':snapshot['tax'],'period':snapshot['period']})
             self._record_operation(conn,cid,'tax-assessment',key,hashed,result)
@@ -140,7 +140,7 @@ class TaxAssessmentMixin:
             amount=money(payload.get('amount'),positive=True);source=text(payload.get('source'),'Fonte normativa',True,1500);reason=text(payload.get('reason'),'Motivo',True,1000)
             did=payload.get('document_id')
             if did:select_one(conn,'documents',cid,integer(did))
-            item_id=conn.execute('INSERT INTO tax_adjustments(company_id,period,tax,kind,amount_cents,source,reason,document_id,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?)',(cid,p,tax,kind,amount,source,reason,did,now(),actor)).lastrowid
+            item_id=insert_id(conn,'INSERT INTO tax_adjustments(company_id,period,tax,kind,amount_cents,source,reason,document_id,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?)',(cid,p,tax,kind,amount,source,reason,did,now(),actor))
             conn.execute('UPDATE tax_adjustments SET category=? WHERE id=?',(category,item_id))
             audit(conn,cid,actor,'create','tax_adjustment',item_id,payload)
             result={'id':item_id};self._record_operation(conn,cid,'tax-adjustment',key,hashed,result);return result

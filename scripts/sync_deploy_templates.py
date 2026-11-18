@@ -22,6 +22,8 @@ def sync(root=ROOT, check=False):
         # Referências fixadas no .env e --pull never preservam o fluxo offline.
         data["services"]["app"]["pull_policy"] = "always"
         for name, target in TARGETS.items():
+            if name in {"app", "postgres"}:
+                continue
             source = "./data/${COMPOSE_PROJECT_NAME:-escritura-" + environment + "}/" + name
             if name == "app":
                 source = "${ESCRITURA_APP_DATA_BIND:?Execute deploy_storage.py prepare-app antes de atualizar; init prepara instalacao nova}"
@@ -34,11 +36,11 @@ def sync(root=ROOT, check=False):
         # Shared with the former A1 override: same project + source + target
         # preserves an existing vault on upgrades, without rotating its key.
         data["services"]["app"]["environment"]["ESCRITURA_RECEPTION_VAULT_DIR"] = "/run/escritura/reception-vault"
-        data["services"]["app"]["volumes"].append({
+        data["services"]["app"]["volumes"] = [data["services"]["app"]["volumes"][0], {
             "type": "volume", "source": "reception_vault",
             "target": "/run/escritura/reception-vault",
-        })
-        data["volumes"] = {"reception_vault": {}}
+        }]
+        data["volumes"] = {"reception_vault": {}, "app_data": {}, "postgres_data": {}}
         for name in OPTIONAL_NAMES:
             data["services"][name]["image"] = "${" + name.upper() + "_IMAGE:-" + plan["images"][name]["reference"] + "}"
         wanted = json.dumps(data, ensure_ascii=False, indent=2) + "\n"

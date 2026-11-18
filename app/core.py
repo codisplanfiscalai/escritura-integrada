@@ -5,6 +5,7 @@ uma operação e suas verificações de competência pertencem à mesma transaç
 """
 from __future__ import annotations
 
+from .sql_support import insert_id
 from .fiscal_series import normalize_series, settings as series_settings, presentation as series_presentation, business_key as series_business_key, find_document as find_series_document, payload_hash as series_payload_hash, stored_payload_hash
 
 import base64
@@ -267,7 +268,7 @@ class Core:
         with self.db.transaction() as conn:
             if conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
                 raise DomainError("A configuração inicial já foi concluída.", 409, "already_setup")
-            user_id = conn.execute("INSERT INTO users(username,password_hash,created_at) VALUES(?,?,?)", (username, hashed, now())).lastrowid
+            user_id = insert_id(conn,"INSERT INTO users(username,password_hash,created_at) VALUES(?,?,?)",(username, hashed, now()))
             audit(conn, None, username, "setup", "user", user_id)
             return self._new_session(conn, user_id)
 
@@ -277,7 +278,7 @@ class Core:
         key = digest([remote, username.casefold()])
         with self.db.read() as conn:
             attempt = conn.execute("SELECT * FROM login_attempts WHERE attempt_key=?", (key,)).fetchone()
-            user = conn.execute("SELECT * FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone()
+            user = conn.execute("SELECT * FROM users WHERE lower(username)=lower(?)", (username,)).fetchone()
         if attempt and attempt["locked_until"] > time.time():
             raise DomainError("Muitas tentativas. Aguarde alguns minutos e tente novamente.", 429, "rate_limited")
         # A real KDF is also performed for unknown usernames.
@@ -299,7 +300,7 @@ class Core:
             user = conn.execute("SELECT id FROM users WHERE username='demonstracao'").fetchone()
             if user is None:
                 # Random unexposed password; this user cannot be used outside explicit demo mode.
-                uid = conn.execute("INSERT INTO users(username,password_hash,created_at) VALUES(?,?,?)", ("demonstracao", self._password_hash(secrets.token_urlsafe(40)), now())).lastrowid
+                uid = insert_id(conn,"INSERT INTO users(username,password_hash,created_at) VALUES(?,?,?)",("demonstracao", self._password_hash(secrets.token_urlsafe(40)), now()))
             else:
                 uid = user["id"]
             return self._new_session(conn, uid)
@@ -318,7 +319,7 @@ class Core:
 
     def companies(self):
         with self.db.read() as conn:
-            return [dict(row) | {"profile": json.loads(row["profile_json"])} for row in conn.execute("SELECT * FROM companies ORDER BY code COLLATE NOCASE")]
+            return [dict(row) | {"profile": json.loads(row["profile_json"])} for row in conn.execute("SELECT * FROM companies ORDER BY lower(code)")]
 
     def _company_values(self, payload, previous=None):
         values = {key: text(payload.get(key, previous.get(key, "") if previous else ""), key, key in {"code", "name", "tax_id", "regime"}, 500) for key in COMPANY_FIELDS if key != "profile_json"}
@@ -342,7 +343,7 @@ class Core:
         values = self._company_values(payload)
         initial = boolean(payload.get("create_default_accounts"), False)
         with self.db.transaction() as conn:
-            cid = conn.execute(f"INSERT INTO companies({','.join(COMPANY_FIELDS)},created_at,updated_at) VALUES({','.join('?' for _ in range(len(COMPANY_FIELDS)+2))})", (*values.values(), now(), now())).lastrowid
+            cid = insert_id(conn,f"INSERT INTO companies({','.join(COMPANY_FIELDS)},created_at,updated_at) VALUES({','.join('?' for _ in range(len(COMPANY_FIELDS)+2))})",(*values.values(), now(), now()))
             from .periods import initialize_exercises
             initialize_exercises(conn, cid)
             if initial:
@@ -441,7 +442,7 @@ class Core:
         if item_id:
             conn.execute(f"UPDATE accounts SET {','.join(k+'=?' for k in values)},version=version+1 WHERE id=? AND company_id=?", (*values.values(), item_id, cid))
         else:
-            item_id = conn.execute(f"INSERT INTO accounts(company_id,{','.join(values)}) VALUES({','.join('?' for _ in range(len(values)+1))})", (cid, *values.values())).lastrowid
+            item_id = insert_id(conn,f"INSERT INTO accounts(company_id,{','.join(values)}) VALUES({','.join('?' for _ in range(len(values)+1))})",(cid, *values.values()))
         audit(conn, cid, actor, "update" if old else "create", "account", item_id, values)
         return select_one(conn, "accounts", cid, item_id)
 
@@ -462,7 +463,7 @@ class Core:
             if old:
                 conn.execute("UPDATE cost_centers SET code=?,name=?,active=?,version=version+1 WHERE id=? AND company_id=?", (*values.values(), item_id, cid))
             else:
-                item_id = conn.execute("INSERT INTO cost_centers(company_id,code,name,active) VALUES(?,?,?,?)", (cid, *values.values())).lastrowid
+                item_id = insert_id(conn,"INSERT INTO cost_centers(company_id,code,name,active) VALUES(?,?,?,?)",(cid, *values.values()))
             audit(conn, cid, actor, "update" if old else "create", "cost_center", item_id, values)
             return select_one(conn, "cost_centers", cid, item_id)
 
@@ -669,7 +670,7 @@ class Core:
         # Narrow before reading potentially large XML snapshots in extra_json.
         # ltrim is only a candidate filter: the canonical Python comparison below
         # still distinguishes nonnumeric numbers and validates series/issuer.
-        candidates = conn.execute("SELECT * FROM documents WHERE company_id=? AND direction=? AND model=? AND ltrim(number,'0')=ltrim(?,'0') AND (? OR extra_json LIKE '%\"book_cancellation\"%')",
+        candidates = conn.execute("SELECT * FROM documents WHERE company_id=? AND direction=? AND model=? AND ltrim(number,'0')=ltrim(?,'0') AND (?=1 OR extra_json LIKE '%\"book_cancellation\"%')",
                                   (cid, direction, values['model'], values['number'], bool(cancellation))).fetchall()
         canonical = lambda value: str(int(value)) if value and value.isascii() and value.isdigit() else value
         for candidate in candidates:
@@ -689,7 +690,7 @@ class Core:
         if existing:
             if stored_payload_hash(existing) != hashed:
                 raise DomainError("Já existe documento com a mesma identidade e conteúdo diferente. Confira antes de escriturar.", 409, "document_conflict")
-            conn.execute("INSERT OR IGNORE INTO document_sources(company_id,document_id,source_hash,source_json,created_at) VALUES(?,?,?,?,?)", (cid, existing["id"], source_hash, source, now()))
+            conn.execute('INSERT INTO document_sources(company_id,document_id,source_hash,source_json,created_at) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING', (cid, existing["id"], source_hash, source, now()))
             result = self._document(conn, cid, existing["id"]) | {"duplicate": True}
             if source_hash and existing['source_hash'] and source_hash != existing['source_hash']:
                 result['source_version_warning'] = 'XML com hash diferente para a mesma identidade; campos importados usados na comparação coincidem. As fontes foram preservadas para conferir demais dados e eventos. Hash diferente, por si só, não comprova divergência fiscal.'
@@ -720,7 +721,7 @@ class Core:
         except (ValueError, TypeError, AttributeError, InvalidOperation):
             raise DomainError('Itens ou tributos declarados inválidos para gerar as linhas de escrituração.') from None
         values.update(id=next_movement_id(conn,'documents'), company_id=cid, period=values["posting_date"][:7], taxes_json=taxes, items_json=items, source_json=source, extra_json=pack(extras), source_hash=source_hash, business_key=business_key, payload_hash=hashed, status="pending", created_at=now())
-        did = conn.execute(f"INSERT INTO documents({','.join(values)}) VALUES({','.join('?' for _ in values)})", tuple(values.values())).lastrowid
+        did = insert_id(conn,f"INSERT INTO documents({','.join(values)}) VALUES({','.join('?' for _ in values)})",tuple(values.values()))
         conn.execute("INSERT INTO document_sources(company_id,document_id,source_hash,source_json,created_at) VALUES(?,?,?,?,?)", (cid, did, source_hash, source, now()))
         audit(conn, cid, actor, "create", "document", did, {"status": "pending", "source_hash": source_hash, "period": values["period"]})
         return self._document(conn, cid, did)
@@ -903,7 +904,7 @@ class Core:
             if kind != expected:
                 raise DomainError("O sentido do título não corresponde ao documento fiscal vinculado.")
         values.update(company_id=cid, created_at=now())
-        tid = conn.execute(f"INSERT INTO titles({','.join(values)}) VALUES({','.join('?' for _ in values)})", tuple(values.values())).lastrowid
+        tid = insert_id(conn,f"INSERT INTO titles({','.join(values)}) VALUES({','.join('?' for _ in values)})",tuple(values.values()))
         audit(conn, cid, actor, "create", "title", tid, {"amount_cents": values["amount_cents"], "kind": kind})
         return self._title(conn, cid, tid)
 
@@ -932,7 +933,7 @@ class Core:
                 if total != amount:
                     raise DomainError("O total contábil da baixa deve corresponder ao valor baixado.")
                 journal = self._create_journal(conn, cid, {"date": day, "document": title["document"], "history": reason, "idempotency_key": "settlement:" + key, "lines": payload["lines"]}, actor)
-            sid = conn.execute("INSERT INTO settlements(company_id,title_id,date,amount_cents,reason,journal_id,idempotency_key,request_hash,created_at) VALUES(?,?,?,?,?,?,?,?,?)", (cid, item_id, day, amount, reason, journal["id"] if journal else None, key, hashed, now())).lastrowid
+            sid = insert_id(conn,"INSERT INTO settlements(company_id,title_id,date,amount_cents,reason,journal_id,idempotency_key,request_hash,created_at) VALUES(?,?,?,?,?,?,?,?,?)",(cid, item_id, day, amount, reason, journal["id"] if journal else None, key, hashed, now()))
             conn.execute("UPDATE titles SET paid_cents=paid_cents+?,version=version+1 WHERE id=? AND company_id=?", (amount, item_id, cid))
             audit(conn, cid, actor, "settle", "title", item_id, {"amount_cents": amount, "settlement_id": sid, "journal_id": journal["id"] if journal else None})
             settlement = dict(conn.execute("SELECT id,title_id,date,amount_cents,reason,journal_id,created_at FROM settlements WHERE id=?", (sid,)).fetchone())
@@ -976,7 +977,7 @@ class Core:
                 raise DomainError("Identificador bancário repetido com conteúdo diferente; confira o arquivo e a conta.", 409, "bank_conflict")
             return self._bank(conn, cid, existing["id"]) | {"duplicate": True}
         values.update(company_id=cid, bank_account=bank_account, source_json=source, source_hash=source_hash, fingerprint=fingerprint, payload_hash=hashed, created_at=now())
-        bid = conn.execute(f"INSERT INTO bank_transactions({','.join(values)}) VALUES({','.join('?' for _ in values)})", tuple(values.values())).lastrowid
+        bid = insert_id(conn,f"INSERT INTO bank_transactions({','.join(values)}) VALUES({','.join('?' for _ in values)})",tuple(values.values()))
         audit(conn, cid, actor, "import", "bank_transaction", bid, {"source_hash": source_hash})
         return self._bank(conn, cid, bid)
 
@@ -1008,7 +1009,7 @@ class Core:
                 raise DomainError("Conciliação individual exige mesmo valor total e sentido. Use o rateio para conciliar valores parciais ou agrupados.")
             if bank["reconciled"] or conn.execute("SELECT 1 FROM reconciliations WHERE title_id=?", (title_id,)).fetchone():
                 raise DomainError("Movimentação ou título já conciliado.", 409, "already_reconciled")
-            rid = conn.execute("INSERT INTO reconciliations(company_id,transaction_id,title_id,reason,created_at,created_by) VALUES(?,?,?,?,?,?)", (cid, item_id, title_id, reason, now(), actor)).lastrowid
+            rid = insert_id(conn,"INSERT INTO reconciliations(company_id,transaction_id,title_id,reason,created_at,created_by) VALUES(?,?,?,?,?,?)",(cid, item_id, title_id, reason, now(), actor))
             audit(conn, cid, actor, "reconcile", "bank_transaction", item_id, {"title_id": title_id, "reason": reason})
             return dict(conn.execute("SELECT * FROM reconciliations WHERE id=?", (rid,)).fetchone())
 
@@ -1090,7 +1091,7 @@ class Core:
             if old:
                 conn.execute(f"UPDATE catalogs SET {','.join(k+'=?' for k in values)},version=version+1 WHERE id=? AND company_id=?", (*values.values(), item_id, cid))
             else:
-                item_id = conn.execute(f"INSERT INTO catalogs(company_id,{','.join(values)}) VALUES({','.join('?' for _ in range(len(values)+1))})", (cid, *values.values())).lastrowid
+                item_id = insert_id(conn,f"INSERT INTO catalogs(company_id,{','.join(values)}) VALUES({','.join('?' for _ in range(len(values)+1))})",(cid, *values.values()))
             audit(conn, cid, actor, "update" if old else "create", "catalog", item_id, {"before": old, "after": values})
             return select_one(conn, "catalogs", cid, item_id)
 
@@ -1147,7 +1148,7 @@ class Core:
         if values["status"] == "validated" and (not values["source"] or not values["responsible"] or values["rate"] is None):
             raise DomainError("Regra marcada como conferida exige fonte, responsável e alíquota declarada. A conferência é do escritório.")
         values.update(company_id=cid, family_id=old.get("family_id", str(uuid.uuid4())), version=old.get("version", 0) + 1, active=boolean(payload.get("active"), bool(old.get("active", True))), created_at=now(), created_by=actor)
-        rid = conn.execute(f"INSERT INTO rules({','.join(values)}) VALUES({','.join('?' for _ in values)})", tuple(values.values())).lastrowid
+        rid = insert_id(conn,f"INSERT INTO rules({','.join(values)}) VALUES({','.join('?' for _ in values)})",tuple(values.values()))
         if old:
             conn.execute("UPDATE rules SET superseded_by=? WHERE id=? AND company_id=?", (rid, item_id, cid))
         audit(conn, cid, actor, "version" if old else "create", "rule", rid, {"previous_id": item_id, "version": values["version"], "source": values["source"]})
@@ -1168,7 +1169,7 @@ class Core:
                 raise DomainError("Data fora da vigência desta versão da regra.")
             result = int((Decimal(base) * Decimal(rule["rate"]) / 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
             response = {"simulation": True, "legal_validation": False, "rule_id": item_id, "rule_version": rule["version"], "date": day, "base_cents": base, "rate": rule["rate"], "result_cents": result, "source": rule["source"], "responsible": rule["responsible"], "memory": [f"Base declarada: {decimal_text(base)}", f"Alíquota declarada: {rule['rate']}%", "Fórmula: base × alíquota ÷ 100; arredondamento ao centavo HALF_UP.", f"Prévia: {decimal_text(result)}. Não constitui apuração legal."]}
-            calc_id = conn.execute("INSERT INTO calculations(company_id,rule_id,payload_json,created_at,created_by) VALUES(?,?,?,?,?)", (cid, item_id, pack(response), now(), actor)).lastrowid
+            calc_id = insert_id(conn,"INSERT INTO calculations(company_id,rule_id,payload_json,created_at,created_by) VALUES(?,?,?,?,?)",(cid, item_id, pack(response), now(), actor))
             response["calculation_id"] = calc_id
             audit(conn, cid, actor, "simulate", "rule", item_id, {"calculation_id": calc_id, "rule_version": rule["version"]})
             return response
@@ -1192,7 +1193,7 @@ class Core:
             rules = [select_one(conn, "rules", cid, integer(key, "Regra")) for key in ids]
             if any(x["superseded_by"] or not x["active"] for x in rules):
                 raise DomainError("Modelos devem usar versões atuais e ativas.")
-            item_id = conn.execute("INSERT INTO templates(name,description,source_company_id,rules_json,created_at,created_by) VALUES(?,?,?,?,?,?)", (name, description, cid, pack(rules), now(), actor)).lastrowid
+            item_id = insert_id(conn,"INSERT INTO templates(name,description,source_company_id,rules_json,created_at,created_by) VALUES(?,?,?,?,?,?)",(name, description, cid, pack(rules), now(), actor))
             audit(conn, cid, actor, "create", "template", item_id, {"rule_ids": ids})
             return {"id": item_id, "name": name, "description": description, "source_company_id": cid, "rules": rules}
 
@@ -1301,7 +1302,7 @@ class Core:
                 return classify(conn,cid,self._import_result(existing),competence[:4])
             from .file_store import store_file
             store_file(self.db,conn,cid,int(competence[:4]),'originals',filename,raw,actor)
-            iid = conn.execute("INSERT INTO imports(company_id,filename,sha256,identity_hash,preview_hash,period,company_tax_id,options_json,original,parsed_json,status,bank_account,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (cid, filename, digest(raw), identity, preview_hash, competence, company["tax_id"], pack(options), raw, pack(parsed), status, bank_account, now(), actor)).lastrowid
+            iid = insert_id(conn,"INSERT INTO imports(company_id,filename,sha256,identity_hash,preview_hash,period,company_tax_id,options_json,original,parsed_json,status,bank_account,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(cid, filename, digest(raw), identity, preview_hash, competence, company["tax_id"], pack(options), raw, pack(parsed), status, bank_account, now(), actor))
             audit(conn, cid, actor, "preview", "import", iid, {"sha256": digest(raw), "filename": filename, "status": status, "period": competence})
             return self._import_result(select_one(conn, "imports", cid, iid))
 
@@ -1513,11 +1514,11 @@ class Core:
             for index, name in ((1, "Aurora Comércio (demonstração)"), (2, "Horizonte Serviços (demonstração)")):
                 base = f"DEMO000{index}0001"
                 values = self._company_values({"code": f"DEMO{index:03}", "name": name, "trade_name": name, "tax_id": base + cnpj_digits(base), "regime": "outros", "state": "SP", "city": "Cidade fictícia", "address": "Rua de demonstração", "number": str(index * 100), "prosoft_code": f"FICTICIO{index}"})
-                cid = conn.execute(f"INSERT INTO companies({','.join(COMPANY_FIELDS)},created_at,updated_at) VALUES({','.join('?' for _ in range(len(COMPANY_FIELDS)+2))})", (*values.values(), now(), now())).lastrowid
+                cid = insert_id(conn,f"INSERT INTO companies({','.join(COMPANY_FIELDS)},created_at,updated_at) VALUES({','.join('?' for _ in range(len(COMPANY_FIELDS)+2))})",(*values.values(), now(), now()))
                 from .periods import initialize_exercises
                 initialize_exercises(conn, cid, 2026)
                 self._default_accounts(conn, cid)
-                cc = conn.execute("INSERT INTO cost_centers(company_id,code,name) VALUES(?,?,?)", (cid, "ADM", "Administrativo — demonstração")).lastrowid
+                cc = insert_id(conn,"INSERT INTO cost_centers(company_id,code,name) VALUES(?,?,?)",(cid, "ADM", "Administrativo — demonstração"))
                 accounts = {r["access_code"]: r["id"] for r in conn.execute("SELECT id,access_code FROM effective_accounts WHERE company_id=?", (cid,))}
                 if index == 1:
                     for key, debit, credit, amount, history in (("sale", "3", "5", "2500.00", "Venda fictícia para demonstração"), ("expense", "6", "4", "450.00", "Despesa fictícia para demonstração")):

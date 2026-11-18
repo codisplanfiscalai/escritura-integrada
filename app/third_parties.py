@@ -69,10 +69,10 @@ def sync_third_party(conn, cid, master_id, actor, reason):
     pid, establishment_id = None, None
     if tax_id:
         kind, key = ('organization', tax_id[:8]) if len(tax_id) == 14 else ('person', tax_id)
-        conn.execute('INSERT OR IGNORE INTO third_parties(entity_type,identity_key) VALUES(?,?)', (kind, key))
+        conn.execute('INSERT INTO third_parties(entity_type,identity_key) VALUES(?,?) ON CONFLICT DO NOTHING', (kind, key))
         pid = conn.execute('SELECT id FROM third_parties WHERE entity_type=? AND identity_key=?', (kind, key)).fetchone()['id']
         if kind == 'organization':
-            conn.execute('INSERT OR IGNORE INTO third_party_establishments(third_party_id,tax_id) VALUES(?,?)', (pid, tax_id))
+            conn.execute('INSERT INTO third_party_establishments(third_party_id,tax_id) VALUES(?,?) ON CONFLICT DO NOTHING', (pid, tax_id))
             establishment_id = conn.execute('SELECT id FROM third_party_establishments WHERE tax_id=?', (tax_id,)).fetchone()['id']
     old = conn.execute('SELECT * FROM third_party_company_links WHERE company_id=? AND master_id=?', (cid, master_id)).fetchone()
     snapshot = _snapshot(row)

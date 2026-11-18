@@ -9,7 +9,7 @@ BUSINESS_MODULES = ('fiscal', 'accounting', 'financial', 'social')
 
 def initialize_exercises(conn, cid, year=None):
     for module in BUSINESS_MODULES:
-        conn.execute('INSERT OR IGNORE INTO exercises VALUES(?,?,?,?,?)',
+        conn.execute('INSERT INTO exercises VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING',
                      (cid,module,year or date.today().year,now(),'criação da empresa'))
 
 

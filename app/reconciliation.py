@@ -1,4 +1,5 @@
 """Conciliação bancária por alocações, com baixa apenas quando solicitada."""
+from .sql_support import insert_id
 from datetime import date
 from .core import DomainError, audit, decimal_text, integer, money, now, select_one, text, ensure_open
 
@@ -65,8 +66,7 @@ class ReconciliationMixin:
                     settlement=self._settle(conn,cid,tid,{'amount':decimal_text(amount),'date':bank['date'],
                         'reason':reason,'version':e.get('version'),'idempotency_key':f'bank:{item_id}:{key}:{index}',
                         'lines':e.get('lines',[])},actor)['settlement']
-                aid=conn.execute('INSERT INTO bank_allocations(company_id,transaction_id,title_id,amount_cents,settlement_id,reason,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)',
-                    (cid,item_id,tid,amount,settlement['id'] if settlement else None,reason,now(),actor)).lastrowid
+                aid=insert_id(conn,'INSERT INTO bank_allocations(company_id,transaction_id,title_id,amount_cents,settlement_id,reason,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)',(cid,item_id,tid,amount,settlement['id'] if settlement else None,reason,now(),actor))
                 ids.append(aid)
             result={'bank':self._bank(conn,cid,item_id),'allocation_ids':ids,'settlements_created':len(ids) if payload.get('settle') is True else 0}
             audit(conn,cid,actor,'allocate','bank_transaction',item_id,{'reason':reason,'ids':ids,'settle':payload.get('settle') is True})

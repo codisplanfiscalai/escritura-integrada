@@ -1,3 +1,5 @@
+> Nesta branch, o Compose usa PostgreSQL operacional obrigatório. O LEIA-ME.txt do pacote contém o fluxo atualizado, sem scripts externos. Os procedimentos SQLite e de perfis opcionais abaixo são históricos e não devem ser usados para o cutover PostgreSQL.
+
 # Docker, GHCR e implantação
 
 ## O que esta distribuição executa

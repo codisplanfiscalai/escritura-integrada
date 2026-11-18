@@ -163,12 +163,10 @@ except DomainError as error:
                 app=config['services']['app']
                 self.assertTrue(app['read_only']);self.assertIn('ALL',app['cap_drop'])
                 self.assertEqual(target,app['environment']['ESCRITURA_RECEPTION_VAULT_DIR'])
-                self.assertEqual([legacy_mount],[v for v in app['volumes'] if v['target']==target])
-                self.assertEqual({'reception_vault':{}},config['volumes'])
+                self.assertEqual([legacy_mount],[v for v in app['volumes'] if isinstance(v,dict) and v['target']==target])
+                self.assertEqual({'reception_vault':{},'app_data':{},'postgres_data':{}},config['volumes'])
                 self.assertNotIn('name',config['volumes']['reception_vault'])
-                data_mount,=[v for v in app['volumes'] if v['target']=='/data']
-                self.assertEqual('bind',data_mount['type'])
-                self.assertEqual({'create_host_path':False},data_mount['bind'])
+                self.assertIn('${ESCRITURA_APP_DATA_BIND:-app_data}:/data',app['volumes'])
                 self.assertNotIn(target,app.get('tmpfs',[]))
                 self.assertNotIn('user',app)  # Image's unprivileged UID remains authoritative.
 

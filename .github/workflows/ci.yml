@@ -25,9 +25,9 @@ jobs:
         run: python3 scripts/probes/reception_vault_docker.py
 
   postgres-backend:
-    name: PostgreSQL real · infraestrutura preparatória
+    name: PostgreSQL real · backend operacional e migração
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     services:
       postgres:
         image: ghcr.io/codisplanfiscalai/escritura-integrada-postgres:17.11-bookworm-479e959b5363ce7a
@@ -56,10 +56,12 @@ jobs:
       - name: Exigir servidor real e executar provas em schemas descartáveis
         env:
           PYTHONPATH: .
+          ESCRITURA_DATA_DIR: /tmp/escritura-pg-ci
           ESCRITURA_POSTGRES_TEST_DSN: host=127.0.0.1 port=5432 dbname=escritura_backend_test user=fixture password=Fixture-only-postgres-test
         run: |
           python tests/test_postgres_backend.py
           python tests/test_postgres_migration_stage.py
+          python tests/test_postgres_operational.py
 
   linux:
     name: Linux, testes e interface

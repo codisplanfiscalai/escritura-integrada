@@ -1,5 +1,7 @@
 """Integration projections and event boundaries exercised with synthetic business data."""
+from app.sql_support import insert_id
 import json
+from app.sql_support import check_foreign_keys
 import unittest
 from unittest.mock import patch
 
@@ -9,6 +11,13 @@ from starlette.websockets import WebSocketDisconnect
 import test_integrations as legacy
 from app.integration_resources import RESOURCES, event_type
 from app.integrations import MAX_ATTEMPTS
+
+
+def table_columns(conn,table):
+    from app.sql_support import dialect
+    if getattr(conn,'backend','sqlite')=='postgresql':
+        return conn.execute("SELECT column_name AS name,CASE WHEN is_nullable='NO' THEN 1 ELSE 0 END AS notnull,column_default AS dflt_value,CASE WHEN data_type='bigint' THEN 'INTEGER' WHEN data_type='bytea' THEN 'BLOB' ELSE 'TEXT' END AS type,CASE WHEN is_identity='YES' THEN 1 ELSE 0 END AS pk FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=? ORDER BY ordinal_position",(table,))
+    return conn.execute('PRAGMA table_info('+table+')')
 
 
 class DomainIntegrationTests(unittest.TestCase):
@@ -104,7 +113,7 @@ class DomainIntegrationTests(unittest.TestCase):
     def test_nonadmin_domain_grants_do_not_require_cost_center_or_grant_other_domains(self):
         with self.db.transaction() as conn:
             conn.execute("UPDATE users SET role='operator' WHERE id=?",(self.uid,))
-            conn.execute('INSERT OR IGNORE INTO user_companies VALUES(?,?)',(self.uid,self.cid))
+            conn.execute('INSERT INTO user_companies VALUES(?,?) ON CONFLICT DO NOTHING',(self.uid,self.cid))
             for routine,action in [('system.integrations','create'),('fiscal.documents','read'),('fiscal.documents','export')]:
                 conn.execute("INSERT INTO user_permissions VALUES(?,?,?,?,'allow')",(self.uid,self.cid,routine,action))
         headers=self.token('documents:read','documents:events')
@@ -248,7 +257,8 @@ class DomainIntegrationTests(unittest.TestCase):
             def seed(table,**values):
                 # Synthetic schema fixtures test triggers, not business validation rules.
                 payload={}
-                for col in conn.execute('PRAGMA table_info('+table+')'):
+                columns=list(table_columns(conn,table))
+                for col in columns:
                     key=col['name']
                     if key in values:
                         payload[key]=values[key]
@@ -261,7 +271,8 @@ class DomainIntegrationTests(unittest.TestCase):
                     elif col['type']=='INTEGER': payload[key]=0
                     elif col['type']=='BLOB': payload[key]=b'Synthetic fixture'
                     else: payload[key]='Synthetic fixture'
-                return conn.execute('INSERT INTO '+table+'('+','.join(payload)+') VALUES('+','.join('?' for _ in payload)+')',tuple(payload.values())).lastrowid
+                execute=insert_id if any(c['name']=='id' for c in columns) else lambda c,s,p:c.execute(s,p)
+                return execute(conn,'INSERT INTO '+table+'('+','.join(chr(34)+k+chr(34) for k in payload)+') VALUES('+','.join('?' for _ in payload)+')',tuple(payload.values()))
             bank=seed('bank_transactions',amount_cents=10000,date='2026-11-06')
             seed('reconciliations',transaction_id=bank,title_id=title['id'])
             seed('bank_allocations',transaction_id=bank,title_id=title['id'],amount_cents=100)
@@ -296,7 +307,7 @@ class DomainIntegrationTests(unittest.TestCase):
         self.accounts()
         with self.db.transaction() as conn:
             conn.execute("INSERT INTO accounts(id,company_id,access_code,classifier,name,nature,analytical,requires_cost_center) VALUES(-100,?,'SYNTHETIC-NEG','1','Synthetic negative ID','debit',1,0)",(self.cid,))
-            conn.execute("INSERT INTO auditor_jobs(company_id,year,mode,start,end,request_key,request_hash,snapshot_json,created_at,created_by) VALUES(?,2026,'internal','2026-11-01','2026-11-30','synthetic-job','synthetic','{}','2026-11-01','fixture')",(self.cid,))
+            conn.execute("INSERT INTO auditor_jobs(company_id,year,mode,start,\"end\",request_key,request_hash,snapshot_json,created_at,created_by) VALUES(?,2026,'internal','2026-11-01','2026-11-30','synthetic-job','synthetic','{}','2026-11-01','fixture')",(self.cid,))
             job=conn.execute('SELECT id FROM auditor_jobs').fetchone()[0]
         headers=self.token('accounts:read','auditor-jobs:read','auditor-jobs:events')
         first=self.get('accounts',headers,'?limit=1').json()

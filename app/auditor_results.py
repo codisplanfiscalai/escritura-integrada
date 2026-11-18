@@ -1,4 +1,5 @@
 """Resultados de auditoria: consultas, validação e armazenamento de relatórios."""
+from .sql_support import insert_id
 from collections import Counter
 from decimal import Decimal
 import json
@@ -89,7 +90,7 @@ def persist_report(core,conn,cid,job,fmt,content,actor):
     old=conn.execute('SELECT * FROM auditor_reports WHERE company_id=? AND job_id=? AND format=? AND revision=?',(cid,job['id'],fmt,revision)).fetchone()
     if old:return dict(old)
     fid=store_file(core.db,conn,cid,job['year'],'reports',f"auditoria-{job['id']}-{revision[:12]}.{fmt}",content,actor)
-    rid=conn.execute('INSERT INTO auditor_reports(company_id,job_id,format,revision,file_id,created_at,created_by) VALUES(?,?,?,?,?,?,?)',(cid,job['id'],fmt,revision,fid,now(),actor)).lastrowid
+    rid=insert_id(conn,'INSERT INTO auditor_reports(company_id,job_id,format,revision,file_id,created_at,created_by) VALUES(?,?,?,?,?,?,?)',(cid,job['id'],fmt,revision,fid,now(),actor))
     audit(conn,cid,actor,'report','auditor_job',job['id'],{'report_id':rid,'format':fmt,'revision':revision,'file_id':fid})
     return {'id':rid,'file_id':fid,'revision':revision,'format':fmt}
 

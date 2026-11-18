@@ -1,4 +1,5 @@
 """Grupos, concessões pessoais e explicação das permissões efetivas."""
+from .sql_support import insert_id
 from .core import DomainError, audit, boolean, check_version, company_row, integer, now, text
 from .permissions import ACTIONS, MODULES, ROUTINES, catalog, company_access, decision, require
 
@@ -77,7 +78,7 @@ class AccessMixin:
                 for table in ('user_companies','group_users','user_company_access','user_permissions'):
                     conn.execute('DELETE FROM '+table+' WHERE user_id=?',(item_id,))
             else:
-                item_id=conn.execute('INSERT INTO users(username,password_hash,created_at,role,active) VALUES(?,?,?,?,?)',(username,hashed,now(),role,active)).lastrowid
+                item_id=insert_id(conn,'INSERT INTO users(username,password_hash,created_at,role,active) VALUES(?,?,?,?,?)',(username,hashed,now(),role,active))
             for cid in ids:conn.execute('INSERT INTO user_companies VALUES(?,?)',(item_id,cid))
             for gid in groups:conn.execute('INSERT INTO group_users VALUES(?,?)',(gid,item_id))
             for cid,effect in company_rules.items():conn.execute('INSERT INTO user_company_access VALUES(?,?,?)',(item_id,cid,effect))
@@ -109,7 +110,7 @@ class AccessMixin:
             if old:
                 conn.execute('UPDATE access_groups SET name=?,description=?,active=?,version=version+1,updated_at=? WHERE id=?',(name,description,active,now(),item_id))
                 for table in ('group_companies','group_users','group_permissions'):conn.execute('DELETE FROM '+table+' WHERE group_id=?',(item_id,))
-            else:item_id=conn.execute('INSERT INTO access_groups(name,description,active,created_at,updated_at) VALUES(?,?,?,?,?)',(name,description,active,now(),now())).lastrowid
+            else:item_id=insert_id(conn,'INSERT INTO access_groups(name,description,active,created_at,updated_at) VALUES(?,?,?,?,?)',(name,description,active,now(),now()))
             for cid in companies:conn.execute('INSERT INTO group_companies VALUES(?,?)',(item_id,cid))
             for uid in users:conn.execute('INSERT INTO group_users VALUES(?,?)',(item_id,uid))
             for p in permissions:conn.execute('INSERT INTO group_permissions VALUES(?,?,?,?,?)',(item_id,p['company_id'],p['routine'],p['action'],p['effect']))

@@ -1,4 +1,5 @@
 """Shared informational references and explicitly imported company tax drafts."""
+from .sql_support import insert_id
 from decimal import Decimal
 import json
 import re
@@ -97,7 +98,7 @@ class FiscalLibraryMixin:
             if old:
                 conn.execute('UPDATE global_fiscal_catalogs SET code=?,namespace=?,data_json=?,active=?,version=version+1,updated_at=? WHERE id=?',(code,namespace,pack(values),active,now(),item_id))
             else:
-                item_id=conn.execute('INSERT INTO global_fiscal_catalogs(kind,code,namespace,data_json,active,updated_at) VALUES(?,?,?,?,?,?)',(kind,code,namespace,pack(values),active,now())).lastrowid
+                item_id=insert_id(conn,'INSERT INTO global_fiscal_catalogs(kind,code,namespace,data_json,active,updated_at) VALUES(?,?,?,?,?,?)',(kind,code,namespace,pack(values),active,now()))
             saved=conn.execute('SELECT * FROM global_fiscal_catalogs WHERE id=?',(item_id,)).fetchone()
             self._save_fiscal_library_version(conn,'catalog',saved,actor)
             audit(conn,None,actor,'update' if old else 'create','global_fiscal_catalog',item_id,{'reason':reason,'before':previous,'after':values,'code':code})
@@ -159,7 +160,7 @@ class FiscalLibraryMixin:
             if old:
                 conn.execute('UPDATE fiscal_patterns SET code=?,data_json=?,active=?,version=version+1,updated_at=? WHERE id=?',(code,pack(data),active,now(),item_id))
             else:
-                item_id=conn.execute('INSERT INTO fiscal_patterns(code,data_json,active,updated_at) VALUES(?,?,?,?)',(code,pack(data),active,now())).lastrowid
+                item_id=insert_id(conn,'INSERT INTO fiscal_patterns(code,data_json,active,updated_at) VALUES(?,?,?,?)',(code,pack(data),active,now()))
             saved=conn.execute('SELECT * FROM fiscal_patterns WHERE id=?',(item_id,)).fetchone()
             self._save_fiscal_library_version(conn,'pattern',saved,actor)
             audit(conn,None,actor,'update' if old else 'create','fiscal_pattern',item_id,{'reason':reason,'before':_row(old) if old else None,'after':data})
@@ -184,8 +185,7 @@ class FiscalLibraryMixin:
             for original in pattern['rules']:
                 copied=original|validity|{'regime':pattern['regime'],'status':'draft','active':False,'responsible':responsible,'source':original['source'] or pattern['source']}
                 ids.append(self._save_rule(conn,cid,copied,actor)['id'])
-            saved_id=conn.execute('INSERT INTO company_fiscal_pattern_imports(company_id,pattern_id,pattern_version,fingerprint,snapshot_json,rule_ids_json,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)',
-                (cid,item_id,row['version'],fingerprint,pack(pattern|{'segment_confirmed':segment,'activity_confirmed':preview['activity_confirmed'],'company_cnae':preview['company_cnae'],'reason':reason,'responsible':responsible,'company_validity':validity}),pack(ids),now(),actor)).lastrowid
+            saved_id=insert_id(conn,'INSERT INTO company_fiscal_pattern_imports(company_id,pattern_id,pattern_version,fingerprint,snapshot_json,rule_ids_json,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)',(cid,item_id,row['version'],fingerprint,pack(pattern|{'segment_confirmed':segment,'activity_confirmed':preview['activity_confirmed'],'company_cnae':preview['company_cnae'],'reason':reason,'responsible':responsible,'company_validity':validity}),pack(ids),now(),actor))
             audit(conn,cid,actor,'apply','fiscal_pattern',item_id,{'import_id':saved_id,'version':row['version'],'rule_ids':ids,'segment':segment,'activity_confirmed':preview['activity_confirmed'],'company_cnae':preview['company_cnae'],'reason':reason,'status':'draft','active':False})
             return {'id':saved_id,'duplicate':False,'rule_ids':ids,'review_required':True,'status':'draft','active':False}
 

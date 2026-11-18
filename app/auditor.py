@@ -1,4 +1,5 @@
 """Auditor integrado: snapshots imutáveis, trabalhos persistidos e efeitos isolados."""
+from .sql_support import insert_id
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
@@ -48,7 +49,7 @@ def members(filename,raw):
 class AuditorMixin:
     def auditor_jobs(self,cid,year):
         with self.db.read() as conn:
-            return [dict(r) for r in conn.execute('SELECT id,name,year,mode,start,end,status,stage,progress,processed_files,total_files,parent_id,version,deleted_at,created_at,created_by,error FROM auditor_jobs WHERE company_id=? AND year=? ORDER BY id DESC',(cid,year))]
+            return [dict(r) for r in conn.execute('SELECT id,name,year,mode,start,"end",status,stage,progress,processed_files,total_files,parent_id,version,deleted_at,created_at,created_by,error FROM auditor_jobs WHERE company_id=? AND year=? ORDER BY id DESC',(cid,year))]
 
     def auditor_job(self,cid,jid):
         with self.db.read(snapshot=True) as conn:
@@ -132,7 +133,7 @@ class AuditorMixin:
             if parent:
                 previous=select_one(conn,'auditor_jobs',cid,parent)
                 if previous['deleted_at']:raise DomainError('Restaure a auditoria antes de reprocessar.',409)
-            jid=conn.execute('INSERT INTO auditor_jobs(company_id,year,mode,start,end,request_key,request_hash,snapshot_json,created_at,created_by,user_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(cid,int(start[:4]),mode,start,end,key,hashed,pack(snap),now(),actor,ctx.get('user_id'))).lastrowid
+            jid=insert_id(conn,'INSERT INTO auditor_jobs(company_id,year,mode,start,"end",request_key,request_hash,snapshot_json,created_at,created_by,user_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(cid,int(start[:4]),mode,start,end,key,hashed,pack(snap),now(),actor,ctx.get('user_id')))
             conn.execute('UPDATE auditor_jobs SET name=?,total_files=?,parent_id=? WHERE id=?',(snap['input']['name'],len(snap['files']),parent,jid))
             audit(conn,cid,actor,'create','auditor_job',jid,{'snapshot_sha256':digest(snap),'engine':ENGINE_VERSION,'mode':mode})
             return {'id':jid,'status':'queued'}
@@ -190,7 +191,7 @@ class AuditorMixin:
                 old=select_one(conn,'auditor_catalogs',cid,iid);check_version(old,payload)
                 if old['state']!='draft':raise DomainError('Catálogo publicado é imutável. Crie uma nova versão.',409,'immutable_catalog')
                 conn.execute('UPDATE auditor_catalogs SET name=?,source=?,valid_from=?,valid_to=?,content_json=?,sha256=?,version=version+1 WHERE id=?',(name,source,start,end,pack(entries),hashed,iid))
-            else:iid=conn.execute('INSERT INTO auditor_catalogs(company_id,name,source,valid_from,valid_to,content_json,sha256,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',(cid,name,source,start,end,pack(entries),hashed,now(),actor)).lastrowid
+            else:iid=insert_id(conn,'INSERT INTO auditor_catalogs(company_id,name,source,valid_from,valid_to,content_json,sha256,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)',(cid,name,source,start,end,pack(entries),hashed,now(),actor))
             if source_id:conn.execute('UPDATE auditor_catalogs SET source_id=? WHERE id=?',(source_id,iid))
             audit(conn,cid,actor,'draft','auditor_catalog',iid,{'sha256':hashed,'source_id':source_id,'diagnostics_reviewed':payload.get('acknowledge_issues') is True})
         return next(r for r in self.auditor_catalogs(cid) if r['id']==iid)

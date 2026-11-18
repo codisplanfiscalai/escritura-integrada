@@ -17,14 +17,14 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from . import __version__
 from .business import BusinessCore as Core
 from .core import DomainError, digest, iso_date, period, select_one
-from .db import ContextConflict, Database, request_context
+from .db import ContextConflict, configured_database, request_context
 
 COOKIE = "escritura_session"
 
 
 def create_app(data_dir=None, demo=False):
     demo = bool(demo or os.environ.get("ESCRITURA_DEMO") == "1")
-    database = Database(data_dir)
+    database = configured_database(data_dir)
     core = Core(database, demo)
     from .auditor import AuditorWorker
     from contextlib import asynccontextmanager
@@ -108,6 +108,13 @@ def create_app(data_dir=None, demo=False):
     async def database_error(request, exc):
         # No paths, SQL, or stored personal data in public error responses.
         return JSONResponse({"detail": "O banco não concluiu a operação. Tente novamente; se persistir, confira disponibilidade e permissões do diretório de dados.", "code": "database_unavailable"}, status_code=503)
+
+    if database.backend == 'postgresql':
+        import psycopg
+        from .postgres_backend import PostgresUnavailable
+        application.add_exception_handler(psycopg.IntegrityError,integrity_error)
+        application.add_exception_handler(psycopg.OperationalError,database_error)
+        application.add_exception_handler(PostgresUnavailable,database_error)
 
     @application.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
@@ -233,6 +240,8 @@ def create_app(data_dir=None, demo=False):
 
     @application.get("/api/health")
     def health():
+        with database.read() as conn:
+            conn.execute("SELECT 1").fetchone()
         return {"status": "ok", "version": __version__, "demo": demo}
 
     @application.get("/api/session")

@@ -254,17 +254,7 @@ class Database:
         conn = self.connect()
         try:
             conn.execute("BEGIN IMMEDIATE")
-            expected = request_context.get()
-            if expected:
-                session = conn.execute("SELECT active_company_id,period,module,expires_at FROM sessions WHERE token_hash=?", (expected["token_hash"],)).fetchone()
-                if not session or session["expires_at"] <= time.time():
-                    raise ContextConflict("A sessão foi encerrada. Entre novamente antes de salvar.")
-                if expected.get("user_id"):
-                    from .permissions import require
-                    require(conn, expected["user_id"], expected.get("permission_company_id"),
-                            expected.get("routine"), expected.get("action", "read"), expected.get("admin", False))
-                if expected.get("company_id") is not None and (session["active_company_id"] != expected["company_id"] or session["period"][:4] != expected["period"][:4] or (expected.get("module") and session["module"] != expected["module"])):
-                    raise ContextConflict("A empresa ou competência ativa mudou. Reabra o lançamento no contexto correto.")
+            validate_context(conn)
             yield conn
             conn.commit()
         except BaseException:
@@ -272,3 +262,27 @@ class Database:
             raise
         finally:
             conn.close()
+
+
+def validate_context(conn):
+    expected = request_context.get()
+    if expected:
+        session = conn.execute("SELECT active_company_id,period,module,expires_at FROM sessions WHERE token_hash=?", (expected["token_hash"],)).fetchone()
+        if not session or session["expires_at"] <= time.time():
+            raise ContextConflict("A sessão foi encerrada. Entre novamente antes de salvar.")
+        if expected.get("user_id"):
+            from .permissions import require
+            require(conn, expected["user_id"], expected.get("permission_company_id"),
+                    expected.get("routine"), expected.get("action", "read"), expected.get("admin", False))
+        if expected.get("company_id") is not None and (session["active_company_id"] != expected["company_id"] or session["period"][:4] != expected["period"][:4] or (expected.get("module") and session["module"] != expected["module"])):
+            raise ContextConflict("A empresa ou competência ativa mudou. Reabra o lançamento no contexto correto.")
+
+
+def configured_database(data_dir=None):
+    backend = os.environ.get("ESCRITURA_DATABASE_BACKEND", "sqlite")
+    if backend == "sqlite":
+        return Database(data_dir)
+    if backend != "postgresql":
+        raise ValueError("Backend de banco desconhecido; fallback não permitido.")
+    from .postgres_operational import OperationalDatabase, settings_from_env
+    return OperationalDatabase(settings_from_env(), data_dir or os.environ.get("ESCRITURA_DATA_DIR", "/data"))

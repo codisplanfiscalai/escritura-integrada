@@ -4,6 +4,7 @@ Positive IDs are historical company rows. Negative IDs are immutable global
 entry aliases, visible only through a company's current binding. First use
 creates a minimal company FK target, not a copy of attributes or source bytes.
 """
+from .sql_support import insert_id
 from .core import DomainError, audit
 
 
@@ -61,8 +62,8 @@ def resolve_account(conn, cid, value, materialize=False, actor=None):
     if materialize and result['id'] < 0:
         # Technical FK allocation is part of the authorized accounting action;
         # it does not grant permission to edit any local/global account.
-        aid = conn.execute('''INSERT INTO accounts(company_id,access_code,classifier,name,nature,analytical,requires_cost_center,active,report_group,prosoft_code,shared_entry_id)
-            VALUES(?,?,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,?)''',(cid,result['access_code'],result['shared_entry_id'])).lastrowid
+        aid = insert_id(conn,'''INSERT INTO accounts(company_id,access_code,classifier,name,nature,analytical,requires_cost_center,active,report_group,prosoft_code,shared_entry_id)
+            VALUES(?,?,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,?)''',(cid,result['access_code'],result['shared_entry_id']))
         conn.execute('INSERT INTO global_account_plan_links(company_id,account_id,global_plan_id,access_code) SELECT ?,?,global_plan_id,access_code FROM global_account_entries WHERE id=?', (cid,aid,result['shared_entry_id']))
         if actor is None:
             from .db import request_context

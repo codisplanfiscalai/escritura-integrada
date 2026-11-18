@@ -55,10 +55,13 @@ CREATE TABLE IF NOT EXISTS integration_limits (
 
 
 def envelope(row):
+    from .integration_resources import RESOURCES
+    name=row['resource'] if 'resource' in row.keys() else 'cost-centers'
+    identity=row['resource_id'] if RESOURCES[name].text_key else int(row['resource_id'])
     return {'specversion': '1.0', 'id': row['id'], 'sequence': row['seq'],
             'type': event_type(row['resource'] if 'resource' in row.keys() else 'cost-centers'), 'time': row['created'],
             'company_id': row['company_id'],
-            'data': {'id': row['resource_id'], 'version': row['version'] or None, 'operation': row['operation']}}
+            'data': {'id': identity, 'version': row['version'] or None, 'operation': row['operation']}}
 
 
 def encode(value):
@@ -135,6 +138,8 @@ class Integrations:
         self.sender = deliver_https
         self.sockets = {}
         self.connections = 0
+        if database.backend == 'postgresql':
+            return  # Native versioned schema already contains integration tables/triggers.
         with database.read() as conn:
             conn.executescript(SCHEMA)
             migrate(conn)
@@ -163,8 +168,8 @@ class Integrations:
         if limited:
             window = int(time.time()) // 60
             conn.execute('''INSERT INTO integration_limits VALUES(?,?,1) ON CONFLICT(credential_id)
-                DO UPDATE SET window=excluded.window,requests=CASE WHEN window=excluded.window
-                THEN requests+1 ELSE 1 END''', (row['id'], window))
+                DO UPDATE SET "window"=excluded."window",requests=CASE WHEN integration_limits."window"=excluded."window"
+                THEN integration_limits.requests+1 ELSE 1 END''', (row['id'], window))
             if conn.execute('SELECT requests FROM integration_limits WHERE credential_id=?', (row['id'],)).fetchone()[0] > 120:
                 raise DomainError('Limite de requisições atingido.', 429, 'integration_rate_limit')
         return row
@@ -211,8 +216,7 @@ class Integrations:
                 if pending >= 100:
                     continue
                 last = conn.execute('SELECT coalesce(max(event_seq),?) FROM integration_deliveries WHERE webhook_id=?', (hook['start_seq'], hook['id'])).fetchone()[0]
-                conn.execute('''INSERT OR IGNORE INTO integration_deliveries(webhook_id,event_seq)
-                    SELECT ?,seq FROM integration_events WHERE company_id=? AND seq>? AND resource=? ORDER BY seq LIMIT ?''', (hook['id'], credential['company_id'], last,hook['resource'],100-pending))
+                conn.execute('INSERT INTO integration_deliveries(webhook_id,event_seq)\n                    SELECT ?,seq FROM integration_events WHERE company_id=? AND seq>? AND resource=? ORDER BY seq LIMIT ? ON CONFLICT DO NOTHING', (hook['id'], credential['company_id'], last,hook['resource'],100-pending))
             row = conn.execute('''SELECT d.*,w.url,w.credential_id,w.revoked,w.resource FROM integration_deliveries d
                 JOIN integration_webhooks w ON w.id=d.webhook_id
                 WHERE d.state IN ('pending','inflight') AND d.next_at<=? AND w.revoked=0

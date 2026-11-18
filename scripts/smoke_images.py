@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke real no Docker: GUI web compilada, sessão/SQLite e perfis opcionais."""
+"""Smoke real no Docker: GUI web compilada, sessão/PostgreSQL e perfis opcionais."""
 from __future__ import annotations
 
 import argparse
@@ -28,7 +28,7 @@ def validate_compose_templates(manifest):
         for environment in ("production", "develop"):
             # Config-only fixtures: the same main Compose uses online or pinned
             # image references from .env, never a generated override YAML.
-            original = deployment_env(manifest, environment).replace('ESCRITURA_APP_DATA_BIND=\n',
+            original = deployment_env(manifest, environment).replace('POSTGRES_PASSWORD=\n','POSTGRES_PASSWORD=synthetic-compose-check-only\n').replace('ESCRITURA_APP_DATA_BIND=\n',
                 'ESCRITURA_APP_DATA_BIND=./data/escritura-' + environment + '/app\n')
             for mode in ('online', 'fixed'):
                 contents = original
@@ -86,21 +86,33 @@ def smoke(manifest):
     images = manifest["images"]
     prefix = "escritura-smoke-" + uuid.uuid4().hex[:10]
     volume, network = prefix + "-data", prefix + "-internal"
+    application_network=prefix+"-application"
     names = []
     results = {"started_at": datetime.now(timezone.utc).isoformat(), "status": "running", "checks": []}
     validate_compose_templates(manifest)
-    results["checks"].append("compose: produção/develop válidos em app-only e nos quatro perfis")
+    results["checks"].append("compose: produção/develop válidos em app + PostgreSQL obrigatório e perfis opcionais")
     run(["docker", "volume", "create", volume])
     run(["docker", "network", "create", "--internal", network])
+    run(["docker", "network", "create", application_network])
     try:
         run(["docker", "run", "--rm", "--pull", "never", "--network", "none", images["base"]["reference"], "python", "-m", "pip", "check"])
         results["checks"].append("base: dependências Python consistentes")
+        pg_name=prefix+'-operational-postgres'
+        names.append(pg_name)
+        pg_env={**os.environ,'POSTGRES_PASSWORD':secrets.token_hex(24),'POSTGRES_USER':'escritura','POSTGRES_DB':'escritura',
+                'POSTGRES_HOST':pg_name,'ESCRITURA_DATABASE_BACKEND':'postgresql'}
+        pg_flags=[flag for key in ('POSTGRES_PASSWORD','POSTGRES_USER','POSTGRES_DB') for flag in ('--env',key)]
+        app_flags=pg_flags+['--env','POSTGRES_HOST','--env','ESCRITURA_DATABASE_BACKEND']
+        run(['docker','run','-d','--pull','never','--name',pg_name,'--network',network,*pg_flags,images['postgres']['reference']],env=pg_env)
+        wait_healthy(pg_name);assert_no_public_ports(pg_name)
+        run(['docker','run','--rm','--pull','never','--network',network,'--mount','type=volume,src='+volume+',dst=/data',
+             *app_flags,images['app']['reference'],'python','-m','app.postgres_transfer','initialize'],env=pg_env)
         name = prefix + "-app"
         names.append(name)
         run(["docker", "run", "--detach", "--pull", "never", "--name", name, "--read-only", "--cap-drop", "ALL",
              "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
              "--mount", "type=volume,src=" + volume + ",dst=/data", "--publish", "127.0.0.1::8000",
-             "--env", "ESCRITURA_DEMO=0", images["app"]["reference"]])
+             "--network", application_network, "--network", network, *app_flags, "--env", "ESCRITURA_DEMO=0", images["app"]["reference"]],env=pg_env)
         wait_healthy(name)
         url = container_url(name)
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
@@ -132,17 +144,17 @@ def smoke(manifest):
         url = container_url(name)
         again = http_json(opener, url + "/api/session")
         if not again.get("authenticated") or again.get("setup_required"):
-            raise RuntimeError("Sessão/SQLite não persistiram após reinício.")
+            raise RuntimeError("Sessão/PostgreSQL não persistiram após reinício.")
         audit_job=http_json(opener,url+f"/api/companies/{again['active_company_id']}/auditor/jobs/{results['auditor']['job_id']}")
         if audit_job['status']!='completed' or not audit_job['reports']:
             raise RuntimeError('Auditoria e relatórios não persistiram após reinício da imagem.')
         run(["docker", "exec", name, "python", "-c",
-             "from pathlib import Path; assert Path('/data/escritura.sqlite3').stat().st_size > 0"])
+             "from pathlib import Path; from app.db import configured_database; d=configured_database(); assert d.backend=='postgresql'; assert not Path('/data/escritura.sqlite3').exists()"])
         config_user = run(["docker", "inspect", "--format", "{{.Config.User}}", name], capture=True).stdout.strip()
         if config_user != "10001:10001":
             raise RuntimeError("Aplicação deve executar sem root.")
         results["checks"] += ["app: health/versão/demo desligado", "app: HTML/JS/CSS compilados",
-                              "app: configuração inicial sem credencial predefinida", "app: sessão/SQLite persistem após reinício",
+                              "app: configuração inicial sem credencial predefinida", "app: sessão/PostgreSQL persistem após reinício",
                               "app: usuário 10001, filesystem de raiz somente leitura, porta loopback"]
         credentials = {
             "redis": {"REDIS_PASSWORD": secrets.token_hex(24)},
@@ -174,6 +186,7 @@ def smoke(manifest):
         for name in reversed(names):
             run(["docker", "rm", "--force", "--volumes", name], capture=True, check=False)
         run(["docker", "network", "rm", network], capture=True, check=False)
+        run(["docker", "network", "rm", application_network], capture=True, check=False)
         run(["docker", "volume", "rm", volume], capture=True, check=False)
 
 

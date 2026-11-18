@@ -49,6 +49,21 @@ assert request('GET','/storage-probe/object')==payload
 '''
 
 
+def legacy_sqlite_layout(config):
+    """Keep the historical bind-move rehearsal explicit; PG has its own image smoke."""
+    app=config['services']['app']
+    app['environment']={'ESCRITURA_DATA_DIR':'/data','ESCRITURA_DEMO':'0','ESCRITURA_DATABASE_BACKEND':'sqlite'}
+    app.pop('depends_on',None)
+    app['volumes'][0]={'type':'bind','source':'${ESCRITURA_APP_DATA_BIND:?Selecione o bind legado}',
+                       'target':'/data','bind':{'create_host_path':False}}
+    pg=config['services']['postgres'];pg['profiles']=['postgres']
+    pg['environment']['POSTGRES_PASSWORD']='${POSTGRES_PASSWORD:-}'
+    pg['volumes']=[{'type':'bind','source':'./data/${COMPOSE_PROJECT_NAME}/postgres',
+                    'target':'/var/lib/postgresql/data','bind':{'create_host_path':False}}]
+    config['volumes']={'reception_vault':{}}
+    return config
+
+
 def smoke_storage(manifest):
     project = "storage-smoke-" + uuid.uuid4().hex[:12]
     fresh = project + "-fresh"
@@ -73,7 +88,7 @@ def smoke_storage(manifest):
         # Isolate .env interpolation from unrelated test-runner variables.
         variables = {row.split("=", 1)[0] for row in env_text.splitlines() if "=" in row and not row.startswith("#")}
         environment = {key: value for key, value in os.environ.items() if key not in variables}
-        new = json.loads((ROOT / "deploy/develop/compose.yaml").read_text())
+        new = legacy_sqlite_layout(json.loads((ROOT / "deploy/develop/compose.yaml").read_text()))
         new["services"]["app"]["ports"] = ["127.0.0.1::8000/tcp"]
         legacy = copy.deepcopy(new)
         legacy["volumes"] = {name + "-data": {} for name in TARGETS}

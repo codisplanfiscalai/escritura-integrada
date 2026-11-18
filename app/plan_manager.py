@@ -3,6 +3,7 @@
 Operational company accounts continue to use existing services and IDs. Editing
 one global definition never silently rewrites another company's journals.
 """
+from .sql_support import insert_id
 import json
 import re
 from copy import deepcopy
@@ -165,10 +166,10 @@ def register(app,core,actor):
             validate_plan(d['plan'],True)
             if not d['plan']['accounts']:raise DomainError('Inclua pelo menos uma conta antes de salvar o plano na biblioteca.')
             raw=pack(d['plan']).encode();sha=digest(raw);stamp=now();filename='plano-gerenciado-'+iid+'.json'
-            batch=conn.execute('''INSERT INTO account_plan_batches(company_id,filename,format,sha256,original,options_json,plan_json,preview_hash,state_hash,status,confirmation_json,created_at,created_by)
-                VALUES(?,?,'native',?,?,?, ?,?,?,'reference',?,?,?)''',(cid,filename,sha,raw,pack({'global_manager_draft':iid}),pack(d['plan']),sha,sha,pack({'global_reference':True}),stamp,who)).lastrowid
-            gid=conn.execute('''INSERT INTO global_account_plans(name,description,source_company_id,source_batch_id,parent_id,plan_json,filename,format,original,sha256,created_at,created_by)
-                VALUES(?,?,?,?,?,?,?,'native',?,?,?,?)''',(d['name'],d['description'],cid,batch,d.get('source_global_id'),pack(d['plan']),filename,raw,sha,stamp,who)).lastrowid
+            batch=insert_id(conn,'''INSERT INTO account_plan_batches(company_id,filename,format,sha256,original,options_json,plan_json,preview_hash,state_hash,status,confirmation_json,created_at,created_by)
+                VALUES(?,?,'native',?,?,?, ?,?,?,'reference',?,?,?)''',(cid,filename,sha,raw,pack({'global_manager_draft':iid}),pack(d['plan']),sha,sha,pack({'global_reference':True}),stamp,who))
+            gid=insert_id(conn,'''INSERT INTO global_account_plans(name,description,source_company_id,source_batch_id,parent_id,plan_json,filename,format,original,sha256,created_at,created_by)
+                VALUES(?,?,?,?,?,?,?,'native',?,?,?,?)''',(d['name'],d['description'],cid,batch,d.get('source_global_id'),pack(d['plan']),filename,raw,sha,stamp,who))
             for raw_account in d['plan']['accounts']:
                 a=account_values(raw_account);extras={k:v for k,v in a.items() if k not in {*FIELDS,'prosoft'}}
                 conn.execute(f"INSERT INTO global_account_entries(global_plan_id,{','.join(FIELDS)},prosoft_json,extras_json) VALUES({','.join('?' for _ in range(len(FIELDS)+3))})",(gid,*(a[k] for k in FIELDS),pack(a['prosoft']),pack(extras)))

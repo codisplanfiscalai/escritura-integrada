@@ -1,4 +1,4 @@
-"""Explicit backup adapters. Operational SQLite; PostgreSQL fixtures only, never autodetect."""
+"""Explicit backup adapters for operational SQLite/PostgreSQL and isolated fixtures."""
 from dataclasses import dataclass
 import hashlib
 import json
@@ -121,7 +121,49 @@ def select_backend(db):
     if kind=='sqlite':
         from .db import Database
         if isinstance(db,Database):return SQLiteBackend(db)
+    if kind=='postgresql' and type(db).__module__=='app.postgres_operational':
+        from .postgres_operational import OperationalDatabase
+        if isinstance(db,OperationalDatabase):return PostgresOperationalBackend(db)
     if kind=='postgresql-fixture' and isinstance(db,PostgresFixtureSource):
         return PostgresFixtureBackend(db)
-    raise DomainError('Backend de backup ausente ou não suportado. PostgreSQL operacional ainda não está integrado; nenhuma conexão foi iniciada.',
+    raise DomainError('Backend de backup ausente ou não suportado; nenhuma conexão foi iniciada.',
                       422,'backup_backend')
+
+
+class PostgresOperationalBackend:
+    kind='postgresql'
+    metadata={'id':'postgresql','label':'PostgreSQL operacional','operational':True,
+              'limits':'512 MiB de conteúdo lógico; restauração em schema novo, sem ativação'}
+    max_archive_mib=512
+
+    def __init__(self,db):
+        from psycopg.conninfo import conninfo_to_dict
+        self.db=db
+        values=conninfo_to_dict(db.settings.dsn)
+        self.identity=fingerprint({'backend':self.kind,'schema':db.settings.schema,
+                                   **{k:values.get(k) for k in ('host','port','dbname','user')}})
+
+    def capture(self,path,key_id,secret,cancelled,work):
+        from .postgres_transfer import capture
+        with platform.temporary_directory(work,'.pg-capture-') as directory:
+            plain=Path(directory)/'postgres.zip'
+            capture(self.db,plain,cancelled)
+            return crypto.encrypt(plain,path,key_id,secret,cancelled)
+
+    def verify(self,path,checksum,secret,cancelled,work,record):
+        from .postgres_transfer import restore_new
+        with crypto.authenticated_payload(path,checksum,work_dir=work,secret=secret,cancelled=cancelled) as plain:
+            record(restore_new(self.db,plain,verify_only=True))
+
+    def restore(self,path,target,checksum,key_loader,work,*,legacy=False):
+        from .postgres_transfer import restore_new
+        if legacy:raise DomainError('ZIP SQLite não é um backup PostgreSQL.',422,'backup_backend')
+        platform.private_directory(target)
+        receipt=target/'postgres-restore.json'
+        receipt.write_text(json.dumps({'status':'preparing','activated':False}))
+        receipt.chmod(0o600)
+        # A failed/uncertain attempt retains the reservation; never retry silently.
+        with crypto.authenticated_payload(path,checksum,work_dir=work,key_loader=key_loader) as plain:
+            result=restore_new(self.db,plain)
+        receipt.write_text(json.dumps(result))
+        return result

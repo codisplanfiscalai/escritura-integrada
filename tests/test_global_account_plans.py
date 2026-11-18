@@ -3,6 +3,7 @@ import base64
 import json
 import sqlite3
 import re
+from app.sql_support import check_foreign_keys
 import unittest
 from pathlib import Path
 from zipfile import ZipFile
@@ -91,7 +92,7 @@ class GlobalAccountPlanTests(unittest.TestCase):
         self.assertEqual('Subconta ficticia A',next(x for x in detail['accounts'] if x['access_code']=='00101')['name'])
         self.assertEqual(6,len(self.core.accounts(self.a['id'])))
         self.assertEqual(used_ids,{x['id'] for x in self.core.accounts(self.b['id']) if x['access_code'] in {'00101','00102'}})
-        with self.core.db.read() as conn: self.assertEqual([], list(conn.execute('PRAGMA foreign_key_check')))
+        with self.core.db.read() as conn: self.assertFalse(check_foreign_keys(conn))
 
     def test_preview_conflict_and_stale_are_atomic(self):
         g, _, _ = self.publish(); p = self.prepare(g['id'], 'own')
@@ -148,13 +149,19 @@ class GlobalAccountPlanTests(unittest.TestCase):
         imported = {a['access_code']:{k:v for k,v in a.items() if k not in {'id','version'}} for a in accounts if a['access_code'].startswith('001')}
         self.assertEqual({a['access_code']:a for a in synthetic_plan()['accounts']},imported)
         archive=Path(self.tmp.name)/'snapshot.zip';destination=Path(self.tmp.name)/'restored'
+        if self.core.db.backend=='postgresql':
+            from app.postgres_transfer import capture,restore_new
+            snapshot=capture(self.core.db,archive)
+            self.assertEqual(1,snapshot['tables']['global_account_plans']['count'])
+            self.assertEqual('verified',restore_new(self.core.db,archive,verify_only=True)['status'])
+            return
         snapshot=create_snapshot(self.core.db.path,archive)
         self.assertTrue(any(x['table']=='global_account_plans' for x in snapshot['originals']))
         restore_snapshot(archive,destination)
         restored=Database(destination)
         with restored.read() as conn:
             self.assertEqual(3,conn.execute('SELECT COUNT(*) FROM global_account_plan_links').fetchone()[0])
-            self.assertEqual([],list(conn.execute('PRAGMA foreign_key_check')))
+            self.assertFalse(check_foreign_keys(conn))
         with ZipFile(archive) as z:
             legacy_manifest=json.loads(z.read('manifest.json'));database=z.read('escritura.sqlite3')
         legacy_manifest.pop('originals_scope')
@@ -175,6 +182,8 @@ class GlobalAccountPlanTests(unittest.TestCase):
         self.assertEqual(2,len(repeated));self.assertEqual(repeated[0]['classifier'],repeated[1]['classifier'])
 
     def test_legacy_migration_keeps_ids_used_fk_triggers_and_pre_upgrade_backup(self):
+        if self.core.db.backend != "sqlite":
+            self.skipTest("SQLite legacy DDL rebuild is covered by the SQLite suite; PostgreSQL migration is tested separately")
         journal=self.post('/journals',base.CoreApiTests.journal(self),201)
         before=self.core.accounts(self.a['id'])
         conn=self.core.db.connect();conn.execute('PRAGMA foreign_keys=OFF');conn.execute('BEGIN IMMEDIATE')
@@ -188,7 +197,7 @@ class GlobalAccountPlanTests(unittest.TestCase):
         self.assertIsNotNone(migrated.upgrade_backup);self.assertTrue(Path(migrated.upgrade_backup).is_file())
         self.assertEqual(before,self.core.accounts(self.a['id']))
         with migrated.transaction() as conn:
-            self.assertEqual([],list(conn.execute('PRAGMA foreign_key_check')))
+            self.assertFalse(check_foreign_keys(conn))
             self.assertEqual(2,conn.execute('SELECT COUNT(*) FROM journal_lines WHERE journal_id=?',(journal['id'],)).fetchone()[0])
             conn.execute("UPDATE accounts SET name=name WHERE id=?",(before[0]['id'],))
             self.assertEqual('fired',conn.execute("SELECT value FROM meta WHERE key='synthetic-trigger'").fetchone()[0])

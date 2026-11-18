@@ -1,2 +1,2 @@
-# Backend preparatório; ainda não faz parte do runtime desktop/Docker.
+# Driver do backend PostgreSQL operacional; desktop SQLite não exige este extra.
 psycopg[binary]==3.3.9
