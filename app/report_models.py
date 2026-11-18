@@ -29,6 +29,11 @@ CATALOG=[
     *[(kind,name,'LFSLIVROSAPUR / formulários' if kind=='fiscal-assessments' else 'LFSLIVROS / formulários; agrupamentos operacionais do Escritura')
       for kind,name in FISCAL_REPORTS.items()]] if kind not in {'fiscal-entries','fiscal-outputs'}]]
 CATALOG[0]['supported'] = True
+for entry in CATALOG:
+    if entry['kind']=='trial-balance':
+        entry.update(source='Balancete analítico de referência fornecido pelo usuário',
+                     evidence='Retrato, hierarquia, quatro valores, cabeçalhos e paginação comparados ao exemplar',
+                     limitations='Layout baseado no exemplar; não certifica identidade visual exata ou homologação externa. Com movimento preserva contas com saldo.')
 
 # URLs antigas continuam funcionando, mas não reintroduzem impressões
 # genéricas ou alternativas auxiliares já substituídas no catálogo.
