@@ -85,7 +85,9 @@ Os testes novos cobrem leitura e visualização de NFS-e, direção/identidade/d
 Validação local em 18/11/2026:
 
 - Rodada principal das áreas alteradas: 226 testes backend aprovados. Após a otimização de consulta de eventos e o ajuste do repasse pela camada de negócios: 90 testes de recepção/importação/lotes e 39 de negócios/integração aprovados. A verificação final do tratamento de cancelamentos passou em 32 testes de serviços/analíticos. São rodadas com sobreposição, não uma contagem de testes distintos.
-- Frontend: 246 testes aprovados e build de produção concluído. Permanece o aviso já existente de tamanho de chunks.
+- Frontend: 248 testes aprovados e build de produção concluído. Permanece o aviso já existente de tamanho de chunks. A exportação descarta resposta recebida depois de troca de empresa ou revogação de permissão.
 - Suíte backend integral executada: 1.659 testes, 45 ignorados, quatro erros nos testes de sockets Unix do atualizador Docker por `PermissionError: Operation not permitted` neste executor. Essa rodada antecedeu os ajustes finais de otimização/cancelamento, cobertos pelas rodadas específicas acima. Não foi declarada aprovação integral.
 
-Não foram executados deploy, consulta real do novo fluxo em produção, revisão visual no navegador instalado, validação PVA/PGE, ensaio dos programas ECD/ECF ou conexão CBS. O estado e os resultados de CI ficam na descrição da PR, separados dos testes locais.
+A tentativa de aceite no Chromium local foi interrompida antes de abrir o navegador: `socket() failed: Operation not permitted`, pela mesma restrição de sockets deste executor. O roteiro de relatórios foi atualizado para o menu SPED e a troca de guias; não se declarou aceite visual local.
+
+Não foram executados deploy, consulta real do novo fluxo em produção, validação PVA/PGE, ensaio dos programas ECD/ECF ou conexão CBS. O estado e os resultados de CI ficam na descrição da PR, separados dos testes locais.
