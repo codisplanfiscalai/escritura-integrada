@@ -201,6 +201,16 @@ class PostgresCoreTests(PostgresFixture,_CoreApiTests):
             with psycopg.connect(DSN,autocommit=True) as conn:conn.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(result['schema'])))
         self.assertEqual(2,len(self.core.companies()))
 
+    def test_account_search_unicode_literals_pagination_and_company_scope(self):
+        with self.core.db.transaction() as conn:
+            account=conn.execute('SELECT id FROM accounts WHERE company_id=? ORDER BY id LIMIT 1',(self.a['id'],)).fetchone()[0]
+            conn.execute('UPDATE accounts SET name=? WHERE id=?',('Árvore 100%_ Straẞe',account))
+        for query in ('arvore','100%_','strasse'):
+            result=self.core.accounts(self.a['id'],page=1,per_page=1,search=query)
+            self.assertEqual(1,result['total']);self.assertEqual(account,result['items'][0]['id'])
+            self.assertEqual([],self.core.accounts(self.a['id'],page=2,per_page=1,search=query)['items'])
+            self.assertEqual(0,self.core.accounts(self.b['id'],page=1,search=query)['total'])
+
     def test_parameter_lexer_keeps_literals_and_percent(self):
         with self.core.db.read() as conn:
             self.assertEqual("? % O'Reilly",conn.execute("SELECT '? % O''Reilly' AS value WHERE ?=?",(1,1)).fetchone()[0])
@@ -233,7 +243,13 @@ class PostgresSalesTests(PostgresFixture,_sales.FiscalSalesAccountingTests):
 class PostgresPlanTests(PostgresFixture,_plans.GlobalAccountPlanTests): pass
 
 @unittest.skipUnless(DSN,'Requires disposable PostgreSQL 17')
-class PostgresIntegrationTests(PostgresFixture,_integrations.DomainIntegrationTests): pass
+class PostgresIntegrationTests(PostgresFixture,_integrations.DomainIntegrationTests):
+    def test_webhook_listing_uses_portable_order(self):
+        self.credential=self.issue(['documents:webhooks'])
+        hook=self.hook('documents')
+        response=self.client.get(self.internal('webhooks'))
+        self.assertEqual(200,response.status_code,response.text)
+        self.assertEqual([hook['id']],[r['id'] for r in response.json()])
 
 @unittest.skipUnless(DSN,'Requires disposable PostgreSQL 17')
 class PostgresVaultTests(PostgresFixture,_vault.VaultTests): pass

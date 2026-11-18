@@ -394,6 +394,18 @@ class Core:
         with self.db.read(snapshot=True) as conn:
             company_row(conn, cid)
             where, params = 'company_id=?', [cid]
+            if query and getattr(conn,'backend',None)=='postgresql':
+                # Match Python Unicode casefold/NFD exactly, without requiring a
+                # database extension or a SQLite-only registered callback.
+                matches=[]; total=0
+                for record in conn.execute('SELECT * FROM effective_accounts WHERE company_id=? ORDER BY classifier,access_code',(cid,)):
+                    if query not in normalize(' '.join(record[key] for key in ('access_code','classifier','name'))):continue
+                    if page is None or offset <= total < offset+per_page:
+                        row=dict(record)
+                        for flag in ('analytical','requires_cost_center','active'):row[flag]=bool(row[flag])
+                        matches.append(row)
+                    total+=1
+                return matches if page is None else {'items':matches,'total':total,'page':page,'per_page':per_page}
             if query:
                 conn.create_function('account_search', 1, normalize, deterministic=True)
                 # instr is a literal substring match: %, _ and backslash are

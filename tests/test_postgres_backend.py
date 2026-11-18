@@ -101,7 +101,7 @@ class PostgresBackendTests(unittest.TestCase):
             for case in source["cases"]:
                 with self.subTest(case=case["name"]):
                     previous = conn.execute(old, parameters(case)).fetchall()
-                    current = conn.execute(new, parameters(case, True)).fetchall()
+                    current = conn.execute(new, tuple(int(v) if isinstance(v,bool) else v for v in parameters(case, True))).fetchall()
                     self.assertEqual(case["expected_guard_ids"], unchanged_guard_ids(previous, case))
                     self.assertEqual(case["expected_guard_ids"], unchanged_guard_ids(current, case))
                     self.assertLessEqual(len(current), len(previous))
