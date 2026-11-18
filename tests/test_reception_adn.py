@@ -31,13 +31,13 @@ def packet(number=1,kind='NFSE',xml=XML):
             'DataHoraGeracao':'2026-11-04T12:00:00-03:00'}
 
 
-def page(packets=None,mode='InscricaoCertificado',environment='HOMOLOGACAO'):
+def page(packets=None,mode='CnpjBase',environment='HOMOLOGACAO'):
     return {'TipoConsulta':mode,'TipoAmbiente':environment,'StatusProcessamento':'DOCUMENTOS_LOCALIZADOS',
             'LoteDFe':[packet()] if packets is None else packets,'Erros':[],'Alertas':[],
             'VersaoAplicativo':'SYNTHETIC','DataHoraProcessamento':'2026-11-04T12:00:01-03:00'}
 
 
-def decode(payload,cursor='0',mode='InscricaoCertificado',environment='restricted_production'):
+def decode(payload,cursor='0',mode='CnpjBase',environment='restricted_production'):
     return read_adn_distribution(load_adn_json(json.dumps(payload).encode()),cursor,environment,mode)
 
 
@@ -46,8 +46,8 @@ class AdnProfileTests(unittest.TestCase):
         maximum=9223372036854775807
         self.assertEqual(str(maximum),adn_nsu(maximum))
         request=adn_request(MATRIX,'restricted_production',str(maximum),certificate_tax_id=MATRIX)
-        self.assertTrue(request['url'].endswith(str(maximum)+'?lote=true'))
-        self.assertNotIn('cnpjConsulta',request['url'])
+        self.assertTrue(request['url'].endswith(str(maximum)+'?cnpjConsulta='+MATRIX+'&lote=true'))
+        self.assertEqual('CnpjBase',request['expected_authorization_mode'])
         result=decode(page([packet(9007199254740993),packet(maximum)]))
         self.assertEqual(str(maximum),result['reported_last_nsu'])
         self.assertEqual('9007199254740993',result['entries'][0]['nsu'])
@@ -200,7 +200,7 @@ class AdnCaptureTests(unittest.TestCase):
             self.assertEqual(404,self.document(key).status_code)
 
     def test_error_defaults_mismatches_and_unknown_json_cannot_advance(self):
-        for index,payload in enumerate([page(mode='CnpjBase'),page(environment='PRODUCAO'),
+        for index,payload in enumerate([page(mode='InscricaoCertificado'),page(environment='PRODUCAO'),
                 page()|{'Erros':[{'Codigo':'E2245','Descricao':'private diagnostic'}]},page()|{'Erros':[{'Codigo':'E2244'}]}]):
             self.clock[0]+=3601;self.transport.reply=RemoteReply(200,json.dumps(payload).encode())
             result=self.query(f'synthetic-mismatch-{index}')

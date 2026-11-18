@@ -2,6 +2,7 @@
 import json
 import unittest
 from unittest.mock import patch
+from xml.etree import ElementTree as ET
 import test_reception_remote as remote
 import test_reception_adn as adn
 from app.core import pack
@@ -54,7 +55,8 @@ class ManualCursorTests(unittest.TestCase):
         self.transport.reply=RemoteReply(200,remote.response([('2','resNFe_v1.01.xsd',remote.SUMMARY)],last='2',maximum='3'))
         self.query(key='manual-auto-next')
         self.assertEqual('000000000000002',self.settings()['cursors']['nfe_distribution']['homologation']['cursor'])
-        self.assertIn(b':ultNSU>000000000000001',self.transport.plans[-1]['body'])
+        root=ET.fromstring(self.transport.plans[-1]['body'])
+        self.assertEqual('000000000000001',root.find('.//{http://www.portalfiscal.inf.br/nfe}ultNSU').text)
     def test_adjustment_never_deletes_originals_or_bypasses_cooldown(self):
         self.transport.reply=RemoteReply(200,remote.response([('1','resNFe_v1.01.xsd',remote.SUMMARY)],last='1',maximum='1'))
         self.query()

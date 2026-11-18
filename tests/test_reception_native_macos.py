@@ -179,7 +179,7 @@ class NativeAppleTests(unittest.TestCase):
                     self.assertEqual(0,code,result)
                     original=observed[-1][4]
                     self.assertIn('adn.nfse.gov.br' if environment=='production' else 'adn.producaorestrita.nfse.gov.br',original)
-                    self.assertEqual(target!=MATRIX,'cnpjConsulta='+target in original)
+                    self.assertIn('cnpjConsulta='+target,original)
                     self.assertIn('lote=true',original)
         # Reverse same-root case: the certificate belongs to the branch.
         pfx=self.fixture.make('branch','otherName:2.16.76.1.3.3;UTF8:'+BRANCH)
@@ -248,7 +248,7 @@ class NativeAppleTests(unittest.TestCase):
         fixture=base.CoreApiTests();fixture.setUp()
         self.addCleanup(fixture.tearDown)
         company=fixture.create_company('NATIVE','112223330001');fixture.activate(company['id'])
-        page={'TipoConsulta':'InscricaoCertificado','TipoAmbiente':'HOMOLOGACAO','StatusProcessamento':'DOCUMENTOS_LOCALIZADOS',
+        page={'TipoConsulta':'CnpjBase','TipoAmbiente':'HOMOLOGACAO','StatusProcessamento':'DOCUMENTOS_LOCALIZADOS',
             'LoteDFe':[{'NSU':1,'TipoDocumento':'NFSE','ArquivoXml':base64.b64encode(gzip.compress(XML)).decode()}],
             'DataHoraProcessamento':'2026-11-15T00:00:00Z'}
         raw=json.dumps(page).encode();server,observed=self.server(body=raw)

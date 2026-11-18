@@ -1,10 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {reactive,nextTick} from 'vue';
-import {createReception} from '../src/lib/reception.js';
+import {createReception,receiptDiagnostic} from '../src/lib/reception.js';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 const overview=(provider='nfe_distribution')=>({environment:provider==='nfe_distribution'?'homologation':'restricted_production',configuration:{revision:'1'.repeat(64),environment:provider==='nfe_distribution'?'homologation':'restricted_production'},preferences:{version:0,nfe_environment:'homologation',nfse_environment:'restricted_production'},state:{cursor:'0',busy:false,next_allowed_at:0},documents:[],receipts:[],offset:0,has_more:false,capabilities:{remote_available:true}});
 const tick=async()=>{await nextTick();await Promise.resolve();};
+test('receipt diagnostics distinguish fiscal cStat 404 from HTTP 404 and explicit ADN absence',()=>{
+ assert.match(receiptDiagnostic({provider:'nfe_distribution',state:'rejected',http_status:200,status_code:'404'}),/HTTP 200 · cStat 404.*prefixo de namespace/);
+ assert.match(receiptDiagnostic({provider:'nfse_adn',state:'rejected',http_status:400,code:'ADN_REJECTION_WITHOUT_DETAILS'}),/HTTP 400.*recusou.*não confirma ausência/);
+ assert.equal(receiptDiagnostic({provider:'nfse_adn',state:'no_documents',http_status:404}), 'HTTP 404');
+ assert.doesNotMatch(receiptDiagnostic({provider:'nfse_adn',state:'no_documents',http_status:404,status_code:'404'}),/SEFAZ|cStat|prefixo/);
+ assert.match(receiptDiagnostic({provider:'nfse_adn',state:'unparsed_rejection'}),/não confirma ausência/);
+ assert.equal(receiptDiagnostic({provider:'nfe_distribution',status_code:'<private>',http_status:'private',message:'secret'}),'');
+ assert.equal(receiptDiagnostic(null),'');
+});
 function setup(provider='nfe_distribution'){
  const state=reactive({companyId:1,period:'2026-11',module:'fiscal',session:{user:{id:8}},editor:null}),calls=[];let access=true;
  const c=createReception({state,provider,can:()=>access,scope:(s,cid=state.companyId)=>'/companies/'+cid+s,api:(path,options={})=>{const d=deferred();calls.push({path,options,...d});return d.promise;}});
