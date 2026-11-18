@@ -55,6 +55,9 @@ def accounting_pdf(result, first_page=1, show_numbers=False):
     """
     validate_first_page(first_page)
     kind = result['kind']
+    if kind == 'trial-balance':
+        from .trial_balance_pdf import trial_balance_pdf
+        return trial_balance_pdf(result, first_page)
     if kind not in COLUMNS:
         raise DomainError('Modelo contábil indisponível para este relatório.')
     from reportlab.lib import colors

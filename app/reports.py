@@ -3,9 +3,13 @@ import calendar
 from .core import DomainError, company_row, integer, iso_date, period, select_one
 
 class ReportsMixin:
-    def business_report(self,cid,kind,start,end,account_id=None,cost_center_id=None,query='',status='',direction='',bank_account=''):
+    def business_report(self,cid,kind,start,end,account_id=None,cost_center_id=None,query='',status='',direction='',bank_account='',activity='active'):
         start,end=iso_date(start),iso_date(end)
         if start>end:raise DomainError('Período inicial posterior ao final.')
+        if kind=='trial-balance':
+            if bank_account: raise DomainError('Filtro bancário incompatível com balancete.')
+            from .trial_balance_report import trial_balance
+            return trial_balance(self,cid,start,end,account_id,cost_center_id,activity)
         query=str(query or '').casefold()
         if kind=='bank-movements':
             return self.bank_movement_report(cid,start,end,query,direction,bank_account,account_id,cost_center_id,status)

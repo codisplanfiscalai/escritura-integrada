@@ -246,6 +246,18 @@ def main():
                             expect(kind).to_have_value({'accounting': 'trial-balance', 'fiscal': 'fiscal-documents', 'financial': 'financial'}[area])
                             expect(controls.get_by_role('button', name='Gerar relatório', exact=True)).to_be_enabled()
                             if area == 'accounting':
+                                movement = controls.get_by_role('combobox', name='Movimento do balancete', exact=True)
+                                expect(movement).to_have_value('active')
+                                options = controls.locator('details.report-options')
+                                if options.get_attribute('open') is None:
+                                    options.locator('summary').first.click()
+                                movement.select_option('all')
+                                expect(movement).to_have_value('all')
+                                movement.select_option('active')
+                                expect(movement).to_have_value('active')
+                                expect(controls).to_contain_text('Inclui contas com saldo anterior ou final')
+                                shot('trial-balance-default-movement.png')
+                                report['checks'].append('Trial balance defaults to movement, explicitly preserves balances, and allows all accounts')
                                 # Fixture preparation only in this process's isolated demo directory.
                                 # First prove the domain rejects incomplete classifications unchanged.
                                 assert Path(data).is_dir() and Path(data).name.startswith('escritura-reports-ui-')

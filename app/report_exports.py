@@ -35,6 +35,9 @@ REPORT_TITLES={'bank-movements':'Movimentação bancária','diary':'Diário Gera
 
 
 def export_report(result,kind):
+    if result['kind']=='trial-balance' and kind=='pdf':
+        from .trial_balance_pdf import trial_balance_pdf
+        return trial_balance_pdf(result)
     rows=result['rows'];keys=list(dict.fromkeys(k for r in rows for k in r))
     labels=dict(LABELS)
     if result.get('row_scope')=='analytical_posting_lines':
