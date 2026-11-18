@@ -3,6 +3,7 @@ import json
 import csv
 import io
 import re
+import uuid
 from .core import DomainError,audit,company_row,digest,now,pack
 from .permissions import require,decision
 from .reception_service import RUN_SCOPE
@@ -25,9 +26,60 @@ class ReceptionWorkspace:
         return preferences(conn,cid)
     def settings(self,cid,uid):
         with self.db.read() as conn:
-            require(conn,uid,cid,'system.companies','read');company_row(conn,cid)
-            result={'preferences':self.preferences(conn,cid),'can_edit':decision(conn,uid,cid,'system.companies','edit')['allowed']}
+            require(conn,uid,cid,'system.companies','read');company=company_row(conn,cid)
+            result={'preferences':self.preferences(conn,cid),'cursors':self.cursor_settings(conn,cid,company),'can_edit':decision(conn,uid,cid,'system.companies','edit')['allowed']}
         return result|{'credential':CompanyA1Vault(self.db).status(cid,uid),'password_api_supported':False,'a3_available':False,'cpf_available':False}
+    def cursor_settings(self,conn,cid,company):
+        """Read the live automatic cursors; never maintain a separate manual copy."""
+        result={}
+        for provider,environments in ENVS.items():
+            result[provider]={}
+            for environment in environments:
+                state=self.reception._state(conn,cid,provider+':'+environment+':'+company['tax_id'])
+                result[provider][environment]=self.cursor_snapshot(cid,company['tax_id'],provider,environment,state)
+        return result
+    def cursor_snapshot(self,cid,target,provider,environment,state):
+        return {'cursor':state['cursor'],'revision':digest({'company':cid,'target':target,
+                'provider':provider,'environment':environment,'state':state}),
+                'busy':state['lease_until']>self.reception.clock(),'next_allowed_at':state['next_allowed_at']}
+    def adjust_cursor(self,cid,uid,actor,payload):
+        from .reception import nsu,adn_nsu
+        from .reception_credentials import query_cnpj
+        from .importers import ImportProblem
+        if not isinstance(payload,dict) or set(payload)!={'provider','environment','cursor','expected_revision','confirmed'}:
+            raise DomainError('Informe serviço, ambiente, NSU, revisão e confirmação do ajuste.')
+        provider,environment=payload['provider'],payload['environment']
+        self.reception._spec(provider,environment)
+        if payload['confirmed'] is not True:
+            raise DomainError('Confirme o ajuste manual: avançar pode deixar documentos anteriores fora das próximas consultas.')
+        if not isinstance(payload['cursor'],str):
+            raise DomainError('Informe o NSU como texto decimal, sem pontuação.')
+        try:new=(nsu if provider=='nfe_distribution' else adn_nsu)(payload['cursor'])
+        except ImportProblem as error:raise DomainError(str(error)) from None
+        with self.db.transaction() as conn:
+            require(conn,uid,cid,'system.companies','edit')
+            company=company_row(conn,cid)
+            target=query_cnpj(company['tax_id'],provider)
+            key=provider+':'+environment+':'+target
+            state=self.reception._state(conn,cid,key)
+            current=self.cursor_snapshot(cid,target,provider,environment,state)
+            if current['busy']:
+                raise DomainError('Existe consulta em andamento. Aguarde sua conclusão antes de ajustar o NSU.',409,'reception_busy')
+            if payload['expected_revision']!=current['revision']:
+                raise DomainError('O NSU foi atualizado ou a empresa mudou. Recarregue os parâmetros antes de ajustar.',409,'stale_reception_cursor')
+            if new==state['cursor']:return current
+            adjustment=uuid.uuid4().hex
+            record={'provider':provider,'environment':environment,'target_tax_id':target,
+                    'cursor_before':state['cursor'],'cursor_after':new,'documents_changed':False,
+                    'direction':'forward' if int(new)>int(state['cursor']) else 'backward'}
+            # Retain all originals, receipts and official cooldown. An expired
+            # worker can no longer commit against this new state/lease.
+            state.update(cursor=new,lease_id=None,lease_until=0,last_manual_adjustment=adjustment)
+            self.reception._save_state(conn,cid,key,state)
+            conn.execute('INSERT INTO operations(company_id,scope,key,request_hash,result_json,created_at) VALUES(?,?,?,?,?,?)',
+                         (cid,'reception-nsu-adjustment-v1',adjustment,digest(record),pack(record),now()))
+            audit(conn,cid,actor,'adjust-nsu','fiscal-reception',adjustment,record)
+            return self.cursor_snapshot(cid,target,provider,environment,state)
     def save_settings(self,cid,uid,actor,payload):
         if not isinstance(payload,dict) or set(payload)!={'version','nfe_environment','nfse_environment'}:
             raise DomainError('Informe somente versão e ambientes padrão.')

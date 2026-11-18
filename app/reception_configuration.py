@@ -18,7 +18,10 @@ def configuration(conn, cid, provider, credentials):
     prefs = preferences(conn, cid)
     environment = prefs[ENVIRONMENT_KEYS[provider]]
     credential = credentials.revision(conn, cid) if hasattr(credentials, 'revision') else None
-    revision = digest({'company':cid, 'provider':provider, 'tax_id':company['tax_id'],
+    state_row=conn.execute('SELECT result_json FROM operations WHERE company_id=? AND scope=? AND key=?',
+                           (cid,'fiscal-reception-state-v1',provider+':'+environment+':'+company['tax_id'])).fetchone()
+    adjustment=json.loads(state_row['result_json']).get('last_manual_adjustment') if state_row else None
+    revision = digest({'manual_adjustment':adjustment,'company':cid, 'provider':provider, 'tax_id':company['tax_id'],
                        'state':company['state'], 'preferences':prefs, 'credential':credential})
     return {'environment':environment, 'revision':revision}
 

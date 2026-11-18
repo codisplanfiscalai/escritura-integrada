@@ -150,6 +150,18 @@ def main():
                             dialog.get_by_role('button',name='Salvar recepção fiscal').click()
                         assert saved.value.ok;expect(dialog.get_by_text('A1 protegido no cofre.',exact=False)).to_be_visible()
                         assert PASSWORD.decode() not in page.request.get(url+scope+'/reception-settings').text()
+                        manual=dialog.get_by_role('region',name='Ajuste manual de NSU')
+                        expect(manual.get_by_label('NSU NFS-e Nacional Produção restrita',exact=True)).to_have_value('000000000000006')
+                        manual.get_by_label('NSU DF-e Homologação',exact=True).fill('12')
+                        expect(manual.get_by_role('button',name='Aplicar NSU DF-e Homologação',exact=True)).to_be_disabled()
+                        manual.get_by_role('checkbox',name='Confirmo o ajuste deste serviço e ambiente, sem apagar documentos.',exact=True).check()
+                        with page.expect_response(lambda r:r.url.endswith('/reception-settings/cursor') and r.request.method=='PUT') as adjusted:
+                            manual.get_by_role('button',name='Aplicar NSU DF-e Homologação',exact=True).click()
+                        assert adjusted.value.ok
+                        expect(manual.get_by_label('NSU DF-e Homologação',exact=True)).to_have_value('000000000000012')
+                        expect(manual.get_by_label('NSU DF-e Produção',exact=True)).to_have_value('000000000000000')
+                        shot('company-manual-nsu.png')
+                        report['checks'].append('Campos NSU por fonte/ambiente refletem estado automático e ajuste manual confirmado sem cruzamento')
                         shot('company-a1.png');dialog.get_by_role('button',name='Cancelar',exact=True).click()
                         nav('DF-e');expect(page.locator('.receive-query')).to_contain_text('Ambiente do cadastro: Produção');expect(page.locator('.receive-query select')).to_have_count(0)
                         page.get_by_role('button',name='Conferir A1 local').click();expect(page.get_by_text('A1, identidade e validade conferidos localmente.',exact=False)).to_be_visible()

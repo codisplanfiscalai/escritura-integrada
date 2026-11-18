@@ -18,6 +18,25 @@ são internos; não há exigência de confirmação de URL pelo usuário.
 O fechamento da tela interrompe novos lotes, mas não desfaz um lote já enviado.
 Reabertura apenas lê o acervo; não consulta o Fisco sem nova ação do usuário.
 
+## Ajuste manual opcional
+
+Em **Cadastro → Empresas → Recepção fiscal**, cada serviço e ambiente possui seu
+campo de **último NSU**. Os quatro campos leem diretamente o estado automático
+persistido, também após reabrir/recarregar o cadastro. Não há uma segunda sequência
+manual que possa ficar divergente.
+
+O operador pode corrigir esse valor quando necessário, confirmando o ajuste de
+cada campo. NF-e aceita até 15 dígitos e ADN até o máximo int64, sempre como texto
+para não perder precisão. Avançar pode deixar documentos anteriores fora da
+próxima consulta; voltar pode recebê-los novamente. Os originais e recibos são
+preservados, e a atualização automática prossegue do valor corrigido.
+
+Ajuste exige permissão de edição da empresa; consulta em andamento bloqueia a
+alteração. Uma revisão otimista impede sobrescrever NSU atualizado por outra
+tela ou consulta. O intervalo oficial não é zerado. O histórico registra autor,
+sequência anterior/nova, serviço e ambiente. Nenhuma consulta fiscal é disparada
+pelo ajuste.
+
 ## Contratos separados
 
 - **NF-e:** `distNSU`, `ultNSU`/`maxNSU`. Não se aplica espera fixa entre lotes
