@@ -181,7 +181,7 @@ class ReceptionService:
                 return metadata|{'state':'received','status_code':response['status_code'],
                                  'entries':[{k:v for k,v in entry.items() if k!='xml'} for entry in response['entries']],
                                  'review_pending':True,'has_more':proposed<response['reported_max_nsu'],
-                                 'reported_max_nsu':response['reported_max_nsu']},proposed,response['cooldown_seconds']
+                                 'reported_max_nsu':response['reported_max_nsu']},proposed,max(response['cooldown_seconds'],reply.retry_after)
             if response['status_code']=='656' and proposed is not None and proposed>cursor:
                 return metadata|{'state':'cursor_synchronized','status_code':'656','has_more':False,
                                  'documents_downloaded':False,'missing_documents_review':True,

@@ -38,11 +38,15 @@ def create_app(data_dir=None, demo=False):
         from .import_package_cleanup import scheduler
         cleanup_task = asyncio.create_task(scheduler(database))
         integration_task = asyncio.create_task(application.state.integrations.run())
+        reception_task = None if demo else asyncio.create_task(application.state.reception_automation.run())
         try: yield
         finally:
+            if reception_task: reception_task.cancel()
             cleanup_task.cancel()
             integration_task.cancel()
             import contextlib
+            if reception_task:
+                with contextlib.suppress(asyncio.CancelledError): await reception_task
             with contextlib.suppress(asyncio.CancelledError): await cleanup_task
             with contextlib.suppress(asyncio.CancelledError): await integration_task
             await asyncio.to_thread(worker.close)

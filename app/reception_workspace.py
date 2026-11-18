@@ -142,7 +142,7 @@ class ReceptionWorkspace:
             return {'preferences':prefs,'configuration':selected,'provider':provider,'environment':environment,
                 'state':{'cursor':state['cursor'],'next_allowed_at':state['next_allowed_at'],'busy':state['lease_until']>self.reception.clock()},
                 'documents':documents[offset:offset+20],'offset':offset,'has_more':len(documents)>offset+20,'receipts':receipts,
-                'capabilities':CAPABILITIES[provider]|{'automation_available':False,'a1_cnpj_only':True}}
+                'capabilities':CAPABILITIES[provider]|{'automation_available':True,'a1_cnpj_only':True}}
     def receipt_history(self,cid,uid,provider,environment,year,offset=0):
         """Page the audit history without opening or decompressing original XMLs."""
         self.validate_filters(provider,environment,year,'',offset,'','')
